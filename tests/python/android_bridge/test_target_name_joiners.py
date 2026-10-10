@@ -61,9 +61,11 @@ def test_config_still_refuses_other_category_c_in_names(
     field: str, name: str, initialized_bridge_home: Path, tmp_path: Path
 ) -> None:
     value: object = [name] if field == "excluded_decks" else name
+    # A valid note type, so only the field under test can fail (the note-type case overrides it).
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({field: value}, _paths(initialized_bridge_home, tmp_path))
+        map_config_settings({"anki_note_type": "Lapis", field: value}, _paths(initialized_bridge_home, tmp_path))
     assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith(field), str(error.value)
 
 
 @pytest.mark.parametrize(
@@ -75,8 +77,10 @@ def test_field_and_marker_names_keep_the_full_category_c_rule(
     settings: dict, initialized_bridge_home: Path, tmp_path: Path
 ) -> None:
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings(settings, _paths(initialized_bridge_home, tmp_path))
+        map_config_settings({"anki_note_type": "Lapis", **settings}, _paths(initialized_bridge_home, tmp_path))
     assert error.value.code == "invalid_config_field"
+    ((field, _value),) = settings.items()
+    assert str(error.value).startswith(field), str(error.value)
 
 
 def test_adapter_name_check_relaxes_only_when_asked() -> None:

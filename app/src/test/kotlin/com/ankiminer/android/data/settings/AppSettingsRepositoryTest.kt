@@ -234,6 +234,95 @@ class AppSettingsRepositoryTest {
     }
 
     @Test
+    fun `an upgrader's store without the v3_8 settings reads their defaults and needs no migration`() {
+        val upgraded =
+            preferencesOf(
+                intPreferencesKey("settings_schema_version") to 3,
+                stringPreferencesKey("enabled_wordsets_v2") to "enabled-wordsets-v1\n",
+                stringPreferencesKey("wordset_defaults_policy") to "preserved-existing-v1",
+                booleanPreferencesKey("screenshot_animated_enabled") to true,
+                intPreferencesKey("screenshot_animated_quality") to 40,
+            )
+
+        val settings = DataStoreAppSettingsRepository.decodePreferences(upgraded)
+
+        assertTrue(settings.autoUpdateDictionaries)
+        assertNull(settings.animatedScreenshotFps)
+        assertNull(settings.animatedScreenshotHeight)
+        assertNull(settings.animatedScreenshotFormat)
+        assertEquals(40, settings.animatedScreenshotQuality)
+        assertFalse(DataStoreAppSettingsRepository.migrationRequired(upgraded))
+        assertEquals(upgraded.asMap(), DataStoreAppSettingsRepository.migratePreferences(upgraded).asMap())
+    }
+
+    @Test
+    fun `the v3_8 settings round-trip through the store`() {
+        val chosen =
+            AppSettings(
+                autoUpdateDictionaries = false,
+                animatedScreenshotFps = 24,
+                animatedScreenshotHeight = 1080,
+                animatedScreenshotFormat = AnimatedScreenshotFormat.WEBP,
+            )
+
+        val encoded = DataStoreAppSettingsRepository.encodePreferences(chosen, preferencesOf())
+        val decoded = DataStoreAppSettingsRepository.decodePreferences(encoded)
+
+        assertEquals(false, encoded[booleanPreferencesKey("auto_update_dictionaries")])
+        assertEquals(24, encoded[intPreferencesKey("screenshot_animated_fps")])
+        assertEquals(1080, encoded[intPreferencesKey("screenshot_animated_height")])
+        assertEquals("webp", encoded[stringPreferencesKey("screenshot_animated_format")])
+        assertEquals(chosen, decoded)
+    }
+
+    @Test
+    fun `a stored non-positive animated size is quarantined`() {
+        val settings =
+            DataStoreAppSettingsRepository.decodePreferences(
+                preferencesOf(
+                    intPreferencesKey("screenshot_animated_fps") to 0,
+                    intPreferencesKey("screenshot_animated_height") to -1,
+                    stringPreferencesKey("screenshot_animated_format") to "gif",
+                ),
+            )
+
+        assertNull(settings.animatedScreenshotFps)
+        assertNull(settings.animatedScreenshotHeight)
+        assertNull(settings.animatedScreenshotFormat)
+    }
+
+    @Test
+    fun `migration drops the retired jisho key and changes nothing else`() {
+        // Desktop v3.8.0 removed Jisho. An upgrading ja user with it on keeps every other value
+        // and the same schema marker; only the key goes.
+        val retired = booleanPreferencesKey("jisho_enabled")
+        val current = DataStoreAppSettingsRepository.migratePreferences(
+            DataStoreAppSettingsRepository.encodePreferences(populatedSettings(), preferencesOf()),
+        )
+        val upgraded = current.toMutablePreferences().apply { this[retired] = true }.toPreferences()
+
+        assertTrue(DataStoreAppSettingsRepository.migrationRequired(upgraded))
+        val migrated = DataStoreAppSettingsRepository.migratePreferences(upgraded)
+
+        assertFalse(migrated.contains(retired))
+        assertEquals(current.asMap() - retired, migrated.asMap())
+        assertEquals(
+            DataStoreAppSettingsRepository.decodePreferences(upgraded),
+            DataStoreAppSettingsRepository.decodePreferences(migrated),
+        )
+        assertFalse(DataStoreAppSettingsRepository.migrationRequired(migrated))
+    }
+
+    @Test
+    fun `writing settings drops a stray jisho key`() {
+        val stray = preferencesOf(booleanPreferencesKey("jisho_enabled") to true)
+
+        val encoded = DataStoreAppSettingsRepository.encodePreferences(AppSettings(), stray)
+
+        assertFalse(encoded.asMap().keys.any { it.name == "jisho_enabled" })
+    }
+
+    @Test
     fun `schema v3 migration zeroes the caps an absent length toggle kept inert`() {
         // Pin-era stores filtered only when the toggle was true AND a cap was above zero; the
         // engine now filters on the caps alone, so typed caps behind an absent toggle would start
@@ -423,6 +512,9 @@ class AppSettingsRepositoryTest {
                 animatedScreenshotDurationSeconds = null,
                 animatedScreenshotQuality = null,
                 animatedScreenshotMatchAudio = false,
+                animatedScreenshotFps = null,
+                animatedScreenshotHeight = null,
+                animatedScreenshotFormat = null,
                 subtitleOffsetSeconds = null,
                 audioFormat = null,
                 audioBitrateKbps = null,
@@ -459,6 +551,8 @@ class AppSettingsRepositoryTest {
         assertEquals("Japanese", restored.deckName)
         assertEquals("Lapis", restored.noteType)
         assertEquals(original.fieldMap, restored.fieldMap)
+        // Dictionary updates are a resource preference, not mining behaviour.
+        assertFalse(restored.autoUpdateDictionaries)
     }
 
     @Test
@@ -581,7 +675,6 @@ class AppSettingsRepositoryTest {
         assertEquals(listOf(ResourceChainSelection("local-audio")), settings.audioPacks)
         assertEquals(listOf("place-names"), settings.enabledWordsets)
         assertTrue(settings.readingTtsEnabled)
-        assertTrue(settings.jishoEnabled)
 
         val gateway = FakeAnkiProviderGateway()
         gateway.queryHandler = { query, _ ->
@@ -639,6 +732,9 @@ class AppSettingsRepositoryTest {
             animatedScreenshotQuality = 30,
             // Non-default, or corrupting the key would quarantine to the value already stored.
             animatedScreenshotMatchAudio = true,
+            animatedScreenshotFps = 12,
+            animatedScreenshotHeight = 480,
+            animatedScreenshotFormat = AnimatedScreenshotFormat.WEBP,
             subtitleOffsetSeconds = -0.3,
             audioFormat = AudioFormat.OPUS,
             audioBitrateKbps = 96,
@@ -674,10 +770,11 @@ class AppSettingsRepositoryTest {
             audioPacks = listOf(ResourceChainSelection("local-audio")),
             enabledWordsets = listOf("place-names"),
             readingTtsEnabled = true,
-            jishoEnabled = true,
+            // Non-default, or corrupting the key would quarantine to the value already stored.
+            autoUpdateDictionaries = false,
             // Non-default, or corrupting the key would quarantine to the value already stored.
             language = "he",
-            languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "jisho_enabled" to true)),
+            languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "max_sentence_characters" to 30)),
         )
 
     private fun unreadableDataStore(): DataStore<Preferences> =
@@ -759,6 +856,18 @@ class AppSettingsRepositoryTest {
                 original.copy(
                     animatedScreenshotMatchAudio = defaults.animatedScreenshotMatchAudio,
                 ),
+            ),
+            corruptInt(
+                "screenshot_animated_fps",
+                original.copy(animatedScreenshotFps = defaults.animatedScreenshotFps),
+            ),
+            corruptInt(
+                "screenshot_animated_height",
+                original.copy(animatedScreenshotHeight = defaults.animatedScreenshotHeight),
+            ),
+            corruptString(
+                "screenshot_animated_format",
+                original.copy(animatedScreenshotFormat = defaults.animatedScreenshotFormat),
             ),
             corruptDouble(
                 "subtitle_offset_seconds",
@@ -879,7 +988,10 @@ class AppSettingsRepositoryTest {
                 "reading_tts_enabled",
                 original.copy(readingTtsEnabled = defaults.readingTtsEnabled),
             ),
-            corruptBoolean("jisho_enabled", original.copy(jishoEnabled = defaults.jishoEnabled)),
+            corruptBoolean(
+                "auto_update_dictionaries",
+                original.copy(autoUpdateDictionaries = defaults.autoUpdateDictionaries),
+            ),
             corruptString("mining_language", original.copy(language = defaults.language)),
             corruptString("language_stash_v1", original.copy(languageStash = defaults.languageStash)),
         )

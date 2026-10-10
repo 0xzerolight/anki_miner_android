@@ -86,7 +86,9 @@ def _request_json(
             "stagingRoot": str(cache_dir),
             "cacheDir": str(cache_dir),
             "nativeLibraryDir": str(cache_dir / "native"),
-            "configSnapshot": {"settings": {}, "androidTtsEnabled": False},
+            # Kotlin always names the note type; config_map refuses the engine's blank default.
+            # Only the run's log receipt reads it, so the snapshot output is unchanged.
+            "configSnapshot": {"settings": {"anki_note_type": "Lapis"}, "androidTtsEnabled": False},
         },
     )
 

@@ -32,6 +32,7 @@ from anki_miner.languages.de.morphology import (
     DE_LEADING_WORDS,
     DE_MODEL_PACKAGE,
     DE_OPENERS,
+    DE_RESCUABLE_TAGS,
     particle_less_verb,
 )
 from anki_miner.languages.de.parser import create_parser
@@ -96,7 +97,10 @@ def build_profile() -> LanguageProfile:
             bare_fallback=True,
         ),
         pos_defaults=PosDefaults(
-            allowed_pos=DE_ALLOWED_POS, excluded_subtypes=DE_EXCLUDED_SUBTYPES, labels=UPOS_LABELS
+            allowed_pos=DE_ALLOWED_POS,
+            excluded_subtypes=DE_EXCLUDED_SUBTYPES,
+            labels=UPOS_LABELS,
+            rescuable_tags=DE_RESCUABLE_TAGS,
         ),
         catalog=DE_CATALOG,
         capabilities=frozenset({"pos_tag", "noun_gender", "noun_plural", "lemmatised_frequency"}),

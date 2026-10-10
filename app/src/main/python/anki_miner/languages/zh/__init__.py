@@ -57,9 +57,8 @@ def _scoped_defaults() -> Mapping[str, object]:
             # Two the blank-by-type loop gets wrong rather than merely empty.
             # "" is not a deck AnkiConnect will accept, and inheriting ja's
             # default would file Chinese cards into the Japanese deck; "Anki
-            # Miner" is the generic default, not a ja-specific one. The ja note
-            # type ("Lapis") IS ja-specific — a JP Mining Note layout whose
-            # fields a zh run cannot fill — so zh ships empty and the user picks.
+            # Miner" is the generic default, not a ja-specific one. The note
+            # type starts empty, as in every language: the user picks.
             "anki_deck_name": "Anki Miner",
             "anki_note_type": "",
             # Keep the source spelling: a front rewritten to the other script
@@ -119,7 +118,10 @@ def build_profile() -> LanguageProfile:
             bare_fallback=True,
         ),
         pos_defaults=PosDefaults(
-            allowed_pos=ZH_ALLOWED_POS, excluded_subtypes=ZH_EXCLUDED_SUBTYPES, labels=ZH_POS_LABELS
+            allowed_pos=ZH_ALLOWED_POS,
+            excluded_subtypes=ZH_EXCLUDED_SUBTYPES,
+            labels=ZH_POS_LABELS,
+            rescuable_tags=(*ZH_ALLOWED_POS, "nrt", "nt"),
         ),
         catalog=ZH_CATALOG,
         capabilities=frozenset({"pinyin", "tone_color", "script_variants", "measure_word"}),

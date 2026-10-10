@@ -103,8 +103,8 @@ def _scoped_defaults() -> dict[str, object]:
     # One the blank-by-type loop gets wrong rather than merely empty: "" is not
     # a deck AnkiConnect will accept, and inheriting ja's default would file
     # Korean cards into the Japanese deck. "Anki Miner" is the generic default,
-    # not a ja-specific one. The ja note type ("Lapis") IS ja-specific, so ko
-    # ships empty and the user picks — same split as zh.
+    # not a ja-specific one. The note type stays empty, as in every language:
+    # the user picks.
     defaults["anki_deck_name"] = "Anki Miner"
     defaults["script_variant"] = ""
     defaults["reading_tone_color"] = False
@@ -145,6 +145,7 @@ def build_profile() -> LanguageProfile:
             allowed_pos=ko_morphology.KO_ALLOWED_POS,
             excluded_subtypes=ko_morphology.KO_EXCLUDED_SUBTYPES,
             labels=ko_morphology.KO_POS_LABELS,
+            rescuable_tags=ko_morphology.KO_RESCUABLE_TAGS,
         ),
         catalog=KO_CATALOG,  # the KRDICT dict; ko/catalog.py documents the manual frequency import
         capabilities=frozenset({"hangul_filters", "hanja"}),

@@ -6,6 +6,9 @@ import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.ModelSummary
+import com.ankiminer.android.anki.provider.NoteTypeFill
+import com.ankiminer.android.anki.provider.NoteTypeFillSource
+import com.ankiminer.android.anki.provider.NoteTypePreset
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
@@ -39,6 +42,7 @@ import com.ankiminer.android.data.settings.AppSettingsValidator
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.LanguageProfileFixtures
 import com.ankiminer.android.data.settings.LanguageProfileSource
+import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
@@ -820,7 +824,7 @@ class SetupViewModelTest {
             advanceUntilIdle()
             assertEquals(0, repository.writeCount)
 
-            viewModel.remapFieldsFromNoteType()
+            viewModel.fillFieldsAutomatically()
             advanceUntilIdle()
 
             assertEquals("pitchPositions", repository.current.fieldMap["pitch_position"])
@@ -830,6 +834,135 @@ class SetupViewModelTest {
                 listOf("pitch_position", "pitch_text"),
                 viewModel.uiState.value.fieldMapChanges.map { it.logicalKey },
             )
+        }
+
+    @Test
+    fun `fill in automatically writes a recognised note type's whole preset`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(
+                        noteType = "Lapis",
+                        fieldMap = linkedMapOf("word" to "Expression", "sentence_reading" to "Hint"),
+                        cardType = CardType.CLICK,
+                    ),
+                )
+            val setup = FakeAnkiSetupManager(listOf(model("Lapis", *LAPIS_FIELDS.toTypedArray())))
+            val requests = mutableListOf<Pair<List<String>, String>>()
+            val viewModel =
+                viewModel(
+                    repository,
+                    setup,
+                    noteTypeFillSource = { fields, language ->
+                        requests += fields to language
+                        Result.success(lapisFill(boldTarget = true))
+                    },
+                )
+            advanceUntilIdle()
+
+            viewModel.fillFieldsAutomatically()
+            advanceUntilIdle()
+
+            assertEquals(listOf(LAPIS_FIELDS to "ja"), requests)
+            val saved = repository.current
+            assertEquals("PitchCategories", saved.fieldMap["pitch_category"])
+            assertEquals("MiscInfo", saved.fieldMap["source"])
+            assertEquals("", saved.fieldMap["sentence_reading"])
+            assertEquals(PitchCategoryFormat.ROMAJI, saved.pitchCategoryFormat)
+            assertEquals(true, saved.boldTargetInSentence)
+            assertEquals(CardType.CLICK, saved.cardType)
+            assertEquals("IsClickCard", saved.cardTypeMarkerField)
+            assertEquals(LAPIS_MAP.count { (_, field) -> field.isNotEmpty() }, viewModel.uiState.value.fieldFillCount)
+            assertEquals(1, setup.refreshCount)
+        }
+
+    @Test
+    fun `fill in automatically falls back to the keyword pass when the bridge fails`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(noteType = "Senren", fieldMap = linkedMapOf("word" to "word")),
+                )
+            val setup =
+                FakeAnkiSetupManager(listOf(model("Senren", "word", "sentence", "pitchPositions")))
+            val viewModel =
+                viewModel(
+                    repository,
+                    setup,
+                    noteTypeFillSource = { _, _ -> Result.failure(IllegalStateException("bridge down")) },
+                )
+            advanceUntilIdle()
+
+            viewModel.fillFieldsAutomatically()
+            advanceUntilIdle()
+
+            assertEquals("sentence", repository.current.fieldMap["sentence"])
+            assertEquals("pitchPositions", repository.current.fieldMap["pitch_position"])
+            assertEquals(null, repository.current.pitchCategoryFormat)
+            assertEquals(3, viewModel.uiState.value.fieldFillCount)
+        }
+
+    @Test
+    fun `fill in automatically without a recognised note type runs the keyword pass`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeSettingsRepository(AppSettings(noteType = "Basic", fieldMap = mapOf("word" to "Front")))
+            val viewModel =
+                viewModel(
+                    repository,
+                    FakeAnkiSetupManager(listOf(model("Basic", "Front", "Picture"))),
+                    noteTypeFillSource = { _, _ ->
+                        Result.success(lapisFill().copy(preset = null))
+                    },
+                )
+            advanceUntilIdle()
+
+            viewModel.fillFieldsAutomatically()
+            advanceUntilIdle()
+
+            assertEquals("Picture", repository.current.fieldMap["picture"])
+            assertEquals("", repository.current.fieldMap["sentence"])
+            assertEquals(null, repository.current.pitchCategoryFormat)
+        }
+
+    @Test
+    fun `the wizard's note type pick takes a recognised preset while a settings pick stays keyword only`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var asked = 0
+            val source = NoteTypeFillSource { _, _ ->
+                asked += 1
+                Result.success(lapisFill())
+            }
+            val settingsRepository = FakeSettingsRepository(AppSettings())
+            val settingsPick =
+                viewModel(
+                    settingsRepository,
+                    FakeAnkiSetupManager(listOf(model("Lapis", *LAPIS_FIELDS.toTypedArray()))),
+                    noteTypeFillSource = source,
+                )
+            advanceUntilIdle()
+            settingsPick.selectNoteType("Lapis")
+            advanceUntilIdle()
+
+            assertEquals(0, asked)
+            assertEquals("Lapis", settingsRepository.current.noteType)
+            assertEquals(null, settingsRepository.current.pitchCategoryFormat)
+
+            val wizardRepository = FakeSettingsRepository(AppSettings())
+            val wizardPick =
+                viewModel(
+                    wizardRepository,
+                    FakeAnkiSetupManager(listOf(model("Lapis", *LAPIS_FIELDS.toTypedArray()))),
+                    noteTypeFillSource = source,
+                )
+            advanceUntilIdle()
+            wizardPick.selectNoteType("Lapis", fillAutomatically = true)
+            advanceUntilIdle()
+
+            assertEquals(1, asked)
+            assertEquals("Lapis", wizardRepository.current.noteType)
+            assertEquals(PitchCategoryFormat.ROMAJI, wizardRepository.current.pitchCategoryFormat)
+            assertEquals("PitchCategories", wizardRepository.current.fieldMap["pitch_category"])
+            assertEquals("", wizardRepository.current.fieldMap["sentence_reading"])
         }
 
     @Test
@@ -1950,6 +2083,7 @@ class SetupViewModelTest {
         resources: FakeResourceManager = FakeResourceManager(),
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
         languageProfileSource: LanguageProfileSource? = null,
+        noteTypeFillSource: NoteTypeFillSource? = null,
         admission: MutableStateFlow<MiningRunAdmissionState> =
             MutableStateFlow(
                 MiningRunAdmissionState(
@@ -1971,6 +2105,28 @@ class SetupViewModelTest {
             strings = testStringResourceResolver,
             savedStateHandle = savedStateHandle,
             languageProfileSource = languageProfileSource,
+            noteTypeFillSource = noteTypeFillSource,
+        )
+
+    private fun lapisFill(boldTarget: Boolean = false) =
+        NoteTypeFill(
+            preset =
+                NoteTypePreset(
+                    id = "lapis",
+                    name = "Lapis",
+                    pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
+                    cardTypeMarkerFields =
+                        mapOf(
+                            CardType.WORD_AND_SENTENCE to "IsWordAndSentenceCard",
+                            CardType.CLICK to "IsClickCard",
+                            CardType.SENTENCE to "IsSentenceCard",
+                            CardType.AUDIO to "IsAudioCard",
+                        ),
+                    supportedCardTypes = CardType.entries.toSet(),
+                    boldTargetInSentence = boldTarget,
+                ),
+            fields = LAPIS_MAP,
+            extraFields = emptyMap(),
         )
 
     private fun model(name: String, vararg fields: String) =
@@ -2289,7 +2445,7 @@ class SetupViewModelTest {
             resetCalls += scope
         }
 
-        override suspend fun removeMinedWords(words: List<String>) = false
+        override suspend fun removeMinedWords(words: List<String>, language: String) = false
 
         override suspend fun exportKnownWords(uri: String) {
             exportCalls += uri
@@ -2300,5 +2456,39 @@ class SetupViewModelTest {
         override fun cancelActive() = Unit
 
         override fun dismissFailure() = Unit
+    }
+
+    private companion object {
+        val LAPIS_FIELDS =
+            listOf(
+                "Expression", "ExpressionFurigana", "ExpressionReading", "ExpressionAudio", "SelectionText",
+                "MainDefinition", "DefinitionPicture", "Sentence", "SentenceFurigana", "SentenceAudio", "Picture",
+                "Glossary", "Hint", "IsWordAndSentenceCard", "IsClickCard", "IsSentenceCard", "IsAudioCard",
+                "PitchPosition", "PitchCategories", "Frequency", "FreqSort", "MiscInfo",
+            )
+
+        val LAPIS_MAP =
+            mapOf(
+                "word" to "Expression",
+                "sentence" to "Sentence",
+                "definition" to "MainDefinition",
+                "glossary" to "Glossary",
+                "picture" to "Picture",
+                "audio" to "SentenceAudio",
+                "expression_audio" to "ExpressionAudio",
+                "expression_furigana" to "ExpressionFurigana",
+                "expression_reading" to "ExpressionReading",
+                "sentence_furigana" to "SentenceFurigana",
+                "sentence_reading" to "",
+                "pitch_position" to "PitchPosition",
+                "pitch_category" to "PitchCategories",
+                "pitch_graph" to "",
+                "pitch_text" to "",
+                "frequency" to "Frequency",
+                "frequency_sort" to "FreqSort",
+                "source" to "MiscInfo",
+                "sentence_translation" to "",
+                "language" to "",
+            )
     }
 }

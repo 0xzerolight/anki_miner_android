@@ -10,7 +10,7 @@ _PLACEHOLDER_RE = re.compile(r"%(\d+)")
 
 
 class QCoreApplication:
-    """Provide the sole Qt symbol imported by Android's vendored engine."""
+    """Provide the Qt translation entry point imported by the vendored engine."""
 
     @staticmethod
     def translate(
@@ -24,6 +24,11 @@ class QCoreApplication:
         if n >= 0:
             text = text.replace("%n", str(n))
         return text
+
+
+def QT_TRANSLATE_NOOP(context: str, source_text: str, disambiguation: str | None = None) -> str:
+    """Marks text for desktop's Qt extractor; on Android the source text is the value."""
+    return source_text
 
 
 def substitute_args(template: str, *args: Any) -> str:

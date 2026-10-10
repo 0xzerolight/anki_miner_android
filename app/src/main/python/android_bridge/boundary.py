@@ -24,6 +24,7 @@ _PROGRESS_HANDLERS = {
     "resource.pitch.import",
     "resource.dictionary.import",
     "resource.unidic.install",
+    "resource.update.install",
 }
 
 
@@ -53,6 +54,7 @@ def _dispatch_validated(
         return initialize(files_dir)
 
     supported_after_bootstrap = {
+        "anki.notetype.fill",
         "job.cancel",
         "curation.page.response",
         "curation.response",
@@ -84,6 +86,8 @@ def _dispatch_validated(
         "resource.operation.cancel",
         "resource.pitch.import",
         "resource.unidic.install",
+        "resource.update.install",
+        "resource.updates.check",
         "resource.wordlist.transcode",
         "tokenizer.configure",
         "dictionary.define",
@@ -146,6 +150,16 @@ def _dispatch_validated(
 
             return transcode_word_list(payload)
 
+        if request_type == "resource.updates.check":
+            from . import dictionary_updates
+
+            return dictionary_updates.check_updates(payload)
+
+        if request_type == "resource.update.install":
+            from . import dictionary_updates
+
+            return dictionary_updates.install_update(payload, callbacks=callbacks)
+
         handlers = {
             "resource.catalog.get": resources.catalog_response,
             "resource.cleanup": resources.cleanup_resources,
@@ -175,6 +189,11 @@ def _dispatch_validated(
         from .languages import language_profiles
 
         return language_profiles(payload)
+
+    if request_type == "anki.notetype.fill":
+        from .note_presets import fill_note_type
+
+        return fill_note_type(payload)
 
     if request_type == "dictionary.define":
         from .definitions import define_word

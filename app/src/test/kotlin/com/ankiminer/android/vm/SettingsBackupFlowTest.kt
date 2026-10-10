@@ -198,7 +198,7 @@ class SettingsBackupFlowTest {
                     deckName = "JP::Mining",
                     noteType = "Lapis",
                     fieldMap = mapOf("word" to "Word", "sentence" to "Sentence"),
-                    jishoEnabled = true,
+                    maxSentenceCharacters = 30,
                 )
             val repository = SessionSettingsRepository(japanese)
             val viewModel = viewModel(repository, document = backup(HEBREW))
@@ -219,7 +219,7 @@ class SettingsBackupFlowTest {
             assertEquals("JP::Mining", repository.current.deckName)
             assertEquals("Lapis", repository.current.noteType)
             assertEquals(japanese.fieldMap, repository.current.fieldMap)
-            assertTrue(repository.current.jishoEnabled)
+            assertEquals(30, repository.current.maxSentenceCharacters)
         }
 
     @Test

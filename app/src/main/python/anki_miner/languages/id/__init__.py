@@ -33,7 +33,8 @@ __all__ = ["build_profile"]
 ID_SMOKE_SENTENCE = "Saya sedang membaca buku di rumah."
 #: ``root`` carries the capability ar and he share (ruling R-ROOT): the field rows dedup by key.
 ROOT_FIELD = CardFieldSpec(key="root", capability="word_root", placeholder="Root")
-AFFIXES_FIELD = CardFieldSpec(key="affixes", capability="indonesian_affixes", placeholder="Affixes")
+#: Raw HTML: each affix is a no-wrap span (render.py), inserted verbatim.
+AFFIXES_FIELD = CardFieldSpec(key="affixes", capability="indonesian_affixes", placeholder="Affixes", raw_html=True)
 FORMAL_FORM_FIELD = CardFieldSpec(key="formal_form", capability="indonesian_register", placeholder="Formal")
 ID_EXTRA_CARD_FIELDS = (ROOT_FIELD, AFFIXES_FIELD, FORMAL_FORM_FIELD)
 ID_CARD_FIELDS = spaced_card_fields(ID_EXTRA_CARD_FIELDS)
@@ -84,7 +85,10 @@ def build_profile() -> LanguageProfile:
             primary="id", codes=("id",), orig_codes=("id-orig",), audio_pattern="^id(-|$)", bare_fallback=True
         ),
         pos_defaults=PosDefaults(
-            allowed_pos=ID_ALLOWED_POS, excluded_subtypes=ID_EXCLUDED_SUBTYPES, labels=ID_POS_LABELS
+            allowed_pos=ID_ALLOWED_POS,
+            excluded_subtypes=ID_EXCLUDED_SUBTYPES,
+            labels=ID_POS_LABELS,
+            rescuable_tags=(*ID_ALLOWED_POS, "PROPN"),
         ),
         catalog=ID_CATALOG,
         capabilities=frozenset({"word_root", "indonesian_affixes", "indonesian_register"}),

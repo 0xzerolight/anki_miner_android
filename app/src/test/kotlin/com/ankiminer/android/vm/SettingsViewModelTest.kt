@@ -17,6 +17,7 @@ import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.AnimatedScreenshotFormat
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
@@ -260,12 +261,52 @@ class SettingsViewModelTest {
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
-            val toggled = !viewModel.draftState.value.draft.jisho
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = toggled))
+            val toggled = !viewModel.draftState.value.draft.dynamicColorEnabled
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = toggled))
             runCurrent()
 
             assertEquals(1, repository.writeCount)
-            assertEquals(toggled, repository.current.jishoEnabled)
+            assertEquals(toggled, repository.current.dynamicColorEnabled)
+        }
+
+    @Test
+    fun theV38SettingsPersistFromTheDraftAndDesktopDefaultsStayUnset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+            val draft = viewModel.draftState.value.draft
+            assertTrue(draft.autoUpdateDictionaries)
+            assertNull(draft.animatedScreenshotFps)
+            assertNull(draft.animatedScreenshotFormat)
+
+            viewModel.updateDraft(
+                draft.copy(
+                    autoUpdateDictionaries = false,
+                    animatedScreenshotFps = 12,
+                    animatedScreenshotHeight = 480,
+                    animatedScreenshotFormat = AnimatedScreenshotFormat.WEBP,
+                ),
+            )
+            runCurrent()
+
+            assertFalse(repository.current.autoUpdateDictionaries)
+            assertEquals(12, repository.current.animatedScreenshotFps)
+            assertEquals(480, repository.current.animatedScreenshotHeight)
+            assertEquals(AnimatedScreenshotFormat.WEBP, repository.current.animatedScreenshotFormat)
+
+            // Desktop's Balanced size is the engine default, so choosing it stores nothing and a
+            // re-pinned default keeps flowing through.
+            viewModel.updateDraft(
+                viewModel.draftState.value.draft.copy(
+                    animatedScreenshotFps = EngineDefaults.ANIMATED_SCREENSHOT_FPS,
+                    animatedScreenshotHeight = EngineDefaults.ANIMATED_SCREENSHOT_HEIGHT,
+                ),
+            )
+            runCurrent()
+
+            assertNull(repository.current.animatedScreenshotFps)
+            assertNull(repository.current.animatedScreenshotHeight)
         }
 
     @Test
@@ -273,18 +314,18 @@ class SettingsViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val repository =
                 FakeAppSettingsRepository(
-                    AppSettings(subtitleOffsetSeconds = 0.25, jishoEnabled = false),
+                    AppSettings(subtitleOffsetSeconds = 0.25, dynamicColorEnabled = false),
                 )
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
             viewModel.updateDraft(viewModel.draftState.value.draft.copy(subtitleOffset = "-"))
             runCurrent()
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
 
             assertEquals(1, repository.writeCount)
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
             assertEquals(0.25, repository.current.subtitleOffsetSeconds!!, 0.0)
             assertEquals("-", viewModel.draftState.value.draft.subtitleOffset)
         }
@@ -299,7 +340,7 @@ class SettingsViewModelTest {
                     AppSettings(
                         subtitleRegexFilter = persistedPattern,
                         subtitleRegexReplacement = persistedReplacement,
-                        jishoEnabled = false,
+                        dynamicColorEnabled = false,
                     ),
                 )
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
@@ -308,7 +349,7 @@ class SettingsViewModelTest {
             viewModel.updateDraft(
                 viewModel.draftState.value.draft.copy(
                     subtitleRegex = "a",
-                    jisho = true,
+                    dynamicColorEnabled = true,
                 ),
             )
             advanceUntilIdle()
@@ -316,7 +357,7 @@ class SettingsViewModelTest {
             assertEquals(1, repository.writeCount)
             assertEquals(persistedPattern, repository.current.subtitleRegexFilter)
             assertEquals(persistedReplacement, repository.current.subtitleRegexReplacement)
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
             assertEquals("a", viewModel.draftState.value.draft.subtitleRegex)
         }
 
@@ -328,19 +369,19 @@ class SettingsViewModelTest {
             // measure the prefill instead of "invalid text never clobbers the persisted value".
             val repository =
                 FakeAppSettingsRepository(
-                    AppSettings(maxParallelWorkers = 12, jishoEnabled = false),
+                    AppSettings(maxParallelWorkers = 12, dynamicColorEnabled = false),
                 )
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
             viewModel.updateDraft(viewModel.draftState.value.draft.copy(workers = "33"))
             runCurrent()
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
 
             assertEquals(1, repository.writeCount)
             assertEquals(12, repository.current.maxParallelWorkers)
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
             assertEquals("33", viewModel.draftState.value.draft.workers)
             assertEquals(SettingsSaveState.Pending(2), viewModel.saveState.value)
         }
@@ -360,7 +401,7 @@ class SettingsViewModelTest {
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
 
             assertTrue(writeStarted.isCompleted)
@@ -379,23 +420,23 @@ class SettingsViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val repository =
                 FakeAppSettingsRepository(
-                    initial = AppSettings(jishoEnabled = false),
+                    initial = AppSettings(dynamicColorEnabled = false),
                     failuresRemaining = 1,
                 )
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             advanceUntilIdle()
 
             assertEquals(SettingsSaveState.Failed(1), viewModel.saveState.value)
-            assertFalse(repository.current.jishoEnabled)
+            assertFalse(repository.current.dynamicColorEnabled)
 
             viewModel.retrySave()
             advanceUntilIdle()
 
             assertEquals(SettingsSaveState.Saved(1), viewModel.saveState.value)
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
         }
 
     @Test
@@ -424,7 +465,7 @@ class SettingsViewModelTest {
                 )
             val repository =
                 FakeAppSettingsRepository(
-                    AppSettings(pitchSources = savedPitch, jishoEnabled = false),
+                    AppSettings(pitchSources = savedPitch, dynamicColorEnabled = false),
                 )
             val resourceManager =
                 FakeResourceManager(
@@ -440,11 +481,11 @@ class SettingsViewModelTest {
                 ),
             )
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             advanceUntilIdle()
 
             assertEquals(savedPitch, repository.current.pitchSources)
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
         }
 
     @Test
@@ -462,7 +503,7 @@ class SettingsViewModelTest {
                 )
             val repository =
                 FakeAppSettingsRepository(
-                    AppSettings(pitchSources = initialPitch, jishoEnabled = false),
+                    AppSettings(pitchSources = initialPitch, dynamicColorEnabled = false),
                 )
             val viewModel = SettingsViewModel(repository, FakeResourceManager(inventory))
             advanceUntilIdle()
@@ -472,12 +513,12 @@ class SettingsViewModelTest {
             repository.update { it.copy(pitchSources = updatedPitch) }
             runCurrent()
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
 
             assertEquals(updatedPitch, repository.current.pitchSources)
             assertEquals("Pending", repository.current.deckName)
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
         }
 
     @Test
@@ -641,25 +682,25 @@ class SettingsViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val repository =
                 FakeAppSettingsRepository(
-                    initial = AppSettings(jishoEnabled = false),
+                    initial = AppSettings(dynamicColorEnabled = false),
                     failuresRemaining = 1,
                 )
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
 
             assertEquals(1, repository.attemptedWriteCount)
             assertEquals(0, repository.writeCount)
-            assertFalse(repository.current.jishoEnabled)
+            assertFalse(repository.current.dynamicColorEnabled)
 
             viewModel.flushPendingWrites()
             advanceUntilIdle()
 
             assertEquals(2, repository.attemptedWriteCount)
             assertEquals(1, repository.writeCount)
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
         }
 
     @Test
@@ -681,12 +722,12 @@ class SettingsViewModelTest {
                     animatedScreenshots = false,
                     animatedScreenshotDuration = ".",
                     animatedScreenshotQuality = "unfinished",
-                    jisho = true,
+                    dynamicColorEnabled = true,
                 ),
             )
             advanceUntilIdle()
 
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
             assertEquals(2.5, repository.current.animatedScreenshotDurationSeconds!!, 0.0)
             assertEquals(60, repository.current.animatedScreenshotQuality)
 
@@ -814,7 +855,7 @@ class SettingsViewModelTest {
             val allowAutosave = CompletableDeferred<Unit>()
             val repository =
                 FakeAppSettingsRepository(
-                    AppSettings(audioPaddingSeconds = 1.0, jishoEnabled = false),
+                    AppSettings(audioPaddingSeconds = 1.0, dynamicColorEnabled = false),
                 ) { attempt ->
                     if (attempt == 1) {
                         autosaveStarted.complete(Unit)
@@ -824,7 +865,7 @@ class SettingsViewModelTest {
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
             assertTrue(autosaveStarted.isCompleted)
             assertTrue(viewModel.saving.value)
@@ -837,7 +878,7 @@ class SettingsViewModelTest {
             advanceUntilIdle()
 
             assertEquals(2, repository.writeCount)
-            assertTrue(repository.current.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
             assertNull(repository.current.audioPaddingSeconds)
             assertFalse(viewModel.saving.value)
         }
@@ -849,7 +890,7 @@ class SettingsViewModelTest {
             val allowWrite = CompletableDeferred<Unit>()
             val repository =
                 FakeAppSettingsRepository(
-                    AppSettings(audioPaddingSeconds = 1.0, jishoEnabled = false),
+                    AppSettings(audioPaddingSeconds = 1.0, dynamicColorEnabled = false),
                 ) { attempt ->
                     if (attempt == 1) {
                         writeStarted.complete(Unit)
@@ -863,17 +904,17 @@ class SettingsViewModelTest {
             runCurrent()
             assertTrue(writeStarted.isCompleted)
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
-            assertTrue(viewModel.draftState.value.draft.jisho)
+            assertTrue(viewModel.draftState.value.draft.dynamicColorEnabled)
 
             allowWrite.complete(Unit)
             advanceUntilIdle()
 
             assertEquals(2, repository.writeCount)
             assertNull(repository.current.audioPaddingSeconds)
-            assertTrue(repository.current.jishoEnabled)
-            assertTrue(viewModel.draftState.value.draft.jisho)
+            assertTrue(repository.current.dynamicColorEnabled)
+            assertTrue(viewModel.draftState.value.draft.dynamicColorEnabled)
         }
 
     @Test
@@ -1082,7 +1123,7 @@ class SettingsViewModelTest {
             val writeStarted = CompletableDeferred<Unit>()
             val allowWrite = CompletableDeferred<Unit>()
             val repository =
-                FakeAppSettingsRepository(AppSettings(jishoEnabled = false)) { attempt ->
+                FakeAppSettingsRepository(AppSettings(dynamicColorEnabled = false)) { attempt ->
                     if (attempt == 1) {
                         writeStarted.complete(Unit)
                         allowWrite.await()
@@ -1097,7 +1138,7 @@ class SettingsViewModelTest {
                 )
             advanceUntilIdle()
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
             assertTrue(writeStarted.isCompleted)
 
@@ -1115,8 +1156,8 @@ class SettingsViewModelTest {
                 with(SettingsBackupCodec) {
                     parse(io.written.toString()).applyTo(AppSettings()).settings
                 }
-            assertTrue(repository.current.jishoEnabled)
-            assertTrue(exported.jishoEnabled)
+            assertTrue(repository.current.dynamicColorEnabled)
+            assertTrue(exported.dynamicColorEnabled)
             assertEquals(SettingsBackupState.Exported, viewModel.backupState.value)
         }
 
@@ -1125,7 +1166,7 @@ class SettingsViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val repository =
                 FakeAppSettingsRepository(
-                    initial = AppSettings(jishoEnabled = false),
+                    initial = AppSettings(dynamicColorEnabled = false),
                     failuresRemaining = 2,
                 )
             val io = RecordingDocumentIo()
@@ -1137,7 +1178,7 @@ class SettingsViewModelTest {
                 )
             advanceUntilIdle()
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dynamicColorEnabled = true))
             runCurrent()
             assertEquals(1, repository.attemptedWriteCount)
 
@@ -1146,7 +1187,7 @@ class SettingsViewModelTest {
             advanceUntilIdle()
 
             assertEquals(2, repository.attemptedWriteCount)
-            assertFalse(repository.current.jishoEnabled)
+            assertFalse(repository.current.dynamicColorEnabled)
             assertTrue(io.written.isEmpty())
             assertTrue(viewModel.backupState.value is SettingsBackupState.Failed)
         }
@@ -1372,7 +1413,7 @@ class SettingsViewModelTest {
     @Test
     fun `switching language saves pending edits to the outgoing language first`() =
         runTest(mainDispatcherRule.dispatcher) {
-            val repository = FakeAppSettingsRepository(AppSettings(jishoEnabled = true))
+            val repository = FakeAppSettingsRepository(AppSettings(maxSentenceCharacters = 30))
             val viewModel =
                 SettingsViewModel(
                     repository = repository,
@@ -1387,11 +1428,10 @@ class SettingsViewModelTest {
 
             assertEquals("he", repository.current.language)
             assertEquals("Japanese", repository.current.languageStash.getValue("ja")["deck_name"])
-            assertEquals(true, repository.current.languageStash.getValue("ja")["jisho_enabled"])
-            assertFalse(repository.current.jishoEnabled)
+            assertEquals(30, repository.current.languageStash.getValue("ja")["max_sentence_characters"])
+            assertEquals(null, repository.current.maxSentenceCharacters)
             assertEquals(EngineDefaults.DECK_NAME, viewModel.draftState.value.draft.deckName)
             assertFalse(viewModel.draftState.value.dirty)
-            assertFalse(viewModel.draftState.value.draft.jisho)
         }
 
     @Test
@@ -1805,7 +1845,7 @@ class SettingsViewModelTest {
 
         override suspend fun resetKnownWords(scope: KnownWordsResetScope) = Unit
 
-        override suspend fun removeMinedWords(words: List<String>) = false
+        override suspend fun removeMinedWords(words: List<String>, language: String) = false
 
         override suspend fun exportKnownWords(uri: String) = Unit
 

@@ -167,11 +167,17 @@ interface ResourceManager {
      * Revert vocabulary a mining run mined: dedupes, chunks to the wire's per-message bound, and
      * commits every chunk inside one operation.
      *
+     * [language] is the run's mining language, whose known-words list holds the rows; blank (a run
+     * the engine never stamped) means the active language.
+     *
      * False when the operation could not run at all (busy, not READY, or the whole attempt
      * failed); true once the mutation is committed. Abstract, not defaulted: a fake that forgets
      * to implement this must fail to compile, not trap at runtime.
      */
-    suspend fun removeMinedWords(words: List<String>): Boolean
+    suspend fun removeMinedWords(
+        words: List<String>,
+        language: String,
+    ): Boolean
 
     suspend fun exportKnownWords(uri: String)
 
@@ -1847,14 +1853,16 @@ internal class AndroidResourceManager(
         }
     }
 
-    override suspend fun removeMinedWords(words: List<String>): Boolean =
-        removeMinedWords(words.distinct(), activeLanguage())
-
-    private suspend fun removeMinedWords(distinctWords: List<String>, language: String): Boolean =
-        runKnownWordsMutation(
+    override suspend fun removeMinedWords(
+        words: List<String>,
+        language: String,
+    ): Boolean {
+        val distinctWords = words.distinct()
+        val target = language.ifBlank { activeLanguage() }
+        return runKnownWordsMutation(
             strings.resolve(R.string.resource_operation_revert_mined_words),
             ResourceOperationPhase.IMPORTING,
-            PendingKnownWordsMutation.RemoveMined(distinctWords, language),
+            PendingKnownWordsMutation.RemoveMined(distinctWords, target),
         ) { operation ->
             distinctWords.chunked(MINED_WORDS_REMOVE_CHUNK_SIZE).forEach { chunk ->
                 ResourceBridgeCodec.decodeMinedWordsRemoved(
@@ -1862,13 +1870,14 @@ internal class AndroidResourceManager(
                         ResourceBridgeCodec.encodeMinedWordsRemoveRequest(
                             operation.id,
                             chunk,
-                            language = language,
+                            language = target,
                         ),
                         null,
                     ),
                 )
             }
         }
+    }
 
     override suspend fun exportKnownWords(uri: String) {
         runOperation(

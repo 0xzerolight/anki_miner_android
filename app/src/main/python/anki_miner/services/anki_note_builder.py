@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from anki_miner.config import AnkiMinerConfig
+from anki_miner.languages.profile import CARD_FRONT_KEY
 from anki_miner.models import CardPayload
 from anki_miner.utils.text_utils import strip_format_chars
 
@@ -168,12 +169,14 @@ def _strip_for_dedup(value: str) -> str:
     Mirrors Anki deliberately: it strips HTML/media but NOT ``[reading]``
     furigana brackets, so ``食べる[たべる]`` stays distinct from ``食べる`` here too.
 
-    Goes deliberately STRICTER than Anki in exactly one place: zero-width format
-    characters (Cf) are removed. Anki's checksum cannot see them, so a card
-    whose Expression is ``\\u202a寮`` — the shape Yomitan/asbplayer mines out of
-    Netflix subtitles, which carry U+202A LEFT-TO-RIGHT EMBEDDING — is invisible
-    to Anki's own duplicate check AND, before this strip, to the known-words
-    filter. Both gates going blind at once is how a second, clean ``寮`` card got
+    Goes STRICTER than Anki's strip in three places: NFC, whitespace runs
+    collapsed to one space, and zero-width format characters (Cf) removed. The
+    first two fold spellings that look identical (a decomposed accent, a doubled
+    space). The Cf strip is the deliberate one: Anki's checksum cannot see those
+    characters, so a card whose Expression is ``\\u202a寮`` — the shape
+    Yomitan/asbplayer mines out of Netflix subtitles, which carry U+202A
+    LEFT-TO-RIGHT EMBEDDING — is invisible to Anki's own duplicate check AND,
+    before this strip, to the known-words filter. Both gates going blind at once is how a second, clean ``寮`` card got
     created. This filter is the only layer that can catch it, so it must.
     Stripping can only make the filter match more, and two strings differing
     only by zero-width characters are the same word on screen.
@@ -250,7 +253,9 @@ def build_note(
     """Map one CardPayload to the note dict ``addNotes`` expects.
 
     Args:
-        item: The card payload (word, media, definition, extra fields).
+        item: The card payload (word, media, definition, extra fields). An
+            extra ``CARD_FRONT_KEY`` value is written to the word field in
+            place of ``mined_form``.
         config: Frozen config providing field mapping, deck, note type, tags.
         stored_files: Filenames confirmed stored in Anki's media collection;
             media fields only reference files in this set so cards never point
@@ -281,6 +286,13 @@ def build_note(
     media = item.media
     definition = item.definition
     extra_fields = item.extra_fields
+
+    # A render hook's front override, popped from a copy before every other
+    # pass: it is no field of its own, and item.extra_fields stays as built.
+    card_front = ""
+    if extra_fields and CARD_FRONT_KEY in extra_fields:
+        card_front = extra_fields[CARD_FRONT_KEY] or ""
+        extra_fields = {k: v for k, v in extra_fields.items() if k != CARD_FRONT_KEY} or None
 
     # Pull glossary out of extra_fields BEFORE the OPTIONAL pass —
     # OPTIONAL_FIELD_KEYS html.escape()s its values, but glossary
@@ -343,7 +355,11 @@ def build_note(
     else:
         sentence_furigana_field = html.escape(word.sentence_furigana)
 
-    word_field = html.escape(word.mined_form)
+    # The note type's own language tag (Anki Miner Note's root lang=, hyphenation):
+    # the Han profiles' sentence tag (zh-Hans/zh-Hant) when they declare one, else
+    # the profile code; "" on the three-argument call, which maps no such field.
+    language_tag = content_lang
+    word_field = html.escape(card_front or word.mined_form)
     if content_direction == "rtl":
         word_field = _rtl_wrap(word_field, content_lang)
         sentence_field = _rtl_wrap(sentence_field, content_lang)
@@ -357,7 +373,11 @@ def build_note(
         # spelling: a mined sentence keeps the file's own script whatever the
         # language's own script setting says, and the escaped/bolded form would
         # carry markup no script rule can read.
-        sentence_field = _lang_wrap(sentence_field, card_lang(word.sentence, config))
+        # "" tags no sentence; the card still has a language, so Language
+        # falls back to the profile code.
+        sentence_tag = card_lang(word.sentence, config)
+        sentence_field = _lang_wrap(sentence_field, sentence_tag)
+        language_tag = sentence_tag or content_lang
 
     # Build fields, skipping any with empty config mapping
     field_data = {
@@ -377,6 +397,7 @@ def build_note(
         "sentence_furigana": sentence_furigana_field,
         "sentence_reading": html.escape(word.sentence_reading),
         "sentence_translation": html.escape(word.sentence_translation),
+        "language": html.escape(language_tag),
     }
     # Profile-declared raw-HTML keys only; the four above are already in place
     # at their frozen positions.

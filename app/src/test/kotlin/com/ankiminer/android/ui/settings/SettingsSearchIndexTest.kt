@@ -53,6 +53,11 @@ class SettingsSearchIndexTest {
     }
 
     @Test
+    fun `search no longer finds the retired Jisho row`() {
+        assertFalse(SETTINGS_SEARCH_INDEX.any { it.id == "resources.jisho" })
+    }
+
+    @Test
     fun `custom dictionary search has no removed slot-picker detail`() {
         val custom = SETTINGS_SEARCH_INDEX.single { it.id == "resources.dictionary_import" }
 

@@ -62,6 +62,7 @@
         "source": {"$ref": "#/$defs/optionalMappedField"},
         "expression_audio": {"$ref": "#/$defs/optionalMappedField"},
         "sentence_translation": {"$ref": "#/$defs/optionalMappedField"},
+        "language": {"$ref": "#/$defs/optionalMappedField"},
         "affixes": {"$ref": "#/$defs/optionalMappedField"},
         "aspect_pair": {"$ref": "#/$defs/optionalMappedField"},
         "binyan": {"$ref": "#/$defs/optionalMappedField"},
@@ -104,16 +105,6 @@
       "properties": {
         "kind": {"const": "indexed"},
         "dict_id": {"$ref": "#/$defs/resourceId"},
-        "enabled": {"type": "boolean"}
-      }
-    },
-    "jishoDictionary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind"],
-      "properties": {
-        "kind": {"const": "jisho"},
-        "dict_id": {"type": "null"},
         "enabled": {"type": "boolean"}
       }
     },
@@ -180,10 +171,12 @@
         },
         "screenshot_animated_format": {
           "enum": ["avif", "webp"],
-          "description": "Resolved by Kotlin from the device MIME table, not chosen by the user"
+          "description": "The user's choice, downgraded to webp by Kotlin where the device MIME table cannot name .avif"
         },
         "screenshot_animated_clip_duration": {"type": "number", "minimum": 0.5, "maximum": 10},
         "screenshot_animated_quality": {"type": "integer", "minimum": 0, "maximum": 100},
+        "screenshot_animated_fps": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "screenshot_animated_height": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
         "screenshot_animated_match_audio": {
           "type": "boolean",
           "description": "Clip spans the padded audio window; overrides screenshot_animated_clip_duration"
@@ -200,9 +193,8 @@
         "dictionary_chain": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"oneOf": [{"$ref": "#/$defs/indexedDictionary"}, {"$ref": "#/$defs/jishoDictionary"}]}
+          "items": {"$ref": "#/$defs/indexedDictionary"}
         },
-        "jisho_delay": {"type": "number", "minimum": 0.5},
         "expression_audio_chain": {
           "type": "array",
           "uniqueItems": true,

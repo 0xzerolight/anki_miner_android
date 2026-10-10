@@ -9,6 +9,7 @@ registers a builder of its own resets it with ``_CACHE.clear()``.
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import logging
 import threading
@@ -17,6 +18,7 @@ from typing import Any
 
 from anki_miner.languages import AVAILABLE_LANGUAGES
 from anki_miner.languages.profile import LanguageProfile, MinedFormPolicy
+from anki_miner.utils.file_pairing import SubtitleLanguage
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,28 @@ def get_profile(code: str) -> LanguageProfile:
         profile = builder()
         _CACHE[code] = profile
         return profile
+
+
+@functools.cache
+def _every_language_tag() -> frozenset[str]:
+    """Every code a registered mining language answers to (ja, jpn, en, eng, pt, ...)."""
+    return frozenset().union(*(get_profile(code).audio_track_codes for code in available_languages()))
+
+
+def subtitle_language(code: str, *, with_caption_codes: bool = False) -> SubtitleLanguage:
+    """How subtitle filenames read for mining language *code*: ``ep01.ja.srt`` is its own, ``ep01.en.srt`` another's.
+
+    *with_caption_codes* also counts the caption codes fetched for it as its own
+    (yue's ``zh-HK`` / ``zh-Hant`` fallbacks), lowercased: ``matches_language_tag``
+    folds the tag, not the codes. Only a filter that tolerates ties takes them
+    (Readability's folder scan). Pairing must not: a fallback would tie with
+    ``ep01.yue.srt``, and pairing refuses a tie.
+    """
+    profile = get_profile(code)
+    mining = profile.audio_track_codes
+    if with_caption_codes:
+        mining |= {caption.lower() for caption in profile.captions.codes}
+    return SubtitleLanguage(mining=mining, known=_every_language_tag() | mining)
 
 
 def bound_mined_form(profile: LanguageProfile, config: Any) -> MinedFormPolicy:

@@ -127,12 +127,16 @@ enum class ContentDirection(
     RTL("rtl"),
 }
 
-/** One profile-specific Anki field (he `transliteration`); [placeholder] is an untranslated suggestion. */
+/**
+ * One profile-specific Anki field (he `transliteration`); [placeholder] is an untranslated suggestion.
+ * [aliases] are other Anki field names that also map to it (he `POS` for `PartOfSpeech`).
+ */
 data class LanguageExtraCardField(
     val key: String,
     val capability: String,
     val placeholder: String,
     val rawHtml: Boolean,
+    val aliases: List<String> = emptyList(),
 )
 
 /**

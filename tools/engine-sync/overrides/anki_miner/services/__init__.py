@@ -16,7 +16,7 @@ are all dropped.
 from typing import TYPE_CHECKING
 
 from .definition_service import DefinitionService
-from .dictionary.providers import IndexedDictProvider, JishoProvider
+from .dictionary.providers import IndexedDictProvider
 from .media_extractor import MediaExtractorService
 from .shortcut_service import ShortcutResult, ShortcutService
 from .stats_service import StatsService
@@ -51,7 +51,6 @@ __all__ = [
     "AnkiService",
     "StatsService",
     "IndexedDictProvider",
-    "JishoProvider",
     "ShortcutService",
     "ShortcutResult",
 ]

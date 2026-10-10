@@ -222,15 +222,17 @@ def _read_staged_text(path: Path) -> str:
         raise _invalid_request("Pasted text must be valid UTF-8") from error
 
 
-def _reading_loader_kwargs(config: object) -> dict[str, object]:
+def _reading_loader_kwargs(config: object, source_kind: str) -> dict[str, object]:
     """``detector.load``'s language seams for a non-ja run (desktop ``load_reading_source``).
 
     The run's decode ladder (and the script check its single-byte leg needs),
     the language's sentence rules, and the normaliser and bilingual-cue gate its
-    parser applies, read off a parser built like the run's. Empty for Japanese,
+    parser applies, read off a parser built like the run's. A mokuro volume's
+    blocks are gated on the language's script instead. Empty for Japanese,
     whose call keeps the pre-transition ``detector.load(ref, cancel_check=)``
     shape: its ladder is the engine default and its parser injects neither
-    seam, and the A.5 sweep proved its rules equal to the loaders' own.
+    seam, the A.5 sweep proved its rules equal to the loaders' own, and its
+    volumes keep the loader's own manga-ocr gate.
     """
 
     language = config_language(config)
@@ -248,8 +250,14 @@ def _reading_loader_kwargs(config: object) -> dict[str, object]:
     }
     if parser.normalize is not None:
         kwargs["normalize"] = parser.normalize
-    if parser.has_target_script is not None:
-        kwargs["has_target_script"] = parser.has_target_script
+    has_target_script = parser.has_target_script
+    if source_kind == "mokuro":
+        # Gate each block on the mining language's script, even where the parser
+        # keeps every line, so a translated volume's untouched SFX (ドドド) stays
+        # out. The OCR-native language keeps the loader's own gate (None).
+        has_target_script = None if "manga_ocr" in profile.capabilities else profile.script.contains_target_script
+    if has_target_script is not None:
+        kwargs["has_target_script"] = has_target_script
     return kwargs
 
 
@@ -496,7 +504,7 @@ def run_reading(
             adapters.known_words_target = _known_words_target(config)
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
-            loader_kwargs = _reading_loader_kwargs(config)
+            loader_kwargs = _reading_loader_kwargs(config, request.source_kind)
             document = _load_document(
                 request,
                 adapters.cancel_event.is_set,

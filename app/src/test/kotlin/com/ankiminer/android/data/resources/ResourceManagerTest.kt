@@ -985,7 +985,7 @@ class ResourceManagerTest {
             val harness = Harness(rootName = "manager-mined-chunk", initialUserCount = 2)
             val words = (0 until 256).map { "w$it" } + listOf("w0", "w255", "extra")
 
-            val result = harness.manager.removeMinedWords(words)
+            val result = harness.manager.removeMinedWords(words, "ja")
 
             assertTrue(result)
             val requests = harness.bridge.requestsOfType("resource.minedwords.remove")
@@ -1008,7 +1008,7 @@ class ResourceManagerTest {
             val harness = Harness(rootName = "manager-mined-busy", runtimeWorkCoordinator = coordinator)
             val lease = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
 
-            val result = harness.manager.removeMinedWords(listOf("word"))
+            val result = harness.manager.removeMinedWords(listOf("word"), "ja")
 
             assertFalse(result)
             assertTrue(harness.bridge.requestsOfType("resource.minedwords.remove").isEmpty())
@@ -1021,7 +1021,7 @@ class ResourceManagerTest {
         runTest {
             val harness = Harness(rootName = "manager-mined-not-ready", autoRecover = false)
 
-            val result = harness.manager.removeMinedWords(listOf("word"))
+            val result = harness.manager.removeMinedWords(listOf("word"), "ja")
 
             assertFalse(result)
             assertTrue(harness.bridge.requestsOfType("resource.minedwords.remove").isEmpty())
@@ -1037,7 +1037,7 @@ class ResourceManagerTest {
                     failMinedWordsRemoveOnce = true,
                 )
 
-            val result = harness.manager.removeMinedWords(listOf("w0", "w1"))
+            val result = harness.manager.removeMinedWords(listOf("w0", "w1"), "ja")
 
             assertFalse(result)
             assertNull(harness.manager.state.value.failure?.knownWordsOperation)
@@ -3516,13 +3516,13 @@ class ResourceManagerTest {
                 // The decoder checks an installed catalog dictionary against the frozen
                 // catalog identity, attribution included, so echo the catalog's own list.
                 entries +=
-                    """{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)},"rebuildSourcePath":null,"language":"ja"}"""
+                    """{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)},"rebuildSourcePath":null,"language":"ja","publisherUpdate":false}"""
             }
             if (customDictionaryInstalled) {
                 val rebuildPath =
                     installedCustomDictionaryRebuildPath?.let { "\"$it\"" } ?: "null"
                 entries +=
-                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) installedCustomDictionaryEntryCount else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath,"language":"ja"}"""
+                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) installedCustomDictionaryEntryCount else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath,"language":"ja","publisherUpdate":false}"""
             }
             val dictionaries = entries.joinToString(",", prefix = "[", postfix = "]")
             return envelope(

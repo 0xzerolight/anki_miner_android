@@ -38,6 +38,8 @@ MIRRORED_FIELDS = {
     "ANIMATED_SCREENSHOT_MATCH_AUDIO": "screenshot_animated_match_audio",
     "ANIMATED_SCREENSHOT_DURATION_SECONDS": "screenshot_animated_clip_duration",
     "ANIMATED_SCREENSHOT_QUALITY": "screenshot_animated_quality",
+    "ANIMATED_SCREENSHOT_FPS": "screenshot_animated_fps",
+    "ANIMATED_SCREENSHOT_HEIGHT": "screenshot_animated_height",
     "SUBTITLE_REGEX_FILTER": "subtitle_regex_filter",
     "SUBTITLE_REGEX_REPLACEMENT": "subtitle_regex_replacement",
     "USE_SUBTITLE_REGEX_FILTER": "use_subtitle_regex_filter",

@@ -51,6 +51,7 @@ internal object AnkiFieldAutoMap {
             "frequency_sort" to listOf("freqsort", "frequencysort"),
             "source" to listOf("source", "origin", "miscinfo"),
             "sentence_translation" to listOf("sentencetranslation", "translation", "sentencemeaning"),
+            "language" to listOf("language", "lang"),
         )
 
     /**

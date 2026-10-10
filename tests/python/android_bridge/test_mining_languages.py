@@ -168,8 +168,182 @@ def test_hebrew_word_lists_read_with_the_profile_ladder_and_fold(
 
     assert service._encodings == profile.import_encodings
     assert service._dedup_fold is profile.dedup_fold
+    assert service._normalize is profile.normalize
     assert service._script_check is not None
     assert service.is_whitelisted("ספר")
+
+
+def _japanese_config(tmp_path: Path, **settings: object) -> object:
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    return map_config_settings({"anki_note_type": "Lapis", **settings}, paths).engine_config
+
+
+def test_a_japanese_word_list_entry_is_normalised_like_subtitle_text(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Desktop ``create_services`` hands every language its normaliser: ｺｰﾋｰ must meet コーヒー.
+
+    The parser folds width before a card front exists, so an NFC-only entry never
+    matched the rescue, the whitelist partition or the blacklist. Japanese keeps
+    the UTF-8 read (``import_decode_ladder``), never its cp932/euc_jp ladder.
+    """
+    _runtime_lane()
+    import anki_miner.services.subtitle_parser as subtitle_parser
+
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: object())
+    whitelist = tmp_path / "whitelist.txt"
+    whitelist.write_text("ｺｰﾋｰ\n", encoding="utf-8")
+    config = _japanese_config(tmp_path, use_whitelist=True, whitelist_path=str(whitelist))
+    service = _compose(monkeypatch, config)["word_list_service"]
+
+    assert service.is_whitelisted("コーヒー")
+    assert service._encodings == ("utf-8-sig",)
+    assert service._script_check is None
+
+
+@pytest.mark.parametrize(
+    ("settings", "bypass", "rescues"),
+    [
+        ({"use_whitelist": True}, False, True),
+        # A bypass run (desktop's Deck Builder) already includes everything.
+        ({"use_whitelist": True}, True, False),
+        # A loaded blacklist alone builds the service, but never the rescue.
+        ({"use_whitelist": False, "use_blacklist": True}, False, False),
+    ],
+)
+def test_the_parser_rescues_through_the_runs_whitelist_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    settings: dict[str, object],
+    bypass: bool,
+    rescues: bool,
+) -> None:
+    """Desktop R1: the parser's ``force_include`` is the active whitelist's own probe."""
+    _runtime_lane()
+    from dataclasses import replace
+
+    import anki_miner.services.subtitle_parser as subtitle_parser
+
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: object())
+    word_list = tmp_path / "words.txt"
+    word_list.write_text("太郎\n", encoding="utf-8")
+    config = _japanese_config(tmp_path, whitelist_path=str(word_list), blacklist_path=str(word_list), **settings)
+    captured = _compose(monkeypatch, replace(config, bypass_optional_filters=bypass))
+
+    service = captured["word_list_service"]
+    assert service is not None
+    expected = service.is_whitelisted if rescues else None
+    assert captured["subtitle_parser"]._force_include == expected
+
+
+def test_the_parser_has_no_rescue_when_the_word_lists_fail_to_load(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _runtime_lane()
+    import anki_miner.services.subtitle_parser as subtitle_parser
+
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: object())
+    config = _japanese_config(tmp_path, use_whitelist=True, whitelist_path=str(tmp_path / "missing.txt"))
+    captured = _compose(monkeypatch, config)
+
+    assert captured["word_list_service"] is None
+    assert captured["subtitle_parser"]._force_include is None
+
+
+class _DefinedEverywhere:
+    """An offline dictionary that defines every term, so phase 2's integrity gate passes."""
+
+    def __init__(self, config: object, **_kwargs: object) -> None:
+        del config
+
+    def has_usable_offline_provider(self) -> bool:
+        return True
+
+    def has_offline_definitions(self, terms: list[str]) -> dict[str, bool]:
+        return dict.fromkeys(terms, True)
+
+    def offline_deinflection_terms_exist(self, terms: list[str]) -> set[str]:
+        del terms
+        return set()
+
+    def offline_term_identities(self, pairs: list[tuple[str, str]]) -> dict[object, object]:
+        del pairs
+        return {}
+
+    def clear_run_cache(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+def _tagger_token(surface: str, pos1: str, pos2: str) -> object:
+    """A fugashi-shaped token for the real Japanese parser under a stub tagger."""
+    from unittest.mock import MagicMock
+
+    token = MagicMock()
+    token.surface = surface
+    token.feature.pos1 = pos1
+    token.feature.pos2 = pos2
+    token.feature.lemma = surface
+    token.feature.kana = surface
+    token.feature.orthBase = surface
+    token.feature.lForm = None
+    token.feature.kanaBase = None
+    token.feature.cForm = None
+    return token
+
+
+def test_a_whitelisted_hiragana_word_reaches_curation_past_the_script_filter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """R1 end to end through the bridge's own composition.
+
+    A pure-hiragana adjective fails the Japanese kana gate at parse, and with no
+    indexed dictionary nothing recovers it. The whitelist rescues it there, and
+    phase 2 force-includes it past "exclude hiragana-only words".
+    """
+    _runtime_lane()
+    from dataclasses import replace
+
+    import anki_miner.services.definition_service as definition_service
+    import anki_miner.services.subtitle_parser as subtitle_parser
+    from anki_miner.presenters import NullPresenter
+
+    tokens = [_tagger_token("すごい", "形容詞", "一般"), _tagger_token("ね", "助詞", "終助詞")]
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: lambda _text: list(tokens))
+    monkeypatch.setattr(definition_service, "DefinitionService", _DefinedEverywhere)
+    whitelist = tmp_path / "whitelist.txt"
+    whitelist.write_text("すごい\n", encoding="utf-8")
+    subtitle = tmp_path / "episode.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nすごいね\n", encoding="utf-8")
+    config = _japanese_config(
+        tmp_path,
+        use_whitelist=True,
+        whitelist_path=str(whitelist),
+        exclude_hiragana_only_words=True,
+    )
+    # No indexed chain entry: kana recovery (its attestation probe) stays off, so
+    # only the rescue can keep the word.
+    config = replace(config, dictionary_chain=(), include_known_words=True)
+    adapters = SimpleNamespace(presenter=NullPresenter(), cancel_event=threading.Event())
+    anki = SimpleNamespace(verify_card_target=lambda: None)
+    processor = mining._build_processor(config, adapters, anki)
+    curated: list[str] = []
+
+    def curate(words: list[object]) -> None:
+        curated.extend(word.mined_form for word in words)
+        return None  # cancel: phases 3-5 never run
+
+    try:
+        processor.process_episode(tmp_path / "episode.mkv", subtitle, curation_callback=curate)
+    finally:
+        processor.close()
+
+    assert curated == ["すごい"]
 
 
 def test_japanese_composition_keeps_the_known_words_file_and_language(
@@ -187,7 +361,7 @@ def test_japanese_composition_keeps_the_known_words_file_and_language(
 
     monkeypatch.setattr(subtitle_parser, "SubtitleParserService", JapaneseParser)
     paths = AndroidPaths(initialized_bridge_home, tmp_path / "cache", tmp_path / "native")
-    config = map_config_settings({}, paths).engine_config
+    config = map_config_settings({"anki_note_type": "Lapis"}, paths).engine_config
     captured = _compose(monkeypatch, config)
 
     assert captured["known_word_db"]._db_path == initialized_bridge_home / "known_words.db"
@@ -385,7 +559,7 @@ def test_a_hebrew_novel_is_decoded_and_split_with_the_hebrew_seams(tmp_path: Pat
         )
     )
     config = _hebrew_config(tmp_path)
-    loader_kwargs = reading_mining._reading_loader_kwargs(config)
+    loader_kwargs = reading_mining._reading_loader_kwargs(config, "txt")
 
     from anki_miner.languages.registry import get_profile
 
@@ -402,7 +576,81 @@ def test_a_japanese_reading_run_keeps_the_pre_transition_loader_call(tmp_path: P
     import android_bridge.reading_mining as reading_mining
 
     config = SimpleNamespace(known_words_db_path=tmp_path / "known_words.db")
-    assert reading_mining._reading_loader_kwargs(config) == {}
+    # A ja volume keeps the loader's own manga-ocr block gate too.
+    for source_kind in ("txt", "mokuro"):
+        assert reading_mining._reading_loader_kwargs(config, source_kind) == {}
+
+
+def _indonesian_config(tmp_path: Path) -> object:
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    return map_config_settings({"language": "id", "anki_note_type": "Basic"}, paths).engine_config
+
+
+def test_a_mokuro_volume_is_gated_on_the_mining_languages_script(tmp_path: Path) -> None:
+    """Desktop ``load_reading_source``: a volume's blocks pass the language's script gate.
+
+    Indonesian's parser keeps every line (no bilingual-cue gate), the case where
+    the loader otherwise falls back to its Japanese block check. Only the mokuro
+    kind changes; an EPUB keeps the parser's seams.
+    """
+    _runtime_lane()
+    import android_bridge.reading_mining as reading_mining
+    from anki_miner.languages.registry import get_profile
+
+    config = _indonesian_config(tmp_path)
+    mokuro = reading_mining._reading_loader_kwargs(config, "mokuro")
+    epub = reading_mining._reading_loader_kwargs(config, "epub")
+
+    assert mokuro["has_target_script"] == get_profile("id").script.contains_target_script
+    assert "has_target_script" not in epub
+    assert {key: value for key, value in mokuro.items() if key != "has_target_script"} == epub
+
+
+def test_an_indonesian_mokuro_volume_yields_its_own_lines_and_drops_untouched_sfx(tmp_path: Path) -> None:
+    _runtime_lane()
+    import json
+
+    import android_bridge.reading_mining as reading_mining
+    from android_bridge.protocol import encode_message
+
+    job = tmp_path / "reading-job-v1-a"
+    job.mkdir()
+    source = job / "volume.mokuro"
+    blocks = [
+        {"box": [1, 2, 30, 40], "lines": ["Saya suka", "kucing."]},
+        # A translated volume's sound effect, left in Japanese.
+        {"box": [5, 6, 35, 46], "lines": ["ドドド"]},
+    ]
+    volume = {
+        "version": "0.2.4",
+        "title": "Komik",
+        "title_uuid": "title-fixture",
+        "volume": "Jilid 1",
+        "volume_uuid": "volume-fixture",
+        "pages": [{"version": "0.2.4", "img_width": 1, "img_height": 1, "img_path": "001.png", "blocks": blocks}],
+    }
+    source.write_text(json.dumps(volume, ensure_ascii=False), encoding="utf-8")
+    request = reading_mining._parse_request(
+        encode_message(
+            "mining.reading.run",
+            {
+                "sourceKind": "mokuro",
+                "sourcePath": str(source),
+                "imageArchivePath": None,
+                "seriesName": None,
+                "stagingRoot": str(tmp_path),
+                "cacheDir": str(tmp_path),
+                "nativeLibraryDir": "/native",
+                "configSnapshot": {"settings": {"language": "id", "anki_note_type": "Basic"}},
+            },
+        )
+    )
+    loader_kwargs = reading_mining._reading_loader_kwargs(_indonesian_config(tmp_path), "mokuro")
+
+    document = reading_mining._load_document(request, lambda: False, loader_kwargs=loader_kwargs)
+
+    # The balloon's OCR lines join with one space, as a space-delimited language's do.
+    assert [unit.text for unit in document.units] == ["Saya suka kucing."]
 
 
 # ---------------------------------------------------------------- subtitle cues
@@ -539,31 +787,10 @@ def test_the_curation_pane_uses_the_run_languages_lookup_ladder(tmp_path: Path) 
         service.close()
 
 
-# ---------------------------------------------------------------- Jisho guard
+# ---------------------------------------------------------------- dictionary chain
 
 
-def test_a_jisho_entry_under_another_language_is_refused(tmp_path: Path) -> None:
-    """Jisho is Japanese; a Hebrew chain naming it would send Hebrew terms to jisho.org."""
-    _runtime_lane()
-    with pytest.raises(BridgeProtocolError) as refused:
-        _hebrew_config(
-            tmp_path,
-            dictionary_chain=[{"kind": "jisho", "dict_id": None, "enabled": True}],
-        )
-    assert refused.value.code == "invalid_config_field"
-    assert "dictionary_chain.kind" in str(refused.value)
-
-
-def test_a_disabled_jisho_entry_under_another_language_is_refused_too(tmp_path: Path) -> None:
-    _runtime_lane()
-    with pytest.raises(BridgeProtocolError):
-        _hebrew_config(
-            tmp_path,
-            dictionary_chain=[{"kind": "jisho", "dict_id": None, "enabled": False}],
-        )
-
-
-def test_a_hebrew_chain_without_jisho_still_maps(tmp_path: Path) -> None:
+def test_a_hebrew_indexed_chain_maps(tmp_path: Path) -> None:
     _runtime_lane()
     config = _hebrew_config(
         tmp_path,

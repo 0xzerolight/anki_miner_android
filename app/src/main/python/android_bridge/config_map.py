@@ -79,8 +79,6 @@ _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
     "audio_padding": (0.0, None),
     "screenshot_offset": (0.0, None),
     "subtitle_offset": (None, None),
-    # Desktop explicitly warns not to reduce this delay.
-    "jisho_delay": (0.5, None),
     "max_sentence_duration_seconds": (0.0, None),
     # Desktop's own GUI range (media_settings_panel.py).  The engine caps the
     # clip at the word's own duration regardless.
@@ -98,14 +96,18 @@ _INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
     # rejects what would otherwise blow up config construction mid-run.
     "max_parallel_workers": (1, 20),
     "screenshot_animated_quality": (0, 100),
+    # Desktop's Size presets (media_settings_panel.py). Desktop checks only that each is an int;
+    # ffmpeg's fps and scale filters need it positive.
+    "screenshot_animated_fps": (1, None),
+    "screenshot_animated_height": (1, None),
 }
 _LITERAL_FIELDS: Mapping[str, frozenset[str]] = {
     "card_type": frozenset({"", "word_and_sentence", "click", "sentence", "audio"}),
     "audio_format": frozenset({"mp3", "opus"}),
     "pitch_category_format": frozenset({"jp", "romaji"}),
-    # Kotlin resolves this from the device's MIME table, not the user: an
-    # API level that cannot name a .avif file makes AnkiDroid store the clip
-    # as .bin, which the engine has no way to detect.
+    # The user's choice, downgraded by Kotlin to webp where the device's MIME
+    # table cannot name a .avif file: AnkiDroid would store the clip as .bin,
+    # which the engine has no way to detect.
     "screenshot_animated_format": frozenset({"avif", "webp"}),
 }
 _STRING_TUPLE_FIELDS = frozenset({"excluded_decks", "allowed_pos", "excluded_subtypes", "excluded_wordsets"})
@@ -425,25 +427,19 @@ def _enabled(field_name: str, item: Mapping[str, object]) -> bool:
 
 def _dictionary_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
     result: list[object] = []
-    identities: set[tuple[str, str | None]] = set()
+    identities: set[str] = set()
     for raw in _chain_items("dictionary_chain", value):
         item = _entry_mapping("dictionary_chain", raw, frozenset({"kind", "dict_id", "enabled"}))
-        kind = item.get("kind")
-        if kind == "indexed":
-            dict_id: str | None = _resource_id("dictionary_chain.dict_id", item.get("dict_id"))
-        elif kind == "jisho":
-            if item.get("dict_id") is not None:
-                raise _invalid("dictionary_chain.dict_id", "jisho entries must use null")
-            dict_id = None
-        else:
-            raise _invalid("dictionary_chain.kind", "expected 'indexed' or 'jisho'")
-        identity = (kind, dict_id)
-        if identity in identities:
+        # Desktop v3.8.0 removed the online Jisho provider; every entry is an indexed dictionary.
+        if item.get("kind") != "indexed":
+            raise _invalid("dictionary_chain.kind", "expected 'indexed'")
+        dict_id = _resource_id("dictionary_chain.dict_id", item.get("dict_id"))
+        if dict_id in identities:
             raise _invalid("dictionary_chain", "duplicate provider")
-        identities.add(identity)
+        identities.add(dict_id)
         result.append(
             constructor(
-                kind=kind,
+                kind="indexed",
                 dict_id=dict_id,
                 enabled=_enabled("dictionary_chain.enabled", item),
             )
@@ -696,13 +692,7 @@ def map_config_settings(
         elif field_name in _MAPPING_FIELDS:
             updates[field_name] = _anki_mapping_overlay(field_name, value, getattr(base, field_name))
         elif field_name == "dictionary_chain":
-            chain = _dictionary_chain(value, ChainEntry)
-            # Jisho is a Japanese dictionary, and the declared network egress is Japanese
-            # lookups: the engine would send any language's terms to jisho.org, so a Jisho
-            # entry under another language is refused rather than dropped.
-            if language != JAPANESE and any(getattr(entry, "kind", None) == "jisho" for entry in chain):
-                raise _invalid("dictionary_chain.kind", "jisho is offered only for Japanese")
-            updates[field_name] = chain
+            updates[field_name] = _dictionary_chain(value, ChainEntry)
         elif field_name == "frequency_chain":
             updates[field_name] = _frequency_chain(value, FreqEntry)
         elif field_name == "pitch_chain":
@@ -724,19 +714,17 @@ def map_config_settings(
         "expression_audio_chain",
         _default_expression_audio_chain(base, language, AudioSourceEntry),
     )
-    # Pinned rather than exposed.  fps/height stay at the desktop defaults so a
-    # card mined on the phone matches one mined on the desktop.  The format is
-    # deliberately NOT pinned here: Kotlin resolves it from the device MIME
-    # table, because a .avif AnkiDroid cannot name is stored as .bin and the
-    # engine has no way to detect that.
+    # Animated fps/height arrive like any other exposed field, and an absent
+    # one keeps the base config's desktop default (20 fps, 720 px), which is
+    # what every snapshot carried before the two were settings.  Kotlin still
+    # downgrades the format to webp where the device MIME table cannot name a
+    # .avif: AnkiDroid stores such a file as .bin and the engine cannot tell.
     #
     # ``screenshot_animated_match_audio`` used to be pinned False on the grounds
     # that it silently overrides the clip duration the user can see.  Desktop
     # answers that by disabling the clip-duration widget while the box is
     # ticked (media_settings_panel.py), so Android exposes the field and does
     # the same rather than withholding a control desktop offers.
-    updates["screenshot_animated_fps"] = 20
-    updates["screenshot_animated_height"] = 720
     # ``AudioStage.reading_tts_active`` has a settled four-part desktop gate:
     # injected fetcher, master flag, mapped audio field, and a provider bit.
     # Android uses the Google-named bit only as the final compatibility gate;

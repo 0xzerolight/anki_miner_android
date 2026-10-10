@@ -145,8 +145,10 @@
               "猫",
               "食べる"
             ],
+            "minedFormsLanguage": "ja",
             "ankiWriteState": "note_write_confirmed",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": []
           }
         }
       }

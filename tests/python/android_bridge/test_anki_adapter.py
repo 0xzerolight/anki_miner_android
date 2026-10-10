@@ -933,7 +933,8 @@ class FakeKotlinAnki:
 def _config(home: Path, **changes: object) -> Any:
     from anki_miner.config import AnkiMinerConfig
 
-    base = AnkiMinerConfig(dicts_root=home / "dicts")
+    # The engine default note type is "" (nothing chosen); Kotlin always sends one.
+    base = AnkiMinerConfig(dicts_root=home / "dicts", anki_note_type="Lapis")
     return replace(base, **changes)
 
 
@@ -6658,3 +6659,113 @@ def test_a_hebrew_note_is_built_right_to_left_with_its_own_card_fields(
     note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
     assert 'dir="rtl"' in note["fields"]["Expression"]
     assert 'lang="he"' in note["fields"]["Expression"]
+
+
+# --------------------------------------------------- why a payload made no note (not-mined report)
+#
+# Desktop ``AnkiService.last_not_created``: the engine's ``_stamp_not_mined`` reads it
+# back as "Anki already has a card for it" (duplicate) or "Anki did not confirm the
+# card" (refused, uncertain). A payload in neither it nor last_created_mined_forms was
+# never reached.
+
+
+def test_not_created_names_a_collection_duplicate_the_probe_skipped(initialized_bridge_home: Path) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = ["既存"]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    adapter.create_cards_batch([_card("既存"), _card("猫")])
+
+    assert adapter.last_not_created == {"既存": "duplicate"}
+    assert adapter.last_created_mined_forms == ["猫"]
+
+
+def test_not_created_names_a_repeat_of_a_front_this_call_already_carries(initialized_bridge_home: Path) -> None:
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    adapter.create_cards_batch([_card("猫"), _card("犬"), _card("犬")])
+
+    assert adapter.last_not_created == {"犬": "duplicate"}
+    assert adapter.last_created_mined_forms == ["猫", "犬"]
+
+
+def test_not_created_names_a_front_excluded_deck_admission_refused(initialized_bridge_home: Path) -> None:
+    kotlin = FakeKotlinAnki()
+    _excluded_deck_collection(kotlin, [("Main", "犬")])
+    adapter = _adapter(_config(initialized_bridge_home, excluded_decks=("Archive",)), kotlin)
+
+    adapter.create_cards_batch([_card("犬"), _card("猫")])
+
+    assert adapter.last_not_created == {"犬": "duplicate"}
+
+
+def test_not_created_names_a_duplicate_the_provider_found_after_the_probe(initialized_bridge_home: Path) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.create_scripts = [(["created", "duplicate"], None)]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    adapter.create_cards_batch([_card("猫"), _card("犬")])
+
+    assert adapter.last_not_created == {"犬": "duplicate"}
+
+
+def test_not_created_names_every_unsuccessful_slot_of_a_failed_batch_refused(initialized_bridge_home: Path) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+
+    kotlin = FakeKotlinAnki()
+    kotlin.create_scripts = [
+        (
+            ["created", "failed", "notAttempted"],
+            {"code": "write_failed", "message": "write exploded", "retryable": False},
+        )
+    ]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    with pytest.raises(AnkiConnectionError):
+        adapter.create_cards_batch([_card("猫"), _card("犬"), _card("鳥")])
+
+    assert adapter.last_not_created == {"犬": "refused", "鳥": "refused"}
+    assert adapter.last_created_mined_forms == ["猫"]
+
+
+def test_not_created_names_a_note_over_a_size_limit_refused(initialized_bridge_home: Path) -> None:
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    adapter.create_cards_batch(
+        [_card("猫"), _card("犬", definition="x" * (_MAX_FIELD_VALUE_UTF8_BYTES + 1)), _card("鳥")]
+    )
+
+    assert adapter.last_not_created == {"犬": "refused"}
+
+
+def test_not_created_names_a_submitted_batch_no_answer_confirmed_uncertain(initialized_bridge_home: Path) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+
+    kotlin = FakeKotlinAnki()
+    kotlin.errors["createNotes"] = ("write_failed", "provider died", False)
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    with pytest.raises(AnkiConnectionError):
+        adapter.create_cards_batch([_card("猫"), _card("犬")])
+
+    assert adapter.last_not_created == {"猫": "uncertain", "犬": "uncertain"}
+    assert adapter.last_created_note_ids == []
+
+
+def test_not_created_is_reset_by_every_call_including_an_empty_one(initialized_bridge_home: Path) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = ["既存"]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    assert adapter.last_not_created == {}
+
+    adapter.create_cards_batch([_card("既存")])
+    assert adapter.last_not_created == {"既存": "duplicate"}
+
+    adapter.create_cards_batch([_card("猫")])
+    assert adapter.last_not_created == {}
+
+    adapter.create_cards_batch([_card("既存")])
+    adapter.create_cards_batch([])
+    assert adapter.last_not_created == {}

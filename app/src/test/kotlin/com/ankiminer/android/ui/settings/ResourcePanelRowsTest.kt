@@ -23,15 +23,13 @@ class ResourcePanelRowsTest {
                         ResourceChainSelection("jitendex", enabled = true),
                     ),
                 installed = listOf(dictionary("jitendex"), dictionary("custom1", catalogResourceId = null)),
-                jishoEnabled = false,
                 strings = dictionaryStrings,
                 onChainChange = {},
-                onJishoChange = {},
                 onRepair = {},
                 onReplace = {},
             )
 
-        assertEquals(listOf("custom1", "jitendex", JISHO_ROW_ID), rows.map { it.id })
+        assertEquals(listOf("custom1", "jitendex"), rows.map { it.id })
         assertFalse(rows[0].enabled)
         assertTrue(rows[1].enabled)
         assertEquals("Name of custom1", rows[0].title)
@@ -44,10 +42,8 @@ class ResourcePanelRowsTest {
             dictionaryPanelRows(
                 chain = listOf(ResourceChainSelection("jitendex")),
                 installed = listOf(dictionary("jitendex", entryCount = 0)),
-                jishoEnabled = false,
                 strings = dictionaryStrings,
                 onChainChange = {},
-                onJishoChange = {},
                 onRepair = {},
                 onReplace = {},
             )
@@ -64,10 +60,8 @@ class ResourcePanelRowsTest {
             dictionaryPanelRows(
                 chain = listOf(ResourceChainSelection("ghost")),
                 installed = emptyList(),
-                jishoEnabled = false,
                 strings = dictionaryStrings,
                 onChainChange = {},
-                onJishoChange = {},
                 onRepair = {},
                 onReplace = {},
             )
@@ -75,7 +69,6 @@ class ResourcePanelRowsTest {
         val ghost = rows.single { it.id == "ghost" }
         assertEquals("ghost", ghost.title)
         assertEquals("missing", ghost.warning)
-        assertTrue(ghost.removable)
         assertNull(ghost.quietAction)
     }
 
@@ -87,10 +80,8 @@ class ResourcePanelRowsTest {
                 chain = emptyList(),
                 installed =
                     listOf(dictionary("jitendex", catalogResourceId = "jitendex-2024", valid = false)),
-                jishoEnabled = false,
                 strings = dictionaryStrings,
                 onChainChange = {},
-                onJishoChange = {},
                 onRepair = { repaired = it },
                 onReplace = { throw AssertionError("catalog slot must not offer Replace") },
             )
@@ -110,10 +101,8 @@ class ResourcePanelRowsTest {
                 chain = listOf(ResourceChainSelection("jitendex")),
                 installed =
                     listOf(dictionary("jitendex", catalogResourceId = "jitendex-2024", valid = false)),
-                jishoEnabled = false,
                 strings = dictionaryStrings,
                 onChainChange = {},
-                onJishoChange = {},
                 onRepair = { repaired = it },
                 onReplace = { throw AssertionError("catalog slot must not offer Replace") },
             )
@@ -132,15 +121,13 @@ class ResourcePanelRowsTest {
             dictionaryPanelRows(
                 chain = emptyList(),
                 installed = listOf(dictionary("custom1").copy(occupied = false)),
-                jishoEnabled = false,
                 strings = dictionaryStrings,
                 onChainChange = {},
-                onJishoChange = {},
                 onRepair = {},
                 onReplace = {},
             )
 
-        assertEquals(listOf(JISHO_ROW_ID), rows.map { it.id })
+        assertEquals(emptyList<String>(), rows.map { it.id })
     }
 
     @Test
@@ -150,10 +137,8 @@ class ResourcePanelRowsTest {
             dictionaryPanelRows(
                 chain = listOf(ResourceChainSelection("custom1")),
                 installed = listOf(dictionary("custom1", catalogResourceId = null)),
-                jishoEnabled = false,
                 strings = dictionaryStrings,
                 onChainChange = {},
-                onJishoChange = {},
                 onRepair = { throw AssertionError("a custom slot has no catalog resource") },
                 onReplace = { replaced = it },
             )
@@ -171,10 +156,8 @@ class ResourcePanelRowsTest {
             dictionaryPanelRows(
                 chain = listOf(ResourceChainSelection("jitendex")),
                 installed = listOf(dictionary("jitendex")),
-                jishoEnabled = false,
                 strings = dictionaryStrings,
                 onChainChange = {},
-                onJishoChange = {},
                 onRepair = { throw AssertionError("a healthy slot has nothing to repair") },
                 onReplace = { replaced = it },
             )
@@ -183,33 +166,6 @@ class ResourcePanelRowsTest {
         assertEquals("Replace", healthy.quietAction?.label)
         healthy.quietAction?.onClick?.invoke()
         assertEquals("jitendex", replaced)
-    }
-
-    @Test
-    fun `Jisho is pinned last and can only be toggled`() {
-        var toggled: Boolean? = null
-        val rows =
-            dictionaryPanelRows(
-                chain = listOf(ResourceChainSelection("jitendex")),
-                installed = listOf(dictionary("jitendex")),
-                jishoEnabled = true,
-                strings = dictionaryStrings,
-                onChainChange = {},
-                onJishoChange = { toggled = it },
-                onRepair = {},
-                onReplace = {},
-            )
-
-        val jisho = rows.last()
-        assertEquals(JISHO_ROW_ID, jisho.id)
-        assertEquals("Jisho", jisho.title)
-        assertEquals(listOf("Online"), jisho.metadata)
-        assertEquals("rate-limited", jisho.warning)
-        assertTrue(jisho.enabled)
-        assertFalse(jisho.movable)
-        assertFalse(jisho.removable)
-        jisho.onToggle?.invoke(false)
-        assertEquals(false, toggled)
     }
 
     @Test
@@ -227,7 +183,6 @@ class ResourcePanelRowsTest {
         assertNull(unchained.onToggle)
         assertFalse(unchained.enabled)
         assertFalse(unchained.movable)
-        assertTrue(unchained.removable)
         assertTrue("not in chain" in unchained.metadata)
         assertEquals("repair", unchained.warning)
     }
@@ -328,9 +283,6 @@ class ResourcePanelRowsTest {
             rows = rowStrings,
             repairAction = "Repair",
             replaceAction = "Replace",
-            jishoTitle = "Jisho",
-            jishoMeta = "Online",
-            jishoWarning = "rate-limited",
         )
 
     private fun dictionary(

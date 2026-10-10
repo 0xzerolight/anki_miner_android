@@ -249,7 +249,7 @@ class ReadingMiningViewModelTest {
             val savedState = SavedStateHandle()
             val before = RecordingReadingRepository()
             ReadingMiningViewModel(before, ImmediateSafBroker(), savedStateHandle = savedState)
-            before.transitionTo(MiningRunState.Success("run", result()))
+            before.transitionTo(MiningRunState.Success("run", result().copy(minedFormsLanguage = "de")))
             runCurrent()
 
             val undo = RecordingUndoManager()
@@ -270,7 +270,7 @@ class ReadingMiningViewModelTest {
 
             val expected = result()
             assertEquals(
-                listOf(RecordingUndoManager.UndoCall("run", expected.cardIds, expected.minedForms)),
+                listOf(RecordingUndoManager.UndoCall("run", expected.cardIds, expected.minedForms, "de")),
                 undo.calls,
             )
             assertNull(MiningReceiptStore(savedState, "readingMining.receipt").restore())
@@ -1599,7 +1599,7 @@ class ReadingMiningViewModelTest {
     fun confirmUndoPassesTheExactRunIdNoteIdsAndMinedForms() =
         runTest(mainDispatcherRule.dispatcher) {
             val processingResult =
-                result().copy(cardIds = listOf(1L, 2L, 3L), minedForms = listOf("食べる", "見る"))
+                result().copy(cardIds = listOf(1L, 2L, 3L), minedForms = listOf("食べる", "見る"), minedFormsLanguage = "de")
             val repository =
                 RecordingReadingRepository(initialState = MiningRunState.Success("run-1", processingResult))
             val undoManager = RecordingUndoManager()
@@ -1615,6 +1615,7 @@ class ReadingMiningViewModelTest {
             assertEquals("run-1", call.runId)
             assertEquals(listOf(1L, 2L, 3L), call.noteIds)
             assertEquals(listOf("食べる", "見る"), call.minedForms)
+            assertEquals("de", call.minedFormsLanguage)
             assertNull(viewModel.uiState.value.undoConfirmationNoteCount)
         }
 
@@ -1740,14 +1741,20 @@ class ReadingMiningViewModelTest {
 
         val calls = mutableListOf<UndoCall>()
 
-        data class UndoCall(val runId: String, val noteIds: List<Long>, val minedForms: List<String>)
+        data class UndoCall(
+            val runId: String,
+            val noteIds: List<Long>,
+            val minedForms: List<String>,
+            val minedFormsLanguage: String = "",
+        )
 
         override suspend fun undoRun(
             runId: String,
             noteIds: List<Long>,
             minedForms: List<String>,
+            minedFormsLanguage: String,
         ): UndoRunOutcome {
-            calls += UndoCall(runId, noteIds, minedForms)
+            calls += UndoCall(runId, noteIds, minedForms, minedFormsLanguage)
             mutableUndoActive.value = true
             gate?.await()
             val result = outcome

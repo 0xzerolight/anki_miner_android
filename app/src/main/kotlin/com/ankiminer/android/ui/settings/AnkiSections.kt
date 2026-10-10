@@ -38,6 +38,8 @@ import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.engine.LanguageExtraCardField
+import com.ankiminer.android.ui.links.AppLinks
+import com.ankiminer.android.ui.links.rememberExternalLinkOpener
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
@@ -115,7 +117,7 @@ internal fun AnkiTargetCard(
     onSetFieldMapping: (String, String) -> Unit,
     onSelectCardType: (CardType?) -> Unit,
     onSelectCardTypeMarker: (String) -> Unit,
-    onRemapFields: () -> Unit,
+    onFillFieldsAutomatically: () -> Unit,
     mappingExpanded: Boolean? = null,
     onMappingExpandedChange: (Boolean) -> Unit = {},
     inlineFailure: (@Composable () -> Unit)? = null,
@@ -179,17 +181,28 @@ internal fun AnkiTargetCard(
                             ),
                         )
                     }
-                    // Selecting a note type maps its fields; selecting the SAME one again does
-                    // nothing. This is the way back for a map made against an older keyword table,
-                    // and it has to sit outside the collapsed section to be found at all.
+                    // Desktop's "Fill in automatically": a recognised note type (Lapis, Kiku, Senren,
+                    // Anki Miner Note) is filled completely, anything else by keyword. Selecting the
+                    // SAME note type again does nothing, so this is also the way back for a map made
+                    // against an older keyword table; it sits outside the collapsed section to be found.
                     SecondaryActionButton(
-                        onClick = onRemapFields,
+                        onClick = onFillFieldsAutomatically,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy && fields.isNotEmpty(),
                     ) {
                         Text(stringResource(R.string.anki_field_mapping_remap))
                     }
                     SupportingText(stringResource(R.string.anki_field_mapping_remap_help))
+                    state.fieldFillCount?.let { filled ->
+                        Text(
+                            if (filled > 0) {
+                                stringResource(R.string.anki_field_fill_done, filled)
+                            } else {
+                                stringResource(R.string.anki_field_fill_none)
+                            },
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
                     if (showMapping) {
                     fieldKeys.forEach { key ->
                         // A language field is named by its profile's suggestion, which is the Anki
@@ -347,12 +360,17 @@ internal fun WizardAnkiTargetCard(
                 )
                 if (state.noteType == null) {
                     SupportingText(stringResource(R.string.wizard_note_type_help))
+                    AnkiMinerNoteOffer()
                 } else {
                     Text(
                         fieldMappingLine(state.fieldKeys, state.fieldMap, state.extraCardFields),
                         style = MaterialTheme.typography.bodySmall,
                     )
                     NoteTypeQualitySummary(state)
+                    // Desktop's wizard offers it whenever the pick cannot hold mined cards: here, once
+                    // verification says so (the limited-note-type warning above).
+                    val quality = state.noteTypeQuality
+                    if (quality.writableAndDedupSafe && !quality.usefulForMining) AnkiMinerNoteOffer()
                 }
                 // "Verified writable and dedup-safe" said nothing a user can act on; only a
                 // problem earns the line.
@@ -364,6 +382,19 @@ internal fun WizardAnkiTargetCard(
                 }
             }
         }
+    }
+}
+
+/** For a user with no note type for mining: Anki Miner Note serves every language and maps itself. */
+@Composable
+private fun AnkiMinerNoteOffer() {
+    val openLink = rememberExternalLinkOpener()
+    SupportingText(stringResource(R.string.wizard_note_type_get_anki_miner_note_help))
+    TextButton(
+        onClick = { openLink(AppLinks.ANKI_MINER_NOTE_RELEASES) },
+        colors = accentTextButtonColors(),
+    ) {
+        Text(stringResource(R.string.wizard_note_type_get_anki_miner_note))
     }
 }
 

@@ -69,6 +69,7 @@ def schemas() -> dict[str, dict[str, Any]]:
         "dictionary": _load_schema("dictionary.schema.json"),
         "subtitle_cues": _load_schema("subtitle-cues.schema.json"),
         "audio_tracks": _load_schema("audio-tracks.schema.json"),
+        "note_type_fill": _load_schema("note-type-fill.schema.json"),
     }
 
 
@@ -117,6 +118,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
             "source": "Source",
             "expression_audio": "ExpressionAudio",
             "sentence_translation": "Translation",
+            "language": "Language",
         },
         "card_type": "word_and_sentence",
         "card_type_marker_fields": {
@@ -136,15 +138,16 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "screenshot_animated_clip_duration": 2.0,
         "screenshot_animated_quality": 30,
         "screenshot_animated_match_audio": False,
+        "screenshot_animated_fps": 12,
+        "screenshot_animated_height": 480,
         "subtitle_offset": -0.2,
         "allowed_pos": ["名詞", "動詞"],
         "excluded_subtypes": ["数詞"],
         "excluded_wordsets": ["given-names"],
         "dictionary_chain": [
             {"kind": "indexed", "dict_id": "jmdict-english", "enabled": True},
-            {"kind": "jisho", "dict_id": None, "enabled": False},
+            {"kind": "indexed", "dict_id": "jitendex", "enabled": False},
         ],
-        "jisho_delay": 0.5,
         "expression_audio_chain": [{"kind": "pack", "pack_id": "local-audio", "enabled": True}],
         "reading_tts_enabled": True,
         "pitch_category_format": "romaji",
@@ -281,6 +284,41 @@ def test_subtitle_cues_contract_rejects_reversed_intervals(
     Draft202012Validator(schemas["subtitle_cues"]).validate(payload)
     with pytest.raises(BridgeProtocolError, match="end >= start >= 0"):
         encode_message("subtitle.cues.result", payload)
+
+
+def test_note_type_fill_schema_accepts_valid_and_rejects_invalid_requests_and_results(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    validator = Draft202012Validator(schemas["note_type_fill"])
+    preset = {
+        "id": "senren",
+        "name": "Senren",
+        "pitchCategoryFormat": "romaji",
+        "cardTypeMarkerFields": {
+            "word_and_sentence": "",
+            "click": "",
+            "sentence": "sentenceCard",
+            "audio": "audioCard",
+        },
+        "supportedCardTypes": ["", "sentence", "audio"],
+        "boldTargetInSentence": False,
+    }
+    validator.validate({"fieldNames": ["word", "sentence"], "language": "ja"})
+    validator.validate({"preset": preset, "fields": {"word": "word", "sentence_reading": ""}, "extraFields": {}})
+    validator.validate({"preset": None, "fields": {"word": "Front"}, "extraFields": {"pos": "POS"}})
+
+    for invalid in (
+        {"fieldNames": ["word"]},
+        {"fieldNames": ["word"], "language": "Japanese"},
+        {"fieldNames": ["word", "word"], "language": "ja"},
+        {"preset": {**preset, "supportedCardTypes": ["sentence"]}, "fields": {}, "extraFields": {}},
+        {"preset": {**preset, "url": "https://example.invalid"}, "fields": {}, "extraFields": {}},
+        {"preset": {**preset, "pitchCategoryFormat": "kana"}, "fields": {}, "extraFields": {}},
+        {"preset": None, "fields": {"Word": "Front"}, "extraFields": {}},
+        {"preset": None, "fields": {}},
+    ):
+        with pytest.raises(ValidationError):
+            validator.validate(invalid)
 
 
 def test_audio_tracks_schema_accepts_valid_and_rejects_invalid_requests_and_results(
@@ -675,6 +713,88 @@ def test_whitelist_coverage_never_crosses_the_result_wire(
     event = json.loads(raw_events[0])
     Draft202012Validator(schemas["engine_events"], registry=_cross_schema_registry(schemas)).validate(event)
     assert "whitelistCoverage" not in event["payload"]["result"]
+
+
+def test_not_mined_report_and_its_language_cross_the_result_wire(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    """Every result carries both since v3.8.0: the terminal and the presenter event validate.
+
+    ``not_mined`` maps an Enum to frozensets, which has no JSON form of its own;
+    the bridge sends its ordered groups instead, and Kotlin decodes a result
+    against an exact key set.
+    """
+    from android_bridge import mining
+    from anki_miner.models.processing import NotMinedReason, NotMinedReport, ProcessingResult
+
+    result = ProcessingResult(
+        total_words_found=2,
+        new_words_found=1,
+        cards_created=1,
+        card_ids=[7],
+        mined_forms=["猫"],
+        mined_forms_language="ja",
+        video_file="/video.mkv",
+        subtitle_file="/subtitle.srt",
+        not_mined=NotMinedReport.from_drops({"犬": NotMinedReason.KNOWN}, mined=frozenset({"猫"})),
+    )
+
+    _outcome, raw_terminal = mining._result_terminal("run_" + "a" * 32, result)
+    terminal = json.loads(raw_terminal)
+    Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas)).validate(terminal)
+    assert terminal["payload"]["result"]["notMined"] == [{"reason": "known", "forms": ["犬"]}]
+    assert terminal["payload"]["result"]["minedFormsLanguage"] == "ja"
+    assert terminal["payload"]["result"]["minedForms"] == ["猫"]
+
+    raw_events: list[str] = []
+
+    class Callbacks:
+        def onPresenterEvent(self, raw: str) -> None:
+            raw_events.append(raw)
+
+    registry = JobRegistry()
+    adapters = CallbackAdapters(Callbacks(), registry, registry.begin())
+    adapters.presenter.show_processing_result(result)
+
+    event = json.loads(raw_events[0])
+    Draft202012Validator(schemas["engine_events"], registry=_cross_schema_registry(schemas)).validate(event)
+    assert event["payload"]["result"]["notMined"] == [{"reason": "known", "forms": ["犬"]}]
+
+
+def test_not_mined_reason_enum_is_the_engines_in_declaration_order(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    """Kotlin pins its ``NotMinedReason`` to this enum; the engine is the authority for both."""
+    from anki_miner.models.processing import NotMinedReason
+
+    group = schemas["mining"]["$defs"]["notMinedGroup"]
+    assert group["properties"]["reason"]["enum"] == [reason.value for reason in NotMinedReason]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("notMined", [{"reason": "typo", "forms": ["猫"]}]),
+        ("notMined", [{"reason": "known", "forms": []}]),
+        ("notMined", [{"reason": "known", "forms": ["猫"], "extra": True}]),
+        ("minedFormsLanguage", "JA"),
+        ("minedFormsLanguage", "japanese"),
+    ],
+)
+def test_processing_result_schema_rejects_a_malformed_report_or_language(
+    schemas: dict[str, dict[str, Any]],
+    field: str,
+    value: object,
+) -> None:
+    from android_bridge import mining
+    from anki_miner.models.processing import ProcessingResult
+
+    _outcome, raw_terminal = mining._result_terminal("run_" + "a" * 32, ProcessingResult(1, 0, 0))
+    terminal = json.loads(raw_terminal)
+    validator = Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas))
+    validator.validate(terminal)
+    terminal["payload"]["result"][field] = value
+    assert list(validator.iter_errors(terminal))
 
 
 def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
@@ -1520,6 +1640,9 @@ def test_config_schema_accepts_blank_desktop_field_mappings(
         ("screenshot_animated_clip_duration", 0.1),
         ("screenshot_animated_quality", 101),
         ("screenshot_animated_quality", -1),
+        ("screenshot_animated_fps", 0),
+        ("screenshot_animated_fps", 1.5),
+        ("screenshot_animated_height", 0),
     ],
 )
 def test_config_schema_rejects_out_of_range_animated_screenshot_settings(

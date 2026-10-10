@@ -465,6 +465,7 @@ internal class MiningReceiptStore(
     private val deckKey = "$keyPrefix.deck"
     private val noteIdsKey = "$keyPrefix.noteIds"
     private val formsKey = "$keyPrefix.minedForms"
+    private val languageKey = "$keyPrefix.minedFormsLanguage"
 
     fun save(receipt: MiningReceipt) {
         // A huge run would bloat the saved-state Bundle past the Binder limit; it keeps no receipt.
@@ -477,6 +478,7 @@ internal class MiningReceiptStore(
         savedStateHandle[deckKey] = receipt.deckName
         savedStateHandle[noteIdsKey] = receipt.noteIds.toLongArray()
         savedStateHandle[formsKey] = ArrayList(receipt.minedForms)
+        savedStateHandle[languageKey] = receipt.minedFormsLanguage
     }
 
     fun restore(): MiningReceipt? {
@@ -484,10 +486,12 @@ internal class MiningReceiptStore(
         val notesAdded = savedStateHandle.get<Long>(notesKey) ?: return null
         val noteIds = savedStateHandle.get<LongArray>(noteIdsKey)?.toList() ?: return null
         val forms = savedStateHandle.get<ArrayList<String>>(formsKey)?.toList() ?: return null
-        return MiningReceipt(runId, notesAdded, savedStateHandle.get<String>(deckKey), noteIds, forms)
+        // Absent from a receipt saved before the run language was kept: Undo then uses the live language.
+        val language = savedStateHandle.get<String>(languageKey).orEmpty()
+        return MiningReceipt(runId, notesAdded, savedStateHandle.get<String>(deckKey), noteIds, forms, language)
     }
 
     fun clear() {
-        listOf(runIdKey, notesKey, deckKey, noteIdsKey, formsKey).forEach { savedStateHandle.remove<Any>(it) }
+        listOf(runIdKey, notesKey, deckKey, noteIdsKey, formsKey, languageKey).forEach { savedStateHandle.remove<Any>(it) }
     }
 }

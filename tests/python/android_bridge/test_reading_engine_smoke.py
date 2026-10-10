@@ -88,6 +88,7 @@ def _reading_request(
     source_path: Path,
     image_archive_path: Path | None = None,
     series_name: str | None = None,
+    settings: dict[str, object] | None = None,
 ) -> str:
     return encode_message(
         "mining.reading.run",
@@ -100,7 +101,9 @@ def _reading_request(
             "cacheDir": str(cache_dir),
             "nativeLibraryDir": str(cache_dir / "native"),
             "configSnapshot": {
-                "settings": {},
+                # Kotlin always names the note type; config_map refuses the engine's blank default.
+                # Only the run's log receipt reads it, so the snapshot output is unchanged.
+                "settings": {"anki_note_type": "Lapis", **(settings or {})},
                 "androidTtsEnabled": False,
             },
         },
@@ -670,3 +673,120 @@ def test_actual_process_reading_mines_loaded_mokuro_document(
     assert re.fullmatch(r"reading_[0-9a-f]{12}\.jpg", card.media.screenshot_filename)
     assert anki.image_bytes.startswith(b"\xff\xd8\xff")
     assert parser.received_units == document.units
+
+
+class _TwoWordParser:
+    """One subtitle word Anki already knows (猫) and one no dictionary defines (犬)."""
+
+    def __init__(self, tokenized_word_type: type) -> None:
+        self._tokenized_word_type = tokenized_word_type
+
+    def parse_text_units(
+        self,
+        units: list[object],
+        want_line_index: bool,
+        *,
+        subtitle_cleanup: bool = False,
+    ) -> tuple[list[object], None, collections.Counter[str]]:
+        words = [
+            self._tokenized_word_type(
+                surface=surface,
+                lemma=surface,
+                reading=reading,
+                sentence=unit.text,
+                start_time=float(unit.index),
+                end_time=float(unit.index),
+                duration=0.0,
+                pos="名詞",
+                surface_start=0,
+                surface_end=1,
+                highlight_end=1,
+            )
+            for surface, reading, unit in (("猫", "ネコ", units[0]), ("犬", "イヌ", units[1]))
+        ]
+        return words, None, collections.Counter({"猫": 1, "犬": 1})
+
+
+class _UndefinedDefinitions(_DefinitionService):
+    def get_definitions_batch(
+        self,
+        pairs: list[tuple[str, str | None]],
+        progress_callback: object | None,
+        fallback_context: dict[str, tuple[str, str | None]],
+        **_kwargs: object,
+    ) -> list[str]:
+        self.lookup_pairs = list(pairs)
+        return ["" for _pair in pairs]
+
+    def css_entries(self) -> list[object]:
+        return []
+
+
+class _KnowsCat(_AnkiService):
+    def get_existing_vocabulary(self, *, allow_degraded: bool = True) -> set[str]:
+        return {"猫"}
+
+    def create_cards_batch(self, card_data: list[object], progress_callback: object | None = None) -> list[int]:
+        # One word is known and the other has no definition: nothing is left to card.
+        assert card_data == []
+        return []
+
+
+@pytest.mark.parametrize("language", ["ja", "de"])
+def test_a_run_reports_why_its_words_were_not_mined_and_stamps_its_language(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    language: str,
+) -> None:
+    """The real processor's not-mined report and run language reach the terminal Kotlin decodes."""
+    pytest.importorskip("pysubs2")
+    pytest.importorskip("requests")
+
+    from android_bridge import mining
+    from anki_miner.models import TokenizedWord
+    from anki_miner.orchestration.episode_processor import EpisodeProcessor
+    from anki_miner.presenters import NullPresenter
+    from anki_miner.services.word_filter import WordFilterService
+
+    source = _write_subtitle_fixture(tmp_path / "reading-job-v1-not-mined")
+    request = reading_mining._parse_request(
+        _reading_request(
+            cache_dir=tmp_path,
+            source_kind="subtitle",
+            source_path=source,
+            series_name="Imported subtitles",
+            settings={"language": language},
+        )
+    )
+    document = reading_mining._load_document(request)
+    config = replace(
+        reading_mining._map_config(request, initialized_bridge_home),
+        include_known_words=False,
+        use_known_words_db=False,
+        bypass_optional_filters=True,
+        reading_min_occurrence=1,
+        use_i_plus_one_filter=False,
+    )
+    processor = EpisodeProcessor(
+        config=config,
+        subtitle_parser=_TwoWordParser(TokenizedWord),
+        word_filter=WordFilterService(config),
+        media_extractor=object(),
+        definition_service=_UndefinedDefinitions(),
+        anki_service=_KnowsCat(),
+        presenter=NullPresenter(),
+    )
+    try:
+        result = processor.process_reading(document)
+    finally:
+        processor.close()
+
+    assert result.errors == []
+    _outcome, raw_terminal = mining._result_terminal("run_" + "a" * 32, result)
+    wire = json.loads(raw_terminal)["payload"]["result"]
+
+    assert wire["notMined"] == [
+        {"reason": "known", "forms": ["猫"]},
+        {"reason": "no_definition", "forms": ["犬"]},
+    ]
+    assert wire["minedFormsLanguage"] == language

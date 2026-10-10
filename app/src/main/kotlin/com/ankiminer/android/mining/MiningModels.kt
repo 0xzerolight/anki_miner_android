@@ -150,6 +150,50 @@ data class ProcessingResult(
     val minedForms: List<String>,
     val ankiWriteState: AnkiWriteState,
     val failureIsTransient: Boolean,
+    /** Why the words the run saw made no card, in pipeline order; null when the engine sent none. */
+    val notMined: List<NotMinedGroup>? = null,
+    /** The mining language whose known-words list holds [minedForms]; blank when the engine did not stamp it. */
+    val minedFormsLanguage: String = "",
+)
+
+/**
+ * Why a word the run saw did not become a card: the engine's `NotMinedReason`, in its declaration
+ * (pipeline) order, which is the order the result lists them in.
+ *
+ * [failure] marks desktop's `NOT_MINED_FAILURES`: something went wrong rather than the user's own
+ * settings turning the word away. The result shows those groups in the error colour.
+ */
+enum class NotMinedReason(val wire: String, val failure: Boolean) {
+    WORD_TYPE("word_type", failure = false),
+    SOUND_EFFECT("sound_effect", failure = false),
+    KANA_ONLY("kana_only", failure = false),
+    SCRIPT("script", failure = false),
+    KNOWN("known", failure = false),
+    NO_DEFINITION("no_definition", failure = true),
+    UNRANKED("unranked", failure = false),
+    FREQUENCY("frequency", failure = false),
+    BLACKLIST("blacklist", failure = false),
+    SCRIPT_FILTER("script_filter", failure = false),
+    NAME_LIST("name_list", failure = false),
+    OCCURRENCE("occurrence", failure = false),
+    ONE_PER_SENTENCE("one_per_sentence", failure = false),
+    I_PLUS_ONE("i_plus_one", failure = false),
+    SENTENCE_LENGTH("sentence_length", failure = false),
+    SAME_CARD("same_card", failure = false),
+    MEDIA_FAILED("media_failed", failure = true),
+    ANKI_DUPLICATE("anki_duplicate", failure = false),
+    ANKI_FAILED("anki_failed", failure = true),
+    ;
+
+    companion object {
+        fun fromWire(value: String): NotMinedReason? = entries.firstOrNull { it.wire == value }
+    }
+}
+
+/** One reason's words, sorted by code point; never empty. */
+data class NotMinedGroup(
+    val reason: NotMinedReason,
+    val forms: List<String>,
 )
 
 /**

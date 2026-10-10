@@ -6,7 +6,6 @@ import queue
 import re
 import sqlite3
 import threading
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -66,7 +65,7 @@ def _start_wait(
     *,
     allow_line_expansion: bool = True,
     allow_clip_override: bool = False,
-    sentence_preview: Callable[[object], jobs.SentencePreview] | None = None,
+    sentence_preview: jobs.SentencePreviewer | None = None,
 ) -> tuple[str, dict[str, object], list[object], threading.Thread]:
     handle = registry.begin()
     request, returned, thread = _start_wait_for_run(
@@ -87,7 +86,7 @@ def _start_wait_for_run(
     *,
     allow_line_expansion: bool = True,
     allow_clip_override: bool = False,
-    sentence_preview: Callable[[object], jobs.SentencePreview] | None = None,
+    sentence_preview: jobs.SentencePreviewer | None = None,
 ) -> tuple[dict[str, object], list[object], threading.Thread]:
     emitted = threading.Event()
     request: dict[str, object] = {}
@@ -1164,14 +1163,14 @@ def test_curation_schema_matches_generated_ids_and_optional_sentence_selection()
 def test_sentence_payload_carries_page_context_when_lookup_hits() -> None:
     word = FakeWord("猫", "猫", "猫を見る。", 3.0, 4.0, 1.0)
     context = jobs.SentencePageContext(image_entry="pages/003.png", block_box=(1, 2, 30, 40), location_label="p.3")
-    payload = jobs._sentence_payload("sentence_" + "0" * 32, word, lambda w: context)
+    payload = jobs._sentence_payload("sentence_" + "0" * 32, word, lambda w: context, default=True)
     assert payload["imageEntry"] == "pages/003.png"
     assert payload["blockBox"] == [1, 2, 30, 40]
     assert payload["locationLabel"] == "p.3"
 
 
 def test_sentence_payload_omits_page_context_keys_by_default() -> None:
-    payload = jobs._sentence_payload("sentence_" + "0" * 32, FakeWord("x", "x", "x", 0.0, 0.0, 0.0))
+    payload = jobs._sentence_payload("sentence_" + "0" * 32, FakeWord("x", "x", "x", 0.0, 0.0, 0.0), default=True)
     assert set(payload) == {
         "sentenceId",
         "sentence",
@@ -1184,7 +1183,9 @@ def test_sentence_payload_omits_page_context_keys_by_default() -> None:
 
 
 def test_sentence_payload_omits_page_context_keys_when_lookup_misses() -> None:
-    payload = jobs._sentence_payload("sentence_" + "0" * 32, FakeWord("x", "x", "x", 0.0, 0.0, 0.0), lambda w: None)
+    payload = jobs._sentence_payload(
+        "sentence_" + "0" * 32, FakeWord("x", "x", "x", 0.0, 0.0, 0.0), lambda w: None, default=True
+    )
     assert "imageEntry" not in payload
     assert "blockBox" not in payload
     assert "locationLabel" not in payload
@@ -1307,7 +1308,7 @@ def test_paged_curation_without_sentence_context_omits_new_keys_on_every_page() 
     assert returned == [[]]
 
 
-def _merge_preview(word: object) -> jobs.SentencePreview:
+def _merge_preview(word: object, *, default: bool) -> jobs.SentencePreview:
     """Echo the word's own stamp, the way the video lane reports the engine's merge."""
 
     return jobs.SentencePreview(line_expansion=word.line_expansion, translation="")
@@ -1317,7 +1318,9 @@ def test_sentence_payload_carries_the_preview_merge_and_translation() -> None:
     word = FakeWord("猫", "猫", "猫を", 1.0, 2.0, 1.0)
     preview = jobs.SentencePreview(line_expansion=(1, 2), translation="I see a cat.")
 
-    payload = jobs._sentence_payload("sentence_" + "0" * 32, word, sentence_preview=lambda w: preview)
+    payload = jobs._sentence_payload(
+        "sentence_" + "0" * 32, word, sentence_preview=lambda w, *, default: preview, default=True
+    )
 
     assert (payload["linesBefore"], payload["linesAfter"], payload["translation"]) == (1, 2, "I see a cat.")
     assert payload["sentence"] == "猫を"
@@ -1330,12 +1333,14 @@ def test_sentence_payload_omits_zero_counts_and_an_empty_translation() -> None:
     after_only = jobs._sentence_payload(
         "sentence_" + "0" * 32,
         word,
-        sentence_preview=lambda w: jobs.SentencePreview(line_expansion=(0, 1), translation=""),
+        sentence_preview=lambda w, *, default: jobs.SentencePreview(line_expansion=(0, 1), translation=""),
+        default=True,
     )
     untouched = jobs._sentence_payload(
         "sentence_" + "0" * 32,
         word,
-        sentence_preview=lambda w: jobs.SentencePreview(line_expansion=(0, 0), translation=""),
+        sentence_preview=lambda w, *, default: jobs.SentencePreview(line_expansion=(0, 0), translation=""),
+        default=True,
     )
 
     assert set(after_only) == base | {"linesAfter"}
@@ -1351,9 +1356,10 @@ def test_await_curation_previews_every_sentence_variant_on_every_page() -> None:
         word.sentence_candidates = [word, alternative]
         words.append(word)
 
-    def preview(word: object) -> jobs.SentencePreview:
-        # The alternative gets a merge of its own, as a re-derived pick would.
-        expansion = (1, 0) if word.sentence.startswith("other") else word.line_expansion
+    def preview(word: object, *, default: bool) -> jobs.SentencePreview:
+        # The default echoes the engine's stamp; a variant gets a merge of its own,
+        # as a re-derived pick would. A misrouted flag swaps the two counts below.
+        expansion = word.line_expansion if default else (1, 0)
         return jobs.SentencePreview(line_expansion=expansion, translation=f"tr:{word.sentence}")
 
     handle = registry.begin()

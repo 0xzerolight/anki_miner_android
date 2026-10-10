@@ -79,8 +79,10 @@
         "videoFile",
         "subtitleFile",
         "minedForms",
+        "minedFormsLanguage",
         "ankiWriteState",
-        "failureIsTransient"
+        "failureIsTransient",
+        "notMined"
       ],
       "properties": {
         "totalWordsFound": {"$ref": "#/$defs/nonNegativeSigned64"},
@@ -115,6 +117,11 @@
           "type": "array",
           "items": {"type": "string"}
         },
+        "minedFormsLanguage": {
+          "type": "string",
+          "pattern": "^$|^[a-z]{2,3}$",
+          "$comment": "The mining language whose known-words database holds minedForms' rows; Undo reverts them there after a language switch. Empty when the engine did not stamp it (every result but a completed one), and Undo falls back to the live language."
+        },
         "ankiWriteState": {
           "enum": ["no_note_write", "note_write_uncertain", "note_write_confirmed"],
           "$comment": "Engine D30 note-write provenance. Only no_note_write proves nothing reached the collection; the engine fails closed to note_write_uncertain."
@@ -122,6 +129,49 @@
         "failureIsTransient": {
           "type": "boolean",
           "$comment": "Always false on Android: the engine classifier only recognizes an AnkiConnectionError caused by a requests transport error, and the ContentProvider adapter never raises through that path. Carried for wire fidelity; not a retry signal here."
+        },
+        "notMined": {
+          "type": ["array", "null"],
+          "items": {"$ref": "#/$defs/notMinedGroup"},
+          "$comment": "The engine NotMinedReport: why words the run saw made no card. Null from anything that never ran the pipeline. One group per reason that names a form, in the engine's NotMinedReason declaration order; a mined form is never listed and known outranks every other reason (NotMinedReport.forms). Kotlin additionally rejects a reason that appears twice."
+        }
+      }
+    },
+    "notMinedGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "forms"],
+      "properties": {
+        "reason": {
+          "enum": [
+            "word_type",
+            "sound_effect",
+            "kana_only",
+            "script",
+            "known",
+            "no_definition",
+            "unranked",
+            "frequency",
+            "blacklist",
+            "script_filter",
+            "name_list",
+            "occurrence",
+            "one_per_sentence",
+            "i_plus_one",
+            "sentence_length",
+            "same_card",
+            "media_failed",
+            "anki_duplicate",
+            "anki_failed"
+          ],
+          "$comment": "NotMinedReason values in declaration order; test_schemas pins this list to the vendored engine."
+        },
+        "forms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string"},
+          "$comment": "Card fronts, sorted by code point."
         }
       }
     },
@@ -501,7 +551,10 @@
         "subtitle_regex_replacement",
         "min_frequency_rank",
         "max_frequency_rank",
-        "frequency_keep_unranked"
+        "frequency_keep_unranked",
+        "pitch_category_format",
+        "card_type_marker_fields",
+        "max_sentence_chars"
       ],
       "properties": {
         "dictionary_chain": {
@@ -542,7 +595,7 @@
         },
         "anki_note_type": {
           "type": "string",
-          "$comment": "Blank for every non-ja profile: the user must pick a note type before a run, and config_map refuses a blank one."
+          "$comment": "Blank for every profile: the user must pick a note type before a run, and config_map refuses a blank one."
         },
         "card_type": {
           "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/card_type"
@@ -585,6 +638,15 @@
         },
         "frequency_keep_unranked": {
           "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/frequency_keep_unranked"
+        },
+        "pitch_category_format": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/pitch_category_format"
+        },
+        "card_type_marker_fields": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/card_type_marker_fields"
+        },
+        "max_sentence_chars": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/max_sentence_chars"
         }
       }
     },
@@ -610,6 +672,16 @@
         },
         "rawHtml": {
           "type": "boolean"
+        },
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "$comment": "Other Anki field names that map to this key (CardFieldSpec.aliases). The bridge always sends it; absent reads as none."
         }
       }
     },

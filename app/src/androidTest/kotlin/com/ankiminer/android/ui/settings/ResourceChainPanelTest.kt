@@ -7,7 +7,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
@@ -21,7 +20,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 
@@ -39,7 +37,7 @@ class ResourceChainPanelTest {
     private val pinnedChain =
         listOf(
             resourceRow("alpha", "Alpha dictionary"),
-            resourceRow("jisho", "Jisho", movable = false, removable = false),
+            resourceRow("unchained", "Unchained dictionary", movable = false),
         )
 
     @Test
@@ -67,22 +65,10 @@ class ResourceChainPanelTest {
     fun pinnedRowOmitsMoveArrows() {
         setPanel(pinnedChain)
 
-        composeRule.onNodeWithTag(ResourcePanelTestTags.moveUp("jisho")).assertDoesNotExist()
-        composeRule.onNodeWithTag(ResourcePanelTestTags.moveDown("jisho")).assertDoesNotExist()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.moveUp("unchained")).assertDoesNotExist()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.moveDown("unchained")).assertDoesNotExist()
         composeRule.onNodeWithTag(ResourcePanelTestTags.moveUp("alpha")).assertDoesNotExist()
         composeRule.onNodeWithTag(ResourcePanelTestTags.moveDown("alpha")).assertDoesNotExist()
-    }
-
-    @Test
-    fun removeStaysDisabledForAPinnedSelection() {
-        var removed: String? = null
-        setPanel(pinnedChain, onRemove = { removed = it })
-
-        selectRow("jisho")
-
-        composeRule.onNodeWithTag(ResourcePanelTestTags.row("jisho")).assertIsSelected()
-        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertDoesNotExist()
-        assertNull(removed)
     }
 
     @Test
@@ -308,7 +294,6 @@ class ResourceChainPanelTest {
         onToggle: ((Boolean) -> Unit)? = null,
         warning: String? = null,
         movable: Boolean = true,
-        removable: Boolean = true,
         quietAction: ResourcePanelAction? = null,
     ) = ResourceRowSpec(
         id = id,
@@ -318,7 +303,6 @@ class ResourceChainPanelTest {
         onToggle = onToggle,
         warning = warning,
         movable = movable,
-        removable = removable,
         quietAction = quietAction,
     )
 

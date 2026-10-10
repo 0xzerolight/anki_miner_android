@@ -435,8 +435,8 @@ class RunIdCorrelationTest {
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$runId","outcome":"success",""" +
                 """"result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],""" +
                 """"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"",""" +
-                """"subtitleFile":"Novel.txt","minedForms":[],"ankiWriteState":"no_note_write",""" +
-                """"failureIsTransient":false},"error":null}}"""
+                """"subtitleFile":"Novel.txt","minedForms":[],"minedFormsLanguage":"ja","ankiWriteState":"no_note_write",""" +
+                """"failureIsTransient":false,"notMined":null},"error":null}}"""
 
         fun cancelled(runId: String) =
             """{"schemaVersion":1,"type":"job.cancelled","payload":{"runId":"$runId","newlyCancelled":true}}"""

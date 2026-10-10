@@ -18,9 +18,9 @@ import org.junit.Test
 class LanguageScopeTest {
     @Test
     fun `the stash set is exactly the settings that move a language-scoped snapshot key`() {
-        // `language` is the scope key itself, never parked. A switch away from Japanese moves the Jisho
-        // entry, which is Japanese-only, and expression_audio_chain, because the device voice stands in
-        // for every other language's network voice.
+        // `language` is the scope key itself, never parked. A switch away from Japanese moves
+        // expression_audio_chain, because the device voice stands in for every other language's
+        // network voice.
         val scoped =
             (ALTERNATIVES.keys - "language").filterTo(linkedSetOf()) { property ->
                 BASES.any { base ->
@@ -75,7 +75,6 @@ class LanguageScopeTest {
         // Nothing Japanese is left to resolve against the inventory.
         assertEquals(emptyList<ResourceChainSelection>(), hebrew.audioPacks)
         assertEquals(emptyList<ResourceChainSelection>(), hebrew.dictionarySources)
-        assertFalse(hebrew.jishoEnabled)
 
         // The inventory the snapshot resolves against is the active language's own slots.
         val snapshot = EngineSettingsSnapshotMapper.map(hebrew, emptyList(), availableWordsetIds = WORDSETS)
@@ -96,8 +95,9 @@ class LanguageScopeTest {
         // the bridge, which overlays the snapshot on he's first-visit config.
         assertTrue(listOf("subtitle_regex_filter", "use_subtitle_regex_filter").none(snapshot.settings::containsKey))
         assertTrue(listOf("min_frequency_rank", "max_frequency_rank").none(snapshot.settings::containsKey))
-        // The audio chain's scoped default lists packs only; the device voice is the mapper's.
-        (defaults.keys - "anki_fields" - "expression_audio_chain").forEach { key ->
+        // The audio chain's scoped default lists packs only; the device voice is the mapper's. The
+        // marker map is the user's, like the field map: all four blank until a card type is picked.
+        (defaults.keys - "anki_fields" - "expression_audio_chain" - "card_type_marker_fields").forEach { key ->
             snapshot.settings[key]?.let { sent -> assertEquals(key, defaults.getValue(key), sent) }
         }
         assertEquals(BridgeJsonValue.Text("Anki Miner"), snapshot.settings["anki_deck_name"])
@@ -157,9 +157,7 @@ class LanguageScopeTest {
 
         assertEquals(listOf(ResourceChainSelection("jmdict-english")), japanese.dictionarySources)
         assertEquals(AppSettings.DEFAULT_ENABLED_WORDSETS, japanese.enabledWordsets)
-        // Jisho is in ja's profile chain but stays opt-in on Android.
-        assertFalse(japanese.jishoEnabled)
-        // Never the desktop Lapis default: the user picks the note type.
+        // Never a desktop default: the user picks the note type.
         assertEquals(null, japanese.noteType)
     }
 
@@ -168,15 +166,77 @@ class LanguageScopeTest {
         val settings =
             AppSettings(
                 language = "he",
-                languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "jisho_enabled" to true)),
+                languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "exclude_hiragana_only" to true)),
             )
 
         val japanese = settings.switchLanguage(LanguageProfileFixtures.japanese)
 
         assertEquals("Japanese", japanese.deckName)
-        assertTrue(japanese.jishoEnabled)
+        assertEquals(true, japanese.excludeHiraganaOnly)
         assertEquals(listOf(ResourceChainSelection("jmdict-english")), japanese.dictionarySources)
         assertEquals(AppSettings.DEFAULT_ENABLED_WORDSETS, japanese.enabledWordsets)
+    }
+
+    @Test
+    fun `a language parked before a setting was scoped takes the value every language shared`() {
+        // Review Focus 2: ja caps sentences at 30, and he was parked before the cap and the pitch
+        // format were scoped, so its snapshot has neither. Desktop `switch_language` completes it
+        // with the live value, which was every language's while the setting was global.
+        val hebrew = UPGRADED_JAPANESE_USER.switchLanguage(LanguageProfileFixtures.hebrew)
+
+        assertEquals("Hebrew", hebrew.deckName)
+        assertEquals(30, hebrew.maxSentenceCharacters)
+        assertEquals(PitchCategoryFormat.ROMAJI, hebrew.pitchCategoryFormat)
+        val parked = hebrew.languageStash.getValue("ja")
+        assertEquals(30, parked["max_sentence_characters"])
+        assertEquals("romaji", parked["pitch_category_format"])
+    }
+
+    @Test
+    fun `a never-visited language still starts from its profile after the upgrade`() {
+        val arabic = UPGRADED_JAPANESE_USER.switchLanguage(LanguageProfileFixtures.arabic)
+
+        assertEquals(null, arabic.maxSentenceCharacters)
+        assertEquals(null, arabic.pitchCategoryFormat)
+        // The first switch completed he's old snapshot, so he keeps the shared cap for its visit.
+        assertEquals(30, arabic.languageStash.getValue("he")["max_sentence_characters"])
+        assertEquals(30, arabic.switchLanguage(LanguageProfileFixtures.hebrew).maxSentenceCharacters)
+    }
+
+    @Test
+    fun `the shared value is copied once, then each language keeps its own`() {
+        // Once any snapshot carries a name it is no longer the shared value: a snapshot that still
+        // lacks it takes the profile default, never the live language's value.
+        val settings =
+            UPGRADED_JAPANESE_USER.copy(
+                languageStash =
+                    mapOf(
+                        "he" to mapOf("deck_name" to "Hebrew", "max_sentence_characters" to 10),
+                        "ar" to mapOf("deck_name" to "Arabic"),
+                    ),
+            )
+
+        val arabic = settings.switchLanguage(LanguageProfileFixtures.arabic)
+
+        assertEquals("Arabic", arabic.deckName)
+        assertEquals(null, arabic.maxSentenceCharacters)
+        assertEquals(10, arabic.switchLanguage(LanguageProfileFixtures.hebrew).maxSentenceCharacters)
+        // pitch_category_format is still parked nowhere, so that one is copied.
+        assertEquals(PitchCategoryFormat.ROMAJI, arabic.pitchCategoryFormat)
+
+        // A later change in one language never reaches another.
+        val hebrew = UPGRADED_JAPANESE_USER.switchLanguage(LanguageProfileFixtures.hebrew).copy(maxSentenceCharacters = 50)
+        val japanese = hebrew.switchLanguage(LanguageProfileFixtures.japanese)
+        assertEquals(30, japanese.maxSentenceCharacters)
+        assertEquals(50, japanese.languageStash.getValue("he")["max_sentence_characters"])
+    }
+
+    @Test
+    fun `a parked jisho_enabled is dropped now that Jisho belongs to no language`() {
+        val decoded =
+            LanguageStashPreferenceCodec.decode("""{"ja":{"deck_name":"Japanese","jisho_enabled":true}}""")
+
+        assertEquals(mapOf("ja" to mapOf<String, Any?>("deck_name" to "Japanese")), decoded)
     }
 
     @Test
@@ -356,7 +416,6 @@ class LanguageScopeTest {
                 frequencySources = listOf(selection("freq-a")),
                 pitchSources = listOf(selection("pitch-a")),
                 audioPacks = listOf(selection("pack-a")),
-                jishoEnabled = true,
             )
 
         val BASES = listOf(AppSettings(), RICH)
@@ -387,6 +446,9 @@ class LanguageScopeTest {
                 "animatedScreenshotDurationSeconds" to listOf(null, 3.0),
                 "animatedScreenshotQuality" to listOf(null, 50),
                 "animatedScreenshotMatchAudio" to listOf(true, false),
+                "animatedScreenshotFps" to listOf(null, 12),
+                "animatedScreenshotHeight" to listOf(null, 480),
+                "animatedScreenshotFormat" to listOf(null, AnimatedScreenshotFormat.WEBP),
                 "subtitleRegexFilter" to listOf(null, "x+"),
                 "subtitleRegexReplacement" to listOf(null, "y"),
                 "useSubtitleRegexFilter" to BOOLEANS,
@@ -422,7 +484,7 @@ class LanguageScopeTest {
                     listOf(emptyList<ResourceChainSelection>(), listOf(selection("pack-b"), selection("pack-a", false))),
                 "enabledWordsets" to listOf(emptyList<String>(), listOf("place-names")),
                 "readingTtsEnabled" to listOf(true, false),
-                "jishoEnabled" to listOf(true, false),
+                "autoUpdateDictionaries" to listOf(false, true),
                 "language" to listOf("he"),
                 "languageStash" to listOf(mapOf("he" to mapOf<String, Any?>("deck_name" to "Hebrew"))),
             )
@@ -450,13 +512,18 @@ class LanguageScopeTest {
                 minFrequencyRank = 500,
                 frequencyKeepUnranked = true,
                 knownWordsMatchKanaVariants = false,
+                maxSentenceCharacters = 30,
+                pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
                 maxParallelWorkers = 3,
                 dictionarySources = listOf(selection("jitendex")),
                 frequencySources = listOf(selection("jpdb")),
                 pitchSources = listOf(selection("kanjium")),
                 audioPacks = listOf(selection("ja-pack")),
                 enabledWordsets = listOf("surnames"),
-                jishoEnabled = true,
             )
+
+        /** [JAPANESE_USER] upgraded from a release where he was parked before the cap was scoped. */
+        val UPGRADED_JAPANESE_USER =
+            JAPANESE_USER.copy(languageStash = mapOf("he" to mapOf<String, Any?>("deck_name" to "Hebrew")))
     }
 }

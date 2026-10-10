@@ -1333,6 +1333,198 @@ def test_dictionary_inventory_discards_forged_catalog_sidecar(
     assert installed["sourceName"] == catalog_resource.slot_id
 
 
+_UPDATED_JITENDEX_TITLE = "Jitendex.org [2026-10-03]"
+_UPDATED_JITENDEX_REVISION = "2026.10.03.0"
+
+
+def _publisher_updated_jitendex_slot(
+    home: Path,
+    *,
+    language: str | None = None,
+    mutate=None,  # type: ignore[no-untyped-def]
+) -> YomitanResource:
+    """An installed ``jitendex`` slot after its publisher's update, as the schema-2 sidecar records it.
+
+    The index metadata is written directly (host lane): title, revision and the
+    archive hash all differ from the frozen catalog pin, as every real update's do.
+    """
+
+    catalog_resource = load_resource_catalog().get("jitendex-2026.07.09.0")
+    assert isinstance(catalog_resource, YomitanResource)
+    slot = home / "dicts" / catalog_resource.slot_id
+    slot.mkdir(parents=True)
+    meta = {
+        "source_name": _UPDATED_JITENDEX_TITLE,
+        "source_revision": _UPDATED_JITENDEX_REVISION,
+        "format": "yomitan",
+        "entry_count": "1",
+        "schema_version": str(resources._DICTIONARY_SCHEMA_VERSION),
+    }
+    if language is not None:
+        meta["language"] = language
+    connection = sqlite3.connect(slot / "index.sqlite")
+    try:
+        connection.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+        connection.executemany("INSERT INTO meta VALUES (?, ?)", meta.items())
+        connection.commit()
+    finally:
+        connection.close()
+    sidecar = resources._dictionary_sidecar(
+        slot_id=catalog_resource.slot_id,
+        archive=resources._ArchiveCopy(slot / "source.zip", "ab" * 32, catalog_resource.archive.size_bytes + 1),
+        catalog_resource=catalog_resource,
+        source_name=_UPDATED_JITENDEX_TITLE,
+        source_revision=_UPDATED_JITENDEX_REVISION,
+        publisher_update=True,
+    )
+    if mutate is not None:
+        mutate(sidecar)
+    (slot / "android-resource.json").write_bytes(resources._canonical_json_bytes(sidecar))
+    return catalog_resource
+
+
+def _only_listed_dictionary() -> dict[str, object]:
+    listed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed").payload[
+        "dictionaries"
+    ]
+    assert len(listed) == 1
+    return listed[0]
+
+
+def test_dictionary_inventory_keeps_a_publisher_updated_catalog_identity(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review Focus 3: catalog titles embed the date, so every update changes title and revision."""
+    home = tmp_path / "updated-home"
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    catalog_resource = _publisher_updated_jitendex_slot(home)
+    sidecar = json.loads((home / "dicts" / "jitendex" / "android-resource.json").read_text(encoding="utf-8"))
+    assert sidecar["schemaVersion"] == 2
+    assert sidecar["publisherUpdate"] is True
+
+    installed = _only_listed_dictionary()
+
+    assert installed["valid"] is True
+    assert installed["sourceName"] == _UPDATED_JITENDEX_TITLE
+    assert installed["sourceRevision"] == _UPDATED_JITENDEX_REVISION
+    assert installed["catalogResourceId"] == catalog_resource.resource_id
+    assert installed["attribution"] == [item.payload() for item in catalog_resource.attribution]
+    assert installed["publisherUpdate"] is True
+
+
+def test_a_schema_one_sidecar_still_needs_the_frozen_catalog_identity(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def frozen(sidecar: dict[str, object]) -> None:
+        sidecar["schemaVersion"] = 1
+        del sidecar["publisherUpdate"]
+
+    home = tmp_path / "frozen-home"
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    _publisher_updated_jitendex_slot(home, mutate=frozen)
+
+    installed = _only_listed_dictionary()
+
+    assert installed["catalogResourceId"] is None
+    assert installed["attribution"] == []
+    assert installed["publisherUpdate"] is False
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["attribution", "slot", "flag-false", "flag-missing", "schema-one-flag"],
+)
+def test_a_publisher_updated_sidecar_still_cannot_forge_catalog_identity(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    def forge(sidecar: dict[str, object]) -> None:
+        if case == "attribution":
+            sidecar["attribution"] = []
+        elif case == "slot":
+            sidecar["catalogResourceId"] = "jmdict-en-2026-07-17"
+            sidecar["attribution"] = [
+                item.payload() for item in load_resource_catalog().get("jmdict-en-2026-07-17").attribution
+            ]
+        elif case == "flag-false":
+            sidecar["publisherUpdate"] = False
+        elif case == "flag-missing":
+            del sidecar["publisherUpdate"]
+        else:
+            sidecar["schemaVersion"] = 1
+
+    home = tmp_path / f"forged-{case}-home"
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    _publisher_updated_jitendex_slot(home, mutate=forge)
+
+    installed = _only_listed_dictionary()
+
+    assert installed["catalogResourceId"] is None
+    assert installed["attribution"] == []
+
+
+def test_a_publisher_updated_catalog_identity_holds_only_in_its_catalog_language(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Kotlin checks a publisher-updated slot against its catalog's language; one rejected entry fails the list."""
+    home = tmp_path / "language-home"
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    _publisher_updated_jitendex_slot(home, language="he")
+
+    installed = _only_listed_dictionary()
+
+    assert installed["language"] == "he"
+    assert installed["catalogResourceId"] is None
+    assert installed["attribution"] == []
+
+
+def test_an_unreadable_publisher_updated_slot_keeps_only_a_catalog_identity_kotlin_accepts(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The unreadable-slot fallback reports language "ja": a non-ja catalog identity must not ride on it."""
+    home = tmp_path / "unreadable-home"
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    catalog_resource = _publisher_updated_jitendex_slot(home)
+    (home / "dicts" / "jitendex" / "index.sqlite").write_bytes(b"not sqlite")
+
+    installed = _only_listed_dictionary()
+
+    assert installed["valid"] is False
+    assert installed["language"] == "ja"
+    assert installed["catalogResourceId"] == catalog_resource.resource_id
+    assert installed["publisherUpdate"] is True
+
+    hebrew = load_resource_catalog("he").resources
+    hebrew_dictionary = next(item for item in hebrew if isinstance(item, YomitanResource))
+
+    def hebrew_catalog(sidecar: dict[str, object]) -> None:
+        sidecar["slotId"] = hebrew_dictionary.slot_id
+        sidecar["catalogResourceId"] = hebrew_dictionary.resource_id
+        sidecar["attribution"] = [item.payload() for item in hebrew_dictionary.attribution]
+
+    other = tmp_path / "unreadable-he-home"
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(other))
+    _publisher_updated_jitendex_slot(other, mutate=hebrew_catalog)
+    (other / "dicts" / "jitendex").rename(other / "dicts" / hebrew_dictionary.slot_id)
+    (other / "dicts" / hebrew_dictionary.slot_id / "index.sqlite").write_bytes(b"not sqlite")
+
+    hebrew_installed = _only_listed_dictionary()
+
+    assert hebrew_installed["language"] == "ja"
+    assert hebrew_installed["catalogResourceId"] is None
+    assert hebrew_installed["attribution"] == []
+
+
 def test_dictionary_inventory_does_not_follow_slot_or_sidecar_symlinks(
     tmp_path: Path,
     initialized_bridge_home: Path,
@@ -1375,6 +1567,7 @@ def test_dictionary_inventory_does_not_follow_slot_or_sidecar_symlinks(
             "attribution": [],
             "rebuildSourcePath": None,
             "language": "ja",
+            "publisherUpdate": False,
         }
     ]
 

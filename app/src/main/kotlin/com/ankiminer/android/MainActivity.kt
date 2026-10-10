@@ -155,6 +155,7 @@ class MainActivity : ComponentActivity() {
             refreshExternalReadiness = app::refreshExternalReadiness,
             strings = app.stringResourceResolver,
             languageProfileSource = app.languageProfileSource,
+            noteTypeFillSource = app.noteTypeFillSource,
         )
     }
     private val settingsViewModelFactory by lazy {

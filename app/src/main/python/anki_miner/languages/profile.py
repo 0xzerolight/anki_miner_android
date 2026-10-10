@@ -47,6 +47,7 @@ class SubtitleParser(Protocol):
     def parse_subtitle_file_with_index(self, *args: Any, **kwargs: Any) -> Any: ...
     def parse_text_units(self, *args: Any, **kwargs: Any) -> Any: ...
     def count_lemmas(self, *args: Any, **kwargs: Any) -> Any: ...
+    def count_fronts(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 class MinedFormPolicy(Protocol):
@@ -134,6 +135,12 @@ class DictKeyFolding(Protocol):
     def homograph_keep_mask(self, word: str, rows: list[tuple[str, str]], lemma: str | None = None) -> list[bool]: ...
 
 
+#: The one key a render hook may return beyond its ``field_names()``: the card
+#: front for this note only (ko: the hangul headword of a word mined in Hanja).
+#: ``build_note`` writes it to the word field in place of ``mined_form``.
+CARD_FRONT_KEY = "card_front"
+
+
 class CardRenderHook(Protocol):
     """Non-ja extra card fields. ``field_names`` are LOGICAL anki_fields keys
     (like "frequency"/"glossary"), never Anki field names.
@@ -143,6 +150,19 @@ class CardRenderHook(Protocol):
     ``reading_tone_color`` — has nothing to reach: the field would exist,
     serialize and switch with the language while changing no output anywhere.
     Keyword-only so a hook cannot bind it to ``word`` by accident.
+
+    ``render`` may also return :data:`CARD_FRONT_KEY`, which is not a
+    ``field_names()`` key and replaces the card front for this note only.
+    ``mined_form`` (lookups, known words) is unchanged. Card Backfill keeps
+    only ``field_names()`` keys, so it never rewrites a front.
+
+    A hook that moves the front also offers the OPTIONAL
+    ``card_front(mined, definition_html) -> str``, probed with ``getattr``:
+    the front ``render`` writes for *mined* under that definition, or ``""``
+    when it stays ``mined_form``. Anki then holds the moved front, so phase 2's
+    known gate reads it there (``EpisodeProcessor._drop_known_card_fronts``).
+    ``definition_html`` is a thunk, called only for a word whose front can
+    move. ko: ``KoHanjaHook``.
     """
 
     def field_names(self) -> tuple[str, ...]: ...
@@ -226,11 +246,20 @@ class AudioDefaults:
     #: Settings -> Word Audio does not offer one. A language with no Google voice
     #: (``gtts_lang == ""``) names one and puts ``AudioSourceEntry(kind="edgetts")``
     #: in ``default_chain`` (spec D14, tests/unit/languages/test_edge_voice_contract.py).
+    #: For that language the voice also reads sentence TTS (see sentence_web_voice).
     edge_voice: str = ""
 
     def resolved_gtts_lang(self, config: AnkiMinerConfig) -> str:
         """The gTTS code for *config*; "" when the language has no Google voice."""
         return self.gtts_lang(config) if callable(self.gtts_lang) else self.gtts_lang
+
+    def sentence_web_voice(self, config: AnkiMinerConfig) -> str:
+        """The web voice the sentence-TTS "google" leg speaks with: "google" when Google
+        Translate has a voice for the language, "edge" when only the profile's Edge
+        voice does (fa, sl), "" when neither."""
+        if self.resolved_gtts_lang(config):
+            return "google"
+        return "edge" if self.edge_voice else ""
 
 
 @dataclass(frozen=True)
@@ -269,11 +298,17 @@ class PosDefaults:
 
     ``labels`` has no consumer yet (S20): the settings POS editor still shows
     raw tags. It is populated so a label-aware editor is a later, cheap change.
+
+    ``rescuable_tags`` is the fail-safe allowlist of pos1/pos2 tags a
+    whitelisted card front may be rescued from (R1, the parser's
+    ``force_include`` seam): content classes, names, interjections. Never a
+    function-word or stopword tag. Empty rescues nothing.
     """
 
     allowed_pos: tuple[str, ...]
     excluded_subtypes: tuple[str, ...]
     labels: Mapping[str, str] = field(default_factory=dict)
+    rescuable_tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -291,12 +326,16 @@ class CardFieldSpec:
     ``build_note`` as ``extra_raw_html_keys``. The ja/ko/zh keys are already in
     ``services/anki_note_builder.py::_RAW_HTML_FIELD_KEYS``, which is frozen —
     a later language's key is carried by this flag alone.
+    ``aliases`` are other Anki field names "Fill in automatically" also maps to
+    this key (``note_presets.auto_map_profile_fields``), for note types that
+    spell the field differently from ``placeholder``.
     """
 
     key: str
     capability: str
     placeholder: str
     raw_html: bool = False
+    aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

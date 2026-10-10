@@ -11,6 +11,8 @@ import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.NotMinedGroup
+import com.ankiminer.android.mining.NotMinedReason
 import com.ankiminer.android.mining.terminalResult
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -30,6 +32,8 @@ data class MiningReceipt(
     val deckName: String?,
     val noteIds: List<Long>,
     val minedForms: List<String>,
+    /** The run's mining language, whose known-words list Undo reverts; blank when the engine did not stamp it. */
+    val minedFormsLanguage: String,
 )
 
 /** The one sentence a finished run leads with. */
@@ -482,6 +486,50 @@ private fun CurationCandidate.searchableCurationText(): String =
 
 private fun String.normalizedCurationSearchText(): String =
     (UnicodeContractV151.normalizeNfc(this) ?: this).lowercase(Locale.ROOT)
+
+/** One "Not mined" line: [count] words for [reason], [forms] of them listed and [hiddenCount] past the cap. */
+internal data class NotMinedLine(
+    val reason: NotMinedReason,
+    val count: Int,
+    val forms: List<String>,
+    val hiddenCount: Int,
+)
+
+/**
+ * The finished run's "Not mined" section. Desktop names every word and leaves the lookup to its
+ * log's search box; here a line lists at most [MAX_RESULT_SUMMARY_ITEMS] forms, searching or not,
+ * so one keystroke in a large report never lays out thousands of words. The search
+ * (canonical-equivalent, case-insensitive substring, like the curation search) runs over every
+ * form, so it reaches a word past the unfiltered cap.
+ */
+internal class NotMinedSection(private val groups: List<NotMinedGroup>) {
+    /** Every word the report names, once: a word can sit under two reasons after items fold. */
+    val wordCount: Int = groups.flatMapTo(HashSet()) { it.forms }.size
+
+    private val searchableForms: List<List<String>> by lazy {
+        groups.map { group -> group.forms.map { it.normalizedCurationSearchText() } }
+    }
+
+    /** Every group for a blank [query], otherwise each group's matching forms; either way capped. */
+    fun lines(query: String): List<NotMinedLine> {
+        val needle = query.trim().normalizedCurationSearchText()
+        return groups.mapIndexedNotNull { groupIndex, group ->
+            val forms =
+                if (needle.isEmpty()) {
+                    group.forms
+                } else {
+                    val searchable = searchableForms[groupIndex]
+                    group.forms.filterIndexed { formIndex, _ -> searchable[formIndex].contains(needle) }
+                }
+            if (forms.isEmpty()) return@mapIndexedNotNull null
+            val bounded = forms.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
+            NotMinedLine(group.reason, forms.size, bounded.items, bounded.remainingCount)
+        }
+    }
+}
+
+/** Copy diagnostics' "Not mined" lines: each reason with its word count, no words. */
+internal fun List<NotMinedGroup>.notMinedDiagnostics(): List<String> = map { "not_mined_${it.reason.wire}=${it.forms.size}" }
 
 internal enum class MiningPendingAction {
     START,

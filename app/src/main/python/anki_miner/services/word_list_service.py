@@ -2,12 +2,16 @@
 
 import logging
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from anki_miner.exceptions import SetupError
 from anki_miner.services.known_words_import import _MAX_IMPORT_BYTES
 from anki_miner.services.reading._util import decode_with_ladder
+
+if TYPE_CHECKING:
+    from anki_miner.config.config import AnkiMinerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +38,8 @@ class WordListService:
         dedup_fold: Callable[[str], str] | None = None,
         encodings: tuple[str, ...] | None = None,
         script_check: Callable[[str], bool] | None = None,
+        normalize: Callable[[str], str] | None = None,
+        extra_whitelist: Iterable[str] = (),
     ):
         """Initialize the word list service.
 
@@ -52,12 +58,21 @@ class WordListService:
                 Japanese.
             script_check: Validates a single-byte leg of that ladder
                 (``utils.subtitle_encoding.script_check_kwarg``).
+            normalize: The mining language's text normalizer
+                (``LanguageProfile.normalize``), applied to every entry at load:
+                the parser normalizes width, compatibility forms and kanji
+                variants before a card front exists, so ｺｰﾋｰ must meet コーヒー.
+                Probes are card fronts, already normalized.
+            extra_whitelist: Whitelist entries that are not a file: the ``--api``
+                run's named words (API.md). Keyed exactly as file entries are.
         """
         self._dedup_fold = dedup_fold
+        self._normalize = normalize
         self._encodings = _DEFAULT_ENCODINGS if encodings is None else encodings
         self._script_check = script_check
         self._blacklist_path = blacklist_path
         self._whitelist_path = whitelist_path
+        self._extra_whitelist = tuple(extra_whitelist)
         self._blacklist: set[str] = set()
         self._whitelist: set[str] = set()
         self._loaded = False
@@ -69,18 +84,24 @@ class WordListService:
             SetupError: If a specified file cannot be read.
         """
         if self._blacklist_path is not None:
-            self._blacklist = {self._key(word) for word in self._read_word_file(self._blacklist_path)}
+            self._blacklist = {self._entry_key(word) for word in self._read_word_file(self._blacklist_path)}
             logger.info("Loaded %d blacklisted words", len(self._blacklist))
 
         if self._whitelist_path is not None:
-            self._whitelist = {self._key(word) for word in self._read_word_file(self._whitelist_path)}
+            self._whitelist = {self._entry_key(word) for word in self._read_word_file(self._whitelist_path)}
             logger.info("Loaded %d whitelisted words", len(self._whitelist))
 
+        named = {unicodedata.normalize("NFC", word.strip()) for word in self._extra_whitelist}
+        self._whitelist |= {self._entry_key(word) for word in named if word}
         self._loaded = True
 
     def _key(self, word: str) -> str:
         """The comparison key for an entry or a probe (identity without a fold)."""
         return word if self._dedup_fold is None else self._dedup_fold(word)
+
+    def _entry_key(self, entry: str) -> str:
+        """An entry's key: normalized the way subtitle text is, then folded."""
+        return self._key(entry if self._normalize is None else self._normalize(entry))
 
     def is_available(self) -> bool:
         """Check if the service has been loaded.
@@ -113,7 +134,7 @@ class WordListService:
         return self._key(word) in self._whitelist
 
     def whitelist_entries(self) -> frozenset[str]:
-        """Every whitelist entry as written in the file (NFC, stripped, and folded when the language folds).
+        """Every whitelist entry as written in the file or named (NFC, stripped, and folded when the language folds).
 
         The run-end coverage report diffs this against what got mined; it is
         the only reason the set is exposed rather than queried one word at a
@@ -166,3 +187,16 @@ class WordListService:
         except Exception as e:
             logger.warning("Word list file unreadable: path=%s exc=%s: %s", path, type(e).__name__, e)
             raise SetupError("Could not read your word list file.") from e
+
+
+def active_whitelist(config: "AnkiMinerConfig", service: WordListService | None) -> WordListService | None:
+    """The whitelist a run honours, or None (off, unloaded, or a bypass run).
+
+    One gate for every whitelist seam: the parser's rescue (R1), the phase-2
+    partition, the coverage snapshot and the funnel's mined stamp. Off under
+    ``bypass_optional_filters`` so the Deck Builder preview - which already
+    includes everything - stays unchanged.
+    """
+    if service is None or not config.use_whitelist or config.bypass_optional_filters:
+        return None
+    return service if service.is_available() else None

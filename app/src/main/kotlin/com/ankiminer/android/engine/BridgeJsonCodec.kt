@@ -15,6 +15,8 @@ import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CURATION_PAGE_MAX_CANDIDATES
+import com.ankiminer.android.mining.NotMinedGroup
+import com.ankiminer.android.mining.NotMinedReason
 import com.ankiminer.android.mining.ProcessingResult
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonFactoryBuilder
@@ -487,8 +489,10 @@ object BridgeJsonCodec {
                 "videoFile",
                 "subtitleFile",
                 "minedForms",
+                "minedFormsLanguage",
                 "ankiWriteState",
                 "failureIsTransient",
+                "notMined",
             ),
             "processing result",
         )
@@ -499,6 +503,10 @@ object BridgeJsonCodec {
         if (comprehension !in 0.0..100.0) fail(BridgeProtocolCategory.INVALID_VALUE, "comprehensionPercentage is outside 0 through 100")
         val cardIds = array(payload.getValue("cardIds"), "cardIds").map { positive(it, "cardId") }
         if (cardIds.toSet().size != cardIds.size) fail(BridgeProtocolCategory.INVALID_VALUE, "cardIds must be unique")
+        val minedFormsLanguage = text(payload.getValue("minedFormsLanguage"), "minedFormsLanguage")
+        if (minedFormsLanguage.isNotEmpty() && !languageCodePattern.matches(minedFormsLanguage)) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "minedFormsLanguage is not a language code")
+        }
         return ProcessingResult(
             totalWords,
             newWords,
@@ -513,7 +521,29 @@ object BridgeJsonCodec {
             AnkiWriteState.fromWire(text(payload.getValue("ankiWriteState"), "ankiWriteState"))
                 ?: fail(BridgeProtocolCategory.INVALID_VALUE, "ankiWriteState is invalid"),
             bool(payload.getValue("failureIsTransient"), "failureIsTransient"),
+            notMined = readNotMined(payload.getValue("notMined")),
+            minedFormsLanguage = minedFormsLanguage,
         )
+    }
+
+    /** The engine's not-mined report: one group per reason, each reason once, never an empty group. */
+    private fun readNotMined(value: BridgeJsonValue): List<NotMinedGroup>? {
+        if (value is BridgeJsonValue.Null) return null
+        val groups =
+            array(value, "notMined").map { item ->
+                val group = objectValue(item, "notMined group")
+                requireExact(group, setOf("reason", "forms"), "notMined group")
+                val reason =
+                    NotMinedReason.fromWire(text(group.getValue("reason"), "notMined reason"))
+                        ?: fail(BridgeProtocolCategory.INVALID_VALUE, "notMined reason is unknown")
+                val forms = stringArray(group.getValue("forms"), "notMined forms")
+                if (forms.isEmpty()) fail(BridgeProtocolCategory.INVALID_VALUE, "notMined group has no forms")
+                NotMinedGroup(reason, forms)
+            }
+        if (groups.distinctBy { it.reason }.size != groups.size) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "notMined lists a reason twice")
+        }
+        return groups
     }
 
     private fun readTerminal(
@@ -892,7 +922,7 @@ object BridgeJsonCodec {
         val scopedDefaults = objectValue(payload.getValue("scopedDefaults"), "scoped defaults")
         requireExact(scopedDefaults, SCOPED_DEFAULT_KEYS, "scoped defaults")
         scopedDefaults.forEach { (key, value) ->
-            // A non-ja profile leaves the note type blank for the user to pick.
+            // Every profile leaves the note type blank for the user to pick.
             if (key == "anki_note_type" || key == "anki_deck_name") text(value, key) else validateSetting(key, value, code)
         }
         return LanguageProfileInfo(
@@ -924,7 +954,13 @@ object BridgeJsonCodec {
             extraCardFields =
                 array(payload.getValue("extraCardFields"), "extra card fields").map { raw ->
                     val field = objectValue(raw, "extra card field")
-                    requireExact(field, setOf("key", "capability", "placeholder", "rawHtml"), "extra card field")
+                    // aliases is optional on the wire (absent = none); the bridge always sends it.
+                    requireExactWithOptional(
+                        field,
+                        setOf("key", "capability", "placeholder", "rawHtml"),
+                        setOf("aliases"),
+                        "extra card field",
+                    )
                     LanguageExtraCardField(
                         key = text(field.getValue("key"), "extra card field key").also {
                             if (!logicalFieldKeyPattern.matches(it)) fail(BridgeProtocolCategory.INVALID_VALUE, "extra card field key is invalid")
@@ -934,6 +970,10 @@ object BridgeJsonCodec {
                         },
                         placeholder = nonEmptyText(field.getValue("placeholder"), "extra card field placeholder"),
                         rawHtml = bool(field.getValue("rawHtml"), "extra card field rawHtml"),
+                        aliases =
+                            field["aliases"]?.let { uniqueStrings(it, "extra card field aliases") }.orEmpty().onEach {
+                                if (it.isEmpty()) fail(BridgeProtocolCategory.INVALID_VALUE, "extra card field alias is empty")
+                            },
                     )
                 },
         )
@@ -1318,8 +1358,9 @@ object BridgeJsonCodec {
                 "anki_tags", "excluded_decks", "audio_padding", "screenshot_offset", "audio_format", "audio_bitrate",
                 "screenshot_animated", "screenshot_animated_format", "screenshot_animated_clip_duration",
                 "screenshot_animated_quality", "screenshot_animated_match_audio",
+                "screenshot_animated_fps", "screenshot_animated_height",
                 "subtitle_offset", "allowed_pos", "excluded_subtypes", "excluded_wordsets",
-                "dictionary_chain", "jisho_delay", "expression_audio_chain", "reading_tts_enabled", "pitch_category_format",
+                "dictionary_chain", "expression_audio_chain", "reading_tts_enabled", "pitch_category_format",
                 "max_frequency_rank", "min_frequency_rank", "frequency_keep_unranked", "frequency_chain", "pitch_chain",
                 "use_known_words_db", "known_words_match_kana_variants",
                 "exclude_hiragana_only_words",
@@ -1358,10 +1399,10 @@ object BridgeJsonCodec {
             "allowed_pos", "excluded_subtypes", "excluded_wordsets" -> stringArray(value, key)
             "audio_padding", "screenshot_offset", "max_sentence_duration_seconds" -> requireMinimum(number(value, key), 0.0, key)
             "subtitle_offset" -> number(value, key)
-            "jisho_delay" -> requireMinimum(number(value, key), 0.5, key)
             "audio_format" -> requireOneOf(text(value, key), setOf("mp3", "opus"), key)
             "pitch_category_format" -> requireOneOf(text(value, key), setOf("jp", "romaji"), key)
-            "audio_bitrate", "reading_min_occurrence" -> if (integral(value, key) < 1) fail(BridgeProtocolCategory.INVALID_VALUE, "$key must be positive")
+            "audio_bitrate", "reading_min_occurrence", "screenshot_animated_fps", "screenshot_animated_height" ->
+                if (integral(value, key) < 1) fail(BridgeProtocolCategory.INVALID_VALUE, "$key must be positive")
             "max_frequency_rank", "min_frequency_rank", "max_sentence_chars" -> nonNegative(value, key)
             "max_parallel_workers" -> if (integral(value, key) !in 1L..20L) fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 1 through 20")
             "screenshot_animated", "screenshot_animated_match_audio" -> bool(value, key)
@@ -1381,7 +1422,8 @@ object BridgeJsonCodec {
             "frequency_keep_unranked", "known_words_match_kana_variants", "strict_card_order", "merge_incomplete_cues",
             -> bool(value, key)
             "blacklist_path", "whitelist_path" -> if (value !is BridgeJsonValue.Null) absolutePath(value, key)
-            "dictionary_chain" -> validateProviderArray(value, key, "kind", setOf("indexed", "jisho"))
+            // Desktop v3.8.0 removed Jisho: every dictionary is an indexed one.
+            "dictionary_chain" -> validateProviderArray(value, key, "kind", setOf("indexed"))
             // The device voice stands in for another language's Google/Edge default; Japanese word
             // audio is packs only, as config_map enforces.
             "expression_audio_chain" ->
@@ -1424,22 +1466,17 @@ object BridgeJsonCodec {
             val entry = objectValue(raw, context)
             val kind = text(entry[discriminator] ?: missing("$context kind"), "$context kind")
             requireOneOf(kind, kinds, context)
-            // android_tts (the device voice) is a bare kind, like jisho: it names no resource.
+            // android_tts (the device voice) is a bare kind: it names no resource.
             val required =
                 when (kind) {
-                    "jisho", "android_tts" -> setOf("kind")
+                    "android_tts" -> setOf("kind")
                     "pack" -> setOf("kind", "pack_id")
                     else -> setOf("kind", "dict_id")
                 }
-            val allowed = required + setOf("enabled") + if (kind == "jisho") setOf("dict_id") else emptySet()
+            val allowed = required + setOf("enabled")
             if (!entry.keys.containsAll(required) || !allowed.containsAll(entry.keys)) fail(BridgeProtocolCategory.INVALID_PAYLOAD, "$context entry fields are invalid")
             entry["enabled"]?.let { bool(it, "$context enabled") }
-            when (kind) {
-                "jisho" ->
-                    if (entry["dict_id"] != null && entry["dict_id"] !is BridgeJsonValue.Null) fail(BridgeProtocolCategory.INVALID_VALUE, "jisho dict_id must be null")
-                "android_tts" -> Unit
-                else -> resourceId(entry.getValue(if (kind == "pack") "pack_id" else "dict_id"))
-            }
+            if (kind != "android_tts") resourceId(entry.getValue(if (kind == "pack") "pack_id" else "dict_id"))
         }
     }
 
@@ -2112,12 +2149,15 @@ object BridgeJsonCodec {
             "word", "sentence", "definition", "glossary", "picture", "audio", "expression_furigana",
             "expression_reading", "sentence_furigana", "sentence_reading", "pitch_position", "pitch_category",
             "pitch_graph", "pitch_text", "frequency", "frequency_sort", "source", "expression_audio",
-            "sentence_translation",
+            "sentence_translation", "language",
         )
     private val MARKER_FIELDS = setOf("word_and_sentence", "click", "sentence", "audio")
     private const val JAPANESE_LANGUAGE = "ja"
     private const val MAX_LANGUAGE_PROFILES = 64
-    /** `LANGUAGE_SCOPED_FIELDS` minus desktop's two downloader fields; pinned by the Python contract test. */
+    /**
+     * `LANGUAGE_SCOPED_FIELDS` minus desktop's two downloader fields; pinned by
+     * `tools/engine-sync/tests/test_language_scoped_fields_mirror.py`, as is [ANKI_FIELDS].
+     */
     private val SCOPED_DEFAULT_KEYS =
         setOf(
             "dictionary_chain", "frequency_chain", "pitch_chain", "expression_audio_chain", "allowed_pos",
@@ -2125,7 +2165,8 @@ object BridgeJsonCodec {
             "known_words_match_kana_variants", "anki_fields", "anki_deck_name", "anki_note_type", "card_type",
             "blacklist_path", "whitelist_path", "use_blacklist", "use_whitelist", "excluded_decks", "script_variant",
             "reading_tone_color", "use_subtitle_regex_filter", "subtitle_regex_filter", "subtitle_regex_replacement",
-            "min_frequency_rank", "max_frequency_rank", "frequency_keep_unranked",
+            "min_frequency_rank", "max_frequency_rank", "frequency_keep_unranked", "pitch_category_format",
+            "card_type_marker_fields", "max_sentence_chars",
         )
     /** `config.config._SCRIPT_VARIANT_IDS`; config_map narrows it to the active profile's offer. */
     private val SCRIPT_VARIANTS = setOf("", "simplified", "traditional", "br", "pt")

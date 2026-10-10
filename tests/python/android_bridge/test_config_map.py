@@ -22,6 +22,11 @@ def _paths(tmp_path: Path) -> AndroidPaths:
     return AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
 
 
+#: Kotlin always sends the note type. The desktop default is "" (nothing chosen), which
+#: config_map refuses, so a snapshot that should map names one.
+_NOTE_TYPE = {"anki_note_type": "Lapis"}
+
+
 def test_no_localaudio_source_survives_in_config_map() -> None:
     # The localhost:8765 localaudio server (AnkiConnect-Android) was removed:
     # expression audio comes only from imported local packs, so no URL template
@@ -67,16 +72,27 @@ def test_strip_subtitle_annotations_is_no_longer_exposed() -> None:
     assert not hasattr(AnkiMinerConfig(), "strip_subtitle_annotations")
 
 
-def test_empty_snapshot_preserves_all_132_desktop_defaults_except_targeted_android_overrides(
+def test_an_empty_snapshot_is_refused_because_the_desktop_note_type_is_blank(tmp_path: Path) -> None:
+    from anki_miner.config import AnkiMinerConfig
+
+    assert AnkiMinerConfig().anki_note_type == ""
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings({}, _paths(tmp_path))
+    assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith("anki_note_type:")
+
+
+def test_a_note_type_alone_keeps_all_134_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
     from anki_miner.config import AnkiMinerConfig
 
     paths = _paths(tmp_path)
-    mapped = map_config_settings({}, paths)
+    mapped = map_config_settings(dict(_NOTE_TYPE), paths)
     base = AnkiMinerConfig()
     expected = replace(
         base,
+        **_NOTE_TYPE,
         **_path_overrides(paths),
         # Android drops the desktop network source defaults: expression audio
         # comes only from imported local packs, so the default chain is empty.
@@ -87,7 +103,7 @@ def test_empty_snapshot_preserves_all_132_desktop_defaults_except_targeted_andro
     )
 
     desktop_fields = fields(AnkiMinerConfig)
-    assert len(desktop_fields) == 132
+    assert len(desktop_fields) == 134
     assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
         field.name: getattr(expected, field.name) for field in desktop_fields
     }
@@ -106,7 +122,7 @@ def test_ffmpeg_binary_verification_logs_non_executable_and_missing_paths(
     ffmpeg.chmod(0o644)
     caplog.set_level(logging.ERROR, logger="android_bridge.config_map")
 
-    map_config_settings({}, paths)
+    map_config_settings(dict(_NOTE_TYPE), paths)
 
     failures = [record for record in caplog.records if "ffmpeg_binary_verification_failed" in record.msg]
     assert len(failures) == 2
@@ -132,7 +148,7 @@ def test_ffmpeg_binary_verification_logs_non_executable_and_missing_paths(
 
     monkeypatch.setattr(Path, "resolve", fail_native_binary_resolution)
 
-    mapped = map_config_settings({}, paths)
+    mapped = map_config_settings(dict(_NOTE_TYPE), paths)
 
     assert mapped.engine_config.ffmpeg_location == ffmpeg
     assert mapped.engine_config.ffprobe_location == paths.native_library_dir / "libffprobe.so"
@@ -155,13 +171,14 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
 
     snapshot = map_config_settings(
         {
+            **_NOTE_TYPE,
             "anki_fields": {"expression_audio": "WordAudio"},
             "allowed_pos": ["名詞", "動詞"],
             "excluded_wordsets": ["given-names", "place-names"],
             "blacklist_path": str(tmp_path / "files" / "blacklist.txt"),
             "dictionary_chain": [
                 {"kind": "indexed", "dict_id": "jmdict-english"},
-                {"kind": "jisho", "dict_id": None, "enabled": False},
+                {"kind": "indexed", "dict_id": "jitendex", "enabled": False},
             ],
             "frequency_chain": [{"source_id": "bccwj", "enabled": True}],
             "expression_audio_chain": [{"kind": "pack", "pack_id": "my-pack"}],
@@ -175,7 +192,7 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
     assert isinstance(config.blacklist_path, Path)
     assert config.dictionary_chain == (
         ChainEntry(kind="indexed", dict_id="jmdict-english"),
-        ChainEntry(kind="jisho", dict_id=None, enabled=False),
+        ChainEntry(kind="indexed", dict_id="jitendex", enabled=False),
     )
     assert config.frequency_chain == (FreqEntry(source_id="bccwj"),)
     assert config.expression_audio_chain == (AudioSourceEntry(kind="pack", pack_id="my-pack"),)
@@ -193,9 +210,10 @@ def test_network_expression_audio_kinds_are_rejected(kind: str, tmp_path: Path) 
     assert error.value.code == "unsupported_audio_source"
 
 
-def test_animated_screenshots_are_accepted_with_pinned_tuning(tmp_path: Path) -> None:
+def test_animated_screenshots_are_accepted_with_their_tuning(tmp_path: Path) -> None:
     mapped = map_config_settings(
         {
+            **_NOTE_TYPE,
             "screenshot_animated": True,
             "screenshot_animated_format": "webp",
             "screenshot_animated_clip_duration": 2.0,
@@ -208,16 +226,15 @@ def test_animated_screenshots_are_accepted_with_pinned_tuning(tmp_path: Path) ->
     assert mapped.screenshot_animated_format == "webp"
     assert mapped.screenshot_animated_clip_duration == 2.0
     assert mapped.screenshot_animated_quality == 30
-    # Pinned, not exposed: the engine must never see a desktop default that
-    # Android has not validated on a phone.  match_audio is off because it
-    # silently overrides clip_duration, which the user can see.
+    # A snapshot without fps/height (every store from before they were settings) keeps the
+    # desktop defaults, so an upgrader's clips do not change.
     assert mapped.screenshot_animated_fps == 20
     assert mapped.screenshot_animated_height == 720
     assert mapped.screenshot_animated_match_audio is False
 
 
 def test_animated_screenshots_default_to_off(tmp_path: Path) -> None:
-    mapped = map_config_settings({}, _paths(tmp_path)).engine_config
+    mapped = map_config_settings(dict(_NOTE_TYPE), _paths(tmp_path)).engine_config
 
     assert mapped.screenshot_animated is False
 
@@ -230,6 +247,12 @@ def test_animated_screenshots_default_to_off(tmp_path: Path) -> None:
         ("screenshot_animated_quality", 101),
         ("screenshot_animated_quality", -1),
         ("screenshot_animated_format", "gif"),
+        # Desktop checks only that each is an int; ffmpeg's fps and scale filters need it positive.
+        ("screenshot_animated_fps", 0),
+        ("screenshot_animated_fps", True),
+        ("screenshot_animated_fps", 1.5),
+        ("screenshot_animated_height", 0),
+        ("screenshot_animated_height", -720),
     ],
 )
 def test_animated_screenshot_tuning_outside_the_supported_range_is_rejected(
@@ -237,46 +260,41 @@ def test_animated_screenshot_tuning_outside_the_supported_range_is_rejected(
     field: str,
     value: object,
 ) -> None:
-    with pytest.raises(BridgeProtocolError):
-        map_config_settings({field: value}, _paths(tmp_path))
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("screenshot_animated_fps", 30),
-        ("screenshot_animated_height", 480),
-    ],
-)
-def test_pinned_animated_screenshot_fields_are_not_settable(
-    tmp_path: Path,
-    field: str,
-    value: object,
-) -> None:
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({field: value}, _paths(tmp_path))
+        map_config_settings({**_NOTE_TYPE, field: value}, _paths(tmp_path))
+    assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith(f"{field}:")
 
-    assert error.value.code == "unknown_config_field"
 
-
-def test_match_audio_is_settable_and_still_pins_fps_and_height(tmp_path: Path) -> None:
-    """Desktop offers this control, so Android forwards it instead of pinning it off.
-
-    fps and height stay pinned either way: they exist so a card mined on the phone matches one
-    mined on the desktop, which is unrelated to the clip's time range.
-    """
+def test_animated_fps_and_height_reach_the_engine(tmp_path: Path) -> None:
+    """Desktop's Size presets set both; the snapshot's values are never replaced (Small here)."""
     mapped = map_config_settings(
-        {"screenshot_animated": True, "screenshot_animated_match_audio": True},
+        {
+            **_NOTE_TYPE,
+            "screenshot_animated": True,
+            "screenshot_animated_fps": 12,
+            "screenshot_animated_height": 480,
+        },
+        _paths(tmp_path),
+    ).engine_config
+
+    assert mapped.screenshot_animated_fps == 12
+    assert mapped.screenshot_animated_height == 480
+    assert type(mapped.screenshot_animated_fps) is int
+
+
+def test_match_audio_is_settable(tmp_path: Path) -> None:
+    """Desktop offers this control, so Android forwards it instead of pinning it off."""
+    mapped = map_config_settings(
+        {**_NOTE_TYPE, "screenshot_animated": True, "screenshot_animated_match_audio": True},
         _paths(tmp_path),
     )
 
     assert mapped.engine_config.screenshot_animated_match_audio is True
-    assert mapped.engine_config.screenshot_animated_fps == 20
-    assert mapped.engine_config.screenshot_animated_height == 720
 
 
 def test_match_audio_defaults_off_when_the_snapshot_omits_it(tmp_path: Path) -> None:
-    mapped = map_config_settings({"screenshot_animated": True}, _paths(tmp_path))
+    mapped = map_config_settings({**_NOTE_TYPE, "screenshot_animated": True}, _paths(tmp_path))
 
     assert mapped.engine_config.screenshot_animated_match_audio is False
 
@@ -284,7 +302,7 @@ def test_match_audio_defaults_off_when_the_snapshot_omits_it(tmp_path: Path) -> 
 def test_android_tts_flag_satisfies_vendored_gate_without_enabling_papago(
     tmp_path: Path,
 ) -> None:
-    mapped = map_config_settings({"reading_tts_enabled": True}, _paths(tmp_path))
+    mapped = map_config_settings({**_NOTE_TYPE, "reading_tts_enabled": True}, _paths(tmp_path))
 
     assert mapped.android_tts_enabled is True
     assert mapped.engine_config.reading_tts_enabled is True
@@ -311,7 +329,7 @@ def test_android_tts_composition_has_no_desktop_network_fetcher_imports() -> Non
 def test_sentence_length_caps_alone_reach_the_engine(tmp_path: Path) -> None:
     """The engine filters on the caps alone; Kotlin folds the old toggle into them."""
     mapped = map_config_settings(
-        {"max_sentence_duration_seconds": 8.5, "max_sentence_chars": 40},
+        {**_NOTE_TYPE, "max_sentence_duration_seconds": 8.5, "max_sentence_chars": 40},
         _paths(tmp_path),
     )
 
@@ -348,10 +366,13 @@ def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
     assert set(_WAVE_B_FIELDS) <= exposed
     assert "secondary_subtitle_enabled" not in exposed
     assert "use_sentence_length_filter" not in exposed
-    # 49 after Wave B, plus Wave C's language, script_variant and reading_tone_color.
+    # 49 after Wave B, plus Wave C's language, script_variant and reading_tone_color,
+    # minus jisho_delay (desktop v3.8.0 removed Jisho), plus the animated Size pair.
     assert {"language", "script_variant", "reading_tone_color"} <= exposed
+    assert {"screenshot_animated_fps", "screenshot_animated_height"} <= exposed
     assert "language_stash" not in exposed
-    assert len(exposed) == 52
+    assert "jisho_delay" not in exposed
+    assert len(exposed) == 53
     assert exposed <= {field.name for field in fields(AnkiMinerConfig)}
 
 
@@ -367,7 +388,7 @@ def test_wave_b_fields_reach_the_engine_config(tmp_path: Path) -> None:
         "known_words_match_kana_variants": True,
     }
 
-    mapped = map_config_settings(dict(_WAVE_B_FIELDS), _paths(tmp_path))
+    mapped = map_config_settings({**_NOTE_TYPE, **_WAVE_B_FIELDS}, _paths(tmp_path))
 
     assert {name: getattr(mapped.engine_config, name) for name in _WAVE_B_FIELDS} == _WAVE_B_FIELDS
     assert type(mapped.engine_config.min_frequency_rank) is int
@@ -375,7 +396,9 @@ def test_wave_b_fields_reach_the_engine_config(tmp_path: Path) -> None:
 
 def test_an_inverted_frequency_band_is_passed_through_like_desktop(tmp_path: Path) -> None:
     """The engine and desktop's run-file overlay accept any band; only the GUI keeps it ordered."""
-    mapped = map_config_settings({"min_frequency_rank": 9000, "max_frequency_rank": 100}, _paths(tmp_path))
+    mapped = map_config_settings(
+        {**_NOTE_TYPE, "min_frequency_rank": 9000, "max_frequency_rank": 100}, _paths(tmp_path)
+    )
 
     assert mapped.engine_config.min_frequency_rank == 9000
     assert mapped.engine_config.max_frequency_rank == 100
@@ -384,7 +407,7 @@ def test_an_inverted_frequency_band_is_passed_through_like_desktop(tmp_path: Pat
 @pytest.mark.parametrize("stored", [True, False])
 def test_persisted_dedup_value_round_trips_unchanged(stored: bool, tmp_path: Path) -> None:
     """The engine default flipped to False; a value the snapshot carries is never replaced."""
-    mapped = map_config_settings({"deduplicate_sentences": stored}, _paths(tmp_path))
+    mapped = map_config_settings({**_NOTE_TYPE, "deduplicate_sentences": stored}, _paths(tmp_path))
 
     assert mapped.engine_config.deduplicate_sentences is stored
 
@@ -404,7 +427,10 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
     [
         ({"youtube_max_duration_s": 10}, "unknown_config_field"),
         ({"audio_bitrate": True}, "invalid_config_field"),
-        ({"jisho_delay": 0.1}, "invalid_config_field"),
+        # Desktop v3.8.0 removed Jisho: the delay is a retired field like any other, and the
+        # chain takes indexed dictionaries only.
+        ({"jisho_delay": 1.0}, "unknown_config_field"),
+        ({"dictionary_chain": [{"kind": "jisho", "dict_id": None}]}, "invalid_config_field"),
         ({"blacklist_path": "relative.txt"}, "invalid_config_field"),
         ({"blacklist_path": ""}, "invalid_config_field"),
         ({"anki_fields": {"invented": "Field"}}, "invalid_config_field"),
@@ -435,16 +461,21 @@ def test_unknown_or_wrongly_typed_settings_fail_closed(
     code: str,
     tmp_path: Path,
 ) -> None:
+    # A valid note type, so only the case's own field can fail: a blank one fails every snapshot
+    # with the same code. The note-type cases override it.
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings(settings, _paths(tmp_path))
+        map_config_settings({**_NOTE_TYPE, **settings}, _paths(tmp_path))
     assert error.value.code == code
+    if code == "invalid_config_field":
+        ((field, _value),) = settings.items()
+        assert str(error.value).startswith(field), str(error.value)
 
 
 def test_public_json_entry_point_requires_versioned_snapshot(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
     raw = encode_message(
         "config.snapshot",
-        {"settings": {"audio_format": "opus"}, "androidTtsEnabled": True},
+        {"settings": {**_NOTE_TYPE, "audio_format": "opus"}, "androidTtsEnabled": True},
     )
 
     mapped = map_config_json(
@@ -462,7 +493,7 @@ def test_draft_integer_floats_normalize_for_schema_and_config_fields(
     tmp_path: Path,
 ) -> None:
     paths = _paths(tmp_path)
-    raw = '{"schemaVersion":1.0,"type":"config.snapshot","payload":{"settings":{"audio_bitrate":128.0}}}'
+    raw = '{"schemaVersion":1.0,"type":"config.snapshot","payload":{"settings":{"anki_note_type":"Lapis","audio_bitrate":128.0}}}'
 
     mapped = map_config_json(
         raw,
@@ -478,6 +509,7 @@ def test_draft_integer_floats_normalize_for_schema_and_config_fields(
 def test_blank_field_and_active_marker_mappings_are_preserved(tmp_path: Path) -> None:
     mapped = map_config_settings(
         {
+            **_NOTE_TYPE,
             "anki_fields": {"word": "", "sentence": ""},
             "card_type": "click",
             "card_type_marker_fields": {"click": ""},
@@ -497,6 +529,7 @@ def test_android_marker_map_shuts_out_the_engine_jpmn_defaults(tmp_path: Path) -
     # may not have them.
     mapped = map_config_settings(
         {
+            **_NOTE_TYPE,
             "card_type": "click",
             "card_type_marker_fields": {
                 "word_and_sentence": "",
@@ -531,6 +564,7 @@ def test_active_card_marker_cannot_overwrite_word_at_snapshot_boundary(tmp_path:
     with pytest.raises(BridgeProtocolError) as error:
         map_config_settings(
             {
+                **_NOTE_TYPE,
                 "card_type": "click",
                 "card_type_marker_fields": {"click": "Expression"},
             },
@@ -545,8 +579,9 @@ def test_active_card_marker_cannot_overwrite_word_at_snapshot_boundary(tmp_path:
 
 def test_nonintegral_float_is_not_an_integer_config_field(tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"audio_bitrate": 1.5}, _paths(tmp_path))
+        map_config_settings({**_NOTE_TYPE, "audio_bitrate": 1.5}, _paths(tmp_path))
     assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith("audio_bitrate:")
 
 
 def test_checked_in_schema_allowlist_matches_mapper() -> None:
@@ -595,8 +630,9 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
 )
 def test_canonical_names_follow_pinned_unicode_contract(value: str, tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"anki_deck_name": value}, _paths(tmp_path))
+        map_config_settings({**_NOTE_TYPE, "anki_deck_name": value}, _paths(tmp_path))
     assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith("anki_deck_name:")
 
 
 def test_contract_validators_do_not_use_host_unicode_or_strip_tables() -> None:
@@ -632,4 +668,4 @@ def test_the_device_voice_is_not_a_japanese_audio_source(tmp_path: Path) -> None
 
 
 def test_a_japanese_snapshot_without_a_chain_still_mines_no_word_audio(tmp_path: Path) -> None:
-    assert map_config_settings({}, _paths(tmp_path)).engine_config.expression_audio_chain == ()
+    assert map_config_settings(dict(_NOTE_TYPE), _paths(tmp_path)).engine_config.expression_audio_chain == ()

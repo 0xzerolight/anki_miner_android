@@ -857,10 +857,10 @@ class LogRedactorTest {
     // Rule 8
 
     @Test
-    fun `a percent encoded jisho url is redacted even though rule 7 cannot see it`() {
+    fun `a percent encoded url query is redacted even though rule 7 cannot see it`() {
         val redacted =
             redactor().redact(
-                "GET https://jisho.org/api/v1/search/words?keyword=%E6%AE%BA%E3%81%99 200",
+                "GET https://example.invalid/api/v1/search/words?keyword=%E6%AE%BA%E3%81%99 200",
             )
 
         assertFalse(redacted, redacted.contains("%E6"))
@@ -868,7 +868,7 @@ class LogRedactorTest {
             redacted,
             redacted.matches(
                 Regex(
-                    "GET https://jisho\\.org/api/v1/search/words\\?keyword=<jp-enc-[0-9a-f]{6}> 200",
+                    "GET https://example\\.invalid/api/v1/search/words\\?keyword=<jp-enc-[0-9a-f]{6}> 200",
                 ),
             ),
         )

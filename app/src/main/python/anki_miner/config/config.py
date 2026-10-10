@@ -76,11 +76,10 @@ ZOOM_PRESETS: tuple[int, ...] = (75, 100, 125, 150, 175, 200)
 class ChainEntry:
     """One entry in the dictionary lookup chain.
 
-    Indexed entries reference a folder under ~/.anki_miner/dicts/<dict_id>/.
-    Jisho entries are the always-available online fallback; dict_id is None.
+    Each entry references a folder under ~/.anki_miner/dicts/<dict_id>/.
     """
 
-    kind: Literal["indexed", "jisho"]
+    kind: Literal["indexed"]
     dict_id: str | None = None
     enabled: bool = True
 
@@ -172,6 +171,21 @@ def insert_above_first_enabled_jpod101(
     return tuple(out)
 
 
+def _valid_region(value: object) -> tuple[float, ...]:
+    """Four frame fractions (x, y, w, h) inside the frame, rounded to 4 dp; anything else is ()."""
+    if not isinstance(value, (tuple, list)) or len(value) != 4:
+        return ()
+    try:
+        x, y, w, h = (round(float(v), 4) for v in value)
+    except (TypeError, ValueError):
+        return ()
+    if not (0.0 <= x < 1.0 and 0.0 <= y < 1.0 and 0.0 < w <= 1.0 and 0.0 < h <= 1.0):
+        return ()
+    if x + w > 1.0001 or y + h > 1.0001:
+        return ()
+    return (x, y, w, h)
+
+
 @dataclass(frozen=True)
 class AnkiMinerConfig:
     """Immutable configuration for anki mining operations.
@@ -182,7 +196,9 @@ class AnkiMinerConfig:
 
     # Anki settings
     anki_deck_name: str = "Anki Miner"
-    anki_note_type: str = "Lapis"
+    # Nothing chosen, as in every language: the setup wizard has the user pick.
+    # A saved config keeps its own value (the whole config is written).
+    anki_note_type: str = ""
     anki_fields: Mapping[str, str] = field(
         default_factory=lambda: {
             "word": "Expression",
@@ -208,6 +224,9 @@ class AnkiMinerConfig:
             # Secondary-language subtitle line for the sentence (F7). "" = off;
             # the mapped name is the switch, like sentence_reading.
             "sentence_translation": "",
+            # The card's BCP-47 language tag (ja, zh-Hans, de), for a note type
+            # that sets lang= by it. "" = off; the mapped name is the switch.
+            "language": "",
         }
     )
     # JP Mining Note-style card-type marker. When card_type is non-empty, an "x"
@@ -227,6 +246,10 @@ class AnkiMinerConfig:
         }
     )
     ankiconnect_url: str = "http://127.0.0.1:8765"
+    # Start Anki at launch when the startup check finds AnkiConnect unreachable
+    # (gui/controllers/anki_auto_open.py). Opt-in. Portable, not language-scoped:
+    # one preference for every mining language.
+    auto_open_anki: bool = False
     anki_tags: str = "auto-mined"  # Whitespace-separated tags applied to every mined card; empty string means no tags
     # Deck names excluded from known-words detection (Issue #38). Notes in these
     # decks (and their subdecks) are dropped from the findNotes query, so their
@@ -274,6 +297,11 @@ class AnkiMinerConfig:
     # "Redo already-processed volumes" box is deliberately NOT a field here
     # (overwrite-class options stay transient — test_overwrite_is_never_persisted).
     mokuro_use_gpu: bool = True
+
+    # --- Video OCR (Utilities → Video OCR) ---
+    # The subtitle region as fractions of the frame (x, y, w, h): a remembered run
+    # option, () until the user draws one. Validated by name in __post_init__.
+    video_ocr_region: tuple[float, ...] = ()
 
     # --- Inline run options remembered between launches --------------------
     # Set on a workflow screen rather than in Settings, and persisted the same
@@ -352,21 +380,16 @@ class AnkiMinerConfig:
     # the UI knows where to find the user's XML and where to write the
     # indexed DB.
     dictionary_chain: tuple["ChainEntry", ...] = field(
-        default_factory=lambda: (
-            ChainEntry(kind="indexed", dict_id="jmdict-english", enabled=True),
-            ChainEntry(kind="jisho", dict_id=None, enabled=False),
-        )
+        default_factory=lambda: (ChainEntry(kind="indexed", dict_id="jmdict-english", enabled=True),)
     )
     jmdict_path: Path = field(default_factory=lambda: ANKI_MINER_HOME / "JMdict_e")
     dicts_root: Path = field(default_factory=lambda: ANKI_MINER_HOME / "dicts")
-    jisho_api_url: str = "https://jisho.org/api/v1/search/words"
-    jisho_delay: float = 0.5  # Seconds between API calls. Jisho rate-limits; do NOT remove or reduce.
 
     # Expression audio settings (Issue #73). Fetches word pronunciation audio
     # from an external endpoint and writes it to the expression_audio Anki field.
     # Activation mirrors other optional fields (frequency, pitch): the feature
     # is on iff anki_fields["expression_audio"] is non-empty. Off by default
-    # because that field defaults to "". expression_audio_delay mirrors jisho_delay.
+    # because that field defaults to "".
     expression_audio_delay: float = 0.2  # Seconds between audio fetch requests.
     # Ordered list of audio sources tried in priority order.
     # The disabled googletts entry is present-but-off so the Settings UI can
@@ -545,7 +568,9 @@ class AnkiMinerConfig:
     # (each ``0``/``0.0`` means "no limit" for that dimension). Runs AFTER i+1
     # because filter_i_plus_one swaps each word's sentence/duration to its
     # chosen i+1 line — applying the cap before that swap would be silently
-    # bypassed by the swap.
+    # bypassed by the swap. The character cap is in LANGUAGE_SCOPED_FIELDS
+    # (a character count depends on the script, so a cap tuned to Japanese
+    # drops most German sentences); the duration cap stays global.
     max_sentence_duration_seconds: float = 0.0  # 0 = no duration cap
     max_sentence_chars: int = 0  # 0 = no character cap
 
@@ -558,12 +583,11 @@ class AnkiMinerConfig:
     # language, only the punctuation differs. Every subtitle-timed run inherits
     # it (video, YouTube, batch, audiobook — they all go through
     # process_episode); the reading sources have no cue timeline and ignore it.
-    # The sentence-length filter above is unaffected and still measures the raw
-    # cue in phase 2, so a merged card can be longer than the cap its fragment
-    # passed; the merged window is bounded instead by the clip strip's own
-    # ceiling (services/cue_merge.py). Sentence dedup, by contrast, IS re-run
-    # over the merged text before curation — two words on adjacent cues would
-    # otherwise both survive on one sentence.
+    # The merged window is bounded by the clip strip's own ceiling
+    # (services/cue_merge.py). Sentence dedup and the sentence-length caps
+    # above are re-run over the merged sentence before curation: two words on
+    # adjacent cues would otherwise both survive on one sentence, and a
+    # fragment that passed the caps in phase 2 can grow past them.
     merge_incomplete_cues: bool = False
 
     # Reading tab: minimum times a word must occur in a single book/volume to be
@@ -629,6 +653,12 @@ class AnkiMinerConfig:
     # yt-dlp#17456). Off does NOT uninstall an installed nightly — the managed
     # copy stays until a newer stable supersedes it (packaging.Version ordering).
     ytdlp_prerelease: bool = False
+    # Once a week at startup, re-download every dictionary, frequency list and
+    # pitch source whose saved index.json publishes a newer revision
+    # (services/resource_updates.py). Each update rebuilds its slot in place,
+    # so the chains keep their order and enabled state. Portable, not
+    # language-scoped: one preference for every mining language.
+    auto_update_dictionaries: bool = True
 
     # --- Bundled media tooling ---
     # Optional explicit overrides for the ffmpeg/ffprobe executables. When unset,
@@ -672,6 +702,9 @@ class AnkiMinerConfig:
     # stay slim. Extracted onnxruntime/ tree is added to sys.path on demand.
     # Derived from ANKI_MINER_HOME, never user-configurable directly.
     onnx_pack_root: Path = field(default_factory=lambda: ANKI_MINER_HOME / "onnx_pack")
+    # The two pinned meikiocr models for Utilities → Video OCR.
+    # Derived from ANKI_MINER_HOME, never user-configurable directly.
+    video_ocr_models_root: Path = field(default_factory=lambda: ANKI_MINER_HOME / "ocr_models")
 
     # Managed directory for in-app-downloaded executables (e.g. the alass
     # subtitle-alignment binary); derived from ANKI_MINER_HOME, never
@@ -701,7 +734,7 @@ class AnkiMinerConfig:
     # the source language: no translator is installed for it. Persisted via
     # gui_config.json; applied at startup (restart-to-apply). Discussion #76.
     ui_language: str = "en"
-    # Utilities tools the user took off the Utilities tab (Settings -> General),
+    # Utilities tools the user took off the Utilities tab (Settings -> Utilities),
     # by stable sub-tab key (gui/capabilities.UTILITY_SUBTABS).
     # Hidden keys only, so a tool added in a later release shows by default.
     # Read through capabilities.effective_hidden_utilities: unknown keys are
@@ -798,6 +831,7 @@ class AnkiMinerConfig:
 
         # Clamp ui_zoom to [0.5, 2.0]
         object.__setattr__(self, "ui_zoom", max(0.5, min(2.0, float(self.ui_zoom))))
+        object.__setattr__(self, "video_ocr_region", _valid_region(self.video_ocr_region))
 
         # Clamp the Deck Builder run options to their spinbox ranges. A config
         # value outside them would otherwise be silently re-clamped by the

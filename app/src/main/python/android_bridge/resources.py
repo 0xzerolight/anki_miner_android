@@ -26,7 +26,7 @@ import unicodedata
 import zipfile
 from collections import OrderedDict
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Callable
 
@@ -1511,6 +1511,20 @@ def _seal_retained_archive(candidate: Path) -> None:
         retained.chmod(0o400)
 
 
+_DICTIONARY_SIDECAR_KEYS = frozenset(
+    {
+        "schemaVersion",
+        "slotId",
+        "archiveSha256",
+        "archiveSizeBytes",
+        "catalogResourceId",
+        "sourceName",
+        "sourceRevision",
+        "attribution",
+    }
+)
+
+
 def _dictionary_sidecar(
     *,
     slot_id: str,
@@ -1518,9 +1532,17 @@ def _dictionary_sidecar(
     catalog_resource: YomitanResource | None,
     source_name: str,
     source_revision: str,
+    publisher_update: bool = False,
 ) -> dict[str, object]:
-    return {
-        "schemaVersion": 1,
+    """Schema 1 records a catalog slot by its frozen pin; schema 2 a slot its publisher updated.
+
+    An update (``resource.update.install``) replaces the pinned archive with the
+    publisher's latest, whose title, revision and bytes match no pin, so schema 2
+    keeps the catalog id and attribution on the slot's identity alone.
+    """
+
+    sidecar: dict[str, object] = {
+        "schemaVersion": 2 if publisher_update else 1,
         "slotId": slot_id,
         "archiveSha256": archive.sha256,
         "archiveSizeBytes": archive.size_bytes,
@@ -1529,6 +1551,9 @@ def _dictionary_sidecar(
         "sourceRevision": source_revision,
         "attribution": ([item.payload() for item in catalog_resource.attribution] if catalog_resource else []),
     }
+    if publisher_update:
+        sidecar["publisherUpdate"] = True
+    return sidecar
 
 
 @dataclass(frozen=True, slots=True)
@@ -1536,6 +1561,8 @@ class _DictionarySidecar:
     source_name: str
     source_revision: str
     catalog_resource: YomitanResource | None
+    publisher_update: bool = False
+    catalog_language: str | None = None
 
     @property
     def catalog_resource_id(self) -> str | None:
@@ -1546,6 +1573,19 @@ class _DictionarySidecar:
         if self.catalog_resource is None:
             return []
         return [item.payload() for item in self.catalog_resource.attribution]
+
+    def listed_for(self, language: str) -> _DictionarySidecar:
+        """The identity inventory may report for a slot listed with *language*.
+
+        Kotlin accepts a publisher-updated catalog id only within that catalog's
+        language, and one refused entry fails the whole listing at startup, so
+        Python drops the id first rather than list what Kotlin would refuse. A
+        frozen (schema 1) identity is checked against the pin instead, as before.
+        """
+
+        if self.publisher_update and self.catalog_resource is not None and self.catalog_language != language:
+            return replace(self, catalog_resource=None, catalog_language=None)
+        return self
 
 
 def _path_occupied(path: Path) -> bool:
@@ -1874,7 +1914,19 @@ def preflight_dictionary(payload: Mapping[str, object]) -> str:
         )
 
 
-def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
+def import_dictionary(
+    payload: Mapping[str, object],
+    *,
+    callbacks: object | None = None,
+    publisher_update: bool = False,
+) -> str:
+    """``resource.dictionary.import``; also the in-place install behind ``resource.update.install``.
+
+    ``publisher_update`` is set only by that install (``dictionary_updates``),
+    never from the wire: the archive is the publisher's latest, verified like a
+    custom import, and the slot keeps the catalog id the request carries.
+    """
+
     from .languages import language_kwarg, payload_language, without_language
 
     _exact(
@@ -1924,6 +1976,27 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
     final = _dictionary_root(home) / slot_id
     if _path_occupied(final) and not overwrite:
         raise _fail("resource_already_installed", f"Dictionary slot {slot_id!r} already exists")
+    # Kotlin hands us an app-private staged file (SAF copy for a custom pick,
+    # download for a catalog one or an update), so copying it here only doubled
+    # the peak footprint of a multi-hundred-megabyte import. The one exception
+    # is a startup rebuild sourced from a live slot's own retained source.zip:
+    # measuring that in place would let the streamed-rewrite path later move the
+    # slot's only copy into the candidate, where a failed publication destroys it.
+    in_place_rebuild = _dictionary_root(home) in source.parents
+    # Startup recovery re-sends a stale slot's catalog id with its own
+    # source.zip. After a publisher's update that archive matches no pin, so the
+    # schema-2 sidecar, read before the import replaces the slot, decides.
+    if in_place_rebuild and not publisher_update:
+        previous = _read_dictionary_sidecar(final, slot_id=slot_id)
+        publisher_update = (
+            previous is not None
+            and previous.publisher_update
+            and previous.catalog_resource_id == (catalog_resource.resource_id if catalog_resource else None)
+        )
+    # The frozen pin the archive is verified against. A publisher's update has
+    # none: same trust as a custom import (HTTPS, no hash pin), while the slot
+    # keeps its catalog id and attribution.
+    pinned = None if publisher_update else catalog_resource
     operation_root = _resource_work_root(home) / "operations" / operation_id
     with _OPERATIONS.begin(operation_id) as operation:
         operation.check()
@@ -1931,17 +2004,7 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
         _safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
-            maximum_archive = (
-                catalog_resource.archive.size_bytes if catalog_resource else _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES
-            )
-            # Kotlin hands us an app-private staged file (SAF copy for a custom
-            # pick, download for a catalog one), so copying it here only doubled
-            # the peak footprint of a multi-hundred-megabyte import. The one
-            # exception is a startup rebuild sourced from a live slot's own
-            # retained source.zip: measuring that in place would let the
-            # streamed-rewrite path later move the slot's only copy into the
-            # candidate, where a failed publication destroys it.
-            in_place_rebuild = _dictionary_root(home) in source.parents
+            maximum_archive = pinned.archive.size_bytes if pinned else _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES
             # A rebuild replays the slot's own stamp (desktop slot_language_kwarg):
             # importing it as the request's language would restamp a Hebrew index
             # "ja" and drop it from the Hebrew chain. Read before the import
@@ -1958,32 +2021,28 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     operation_root / "source.zip",
                     operation,
                     maximum_bytes=maximum_archive,
-                    expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
-                    expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
+                    expected_size=(pinned.archive.size_bytes if pinned else None),
+                    expected_sha256=(pinned.archive.sha256 if pinned else None),
                 )
             else:
                 copied = _hash_archive(
                     source,
                     operation,
                     maximum_bytes=maximum_archive,
-                    expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
-                    expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
+                    expected_size=(pinned.archive.size_bytes if pinned else None),
+                    expected_sha256=(pinned.archive.sha256 if pinned else None),
                 )
             identity = _validate_zip_streamed(
                 copied.path,
                 operation,
-                member_limit=(catalog_resource.dictionary.archive_member_limit if catalog_resource else None),
-                total_limit=(
-                    catalog_resource.dictionary.uncompressed_bytes_limit
-                    if catalog_resource
-                    else _engine_uncompressed_limit()
-                ),
-                file_limit=(catalog_resource.dictionary.file_bytes_limit if catalog_resource else None),
-                require_root_index=catalog_resource is not None,
+                member_limit=(pinned.dictionary.archive_member_limit if pinned else None),
+                total_limit=(pinned.dictionary.uncompressed_bytes_limit if pinned else _engine_uncompressed_limit()),
+                file_limit=(pinned.dictionary.file_bytes_limit if pinned else None),
+                require_root_index=pinned is not None,
             )
-            if catalog_resource and (
-                identity.member_count != catalog_resource.dictionary.member_count
-                or identity.uncompressed_bytes != catalog_resource.dictionary.uncompressed_bytes
+            if pinned and (
+                identity.member_count != pinned.dictionary.member_count
+                or identity.uncompressed_bytes != pinned.dictionary.uncompressed_bytes
             ):
                 raise _fail(
                     "resource_archive_mismatch",
@@ -2051,9 +2110,8 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                 )
             reporter.set_phase("finalizing")
             _validate_dictionary_metadata(result.source_name, result.source_revision)
-            if catalog_resource and (
-                result.source_name != catalog_resource.dictionary.title
-                or result.source_revision != catalog_resource.dictionary.revision
+            if pinned and (
+                result.source_name != pinned.dictionary.title or result.source_revision != pinned.dictionary.revision
             ):
                 raise _fail(
                     "resource_archive_mismatch",
@@ -2071,6 +2129,7 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                 catalog_resource=catalog_resource,
                 source_name=result.source_name,
                 source_revision=result.source_revision,
+                publisher_update=publisher_update,
             )
             _write_file(candidate / "android-resource.json", _canonical_json_bytes(sidecar))
             _fsync_directory(candidate)
@@ -2149,7 +2208,11 @@ def _read_dictionary_sidecar(
 
     A sidecar is advisory inventory metadata, never proof that the index is
     usable. Catalog identity is exposed only when every immutable field matches
-    the frozen catalog, so corrupt files cannot forge catalog attribution.
+    the frozen catalog, so corrupt files cannot forge catalog attribution. A
+    schema-2 sidecar (``publisherUpdate``) is a catalog slot its publisher
+    updated: catalog titles embed the release date, so the title, revision and
+    archive of every update differ from the pin, and only the slot, the catalog
+    id and the attribution are compared.
     """
 
     sidecar = slot / "android-resource.json"
@@ -2172,19 +2235,16 @@ def _read_dictionary_sidecar(
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
         return None
 
-    expected_keys = {
-        "schemaVersion",
-        "slotId",
-        "archiveSha256",
-        "archiveSizeBytes",
-        "catalogResourceId",
-        "sourceName",
-        "sourceRevision",
-        "attribution",
-    }
-    if not isinstance(value, dict) or set(value) != expected_keys:
+    if not isinstance(value, dict):
         return None
-    if type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
+    schema_version = value.get("schemaVersion")
+    if type(schema_version) is not int or schema_version not in (1, 2):
+        return None
+    publisher_update = schema_version == 2
+    expected_keys = _DICTIONARY_SIDECAR_KEYS | ({"publisherUpdate"} if publisher_update else set())
+    if set(value) != expected_keys:
+        return None
+    if publisher_update and value["publisherUpdate"] is not True:
         return None
     if value["slotId"] != slot_id:
         return None
@@ -2201,6 +2261,7 @@ def _read_dictionary_sidecar(
 
     catalog_id = value["catalogResourceId"]
     catalog_resource: YomitanResource | None = None
+    catalog_language: str | None = None
     if catalog_id is None:
         if value["attribution"] != []:
             return None
@@ -2209,18 +2270,18 @@ def _read_dictionary_sidecar(
         if catalog_text is None:
             return None
         try:
-            _language, selected = find_catalog_resource(catalog_text)
+            catalog_language, selected = find_catalog_resource(catalog_text)
         except BridgeProtocolError:
             return None
         if not isinstance(selected, YomitanResource):
             return None
-        if (
-            selected.slot_id != slot_id
-            or selected.archive.sha256 != archive_hash
+        if selected.slot_id != slot_id or value["attribution"] != [item.payload() for item in selected.attribution]:
+            return None
+        if not publisher_update and (
+            selected.archive.sha256 != archive_hash
             or selected.archive.size_bytes != archive_size
             or selected.dictionary.title != source_name
             or selected.dictionary.revision != source_revision
-            or value["attribution"] != [item.payload() for item in selected.attribution]
         ):
             return None
         catalog_resource = selected
@@ -2228,6 +2289,8 @@ def _read_dictionary_sidecar(
         source_name=source_name,
         source_revision=source_revision,
         catalog_resource=catalog_resource,
+        publisher_update=publisher_update,
+        catalog_language=catalog_language,
     )
 
 
@@ -2248,6 +2311,9 @@ def _invalid_dictionary_payload(
     slot_id: str,
     sidecar: _DictionarySidecar | None,
 ) -> dict[str, object]:
+    language = _inventory_language(None)
+    if sidecar is not None:
+        sidecar = sidecar.listed_for(language)
     return {
         "slotId": slot_id,
         "occupied": True,
@@ -2264,7 +2330,8 @@ def _invalid_dictionary_payload(
         # rebuild source for it would re-import into a slot whose state is
         # unknown instead of steering the user to an explicit replace.
         "rebuildSourcePath": None,
-        "language": _inventory_language(None),
+        "language": language,
+        "publisherUpdate": sidecar.publisher_update if sidecar else False,
     }
 
 
@@ -2348,6 +2415,9 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
         return _invalid_dictionary_payload(slot_id, sidecar)
     if sidecar is not None and (sidecar.source_name != source_name or sidecar.source_revision != source_revision):
         sidecar = None
+    language = _inventory_language(values.get("language"))
+    if sidecar is not None:
+        sidecar = sidecar.listed_for(language)
 
     embedded = {
         key: validated
@@ -2368,7 +2438,8 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
         "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
         "attribution": sidecar.attribution if sidecar else [],
         "rebuildSourcePath": _dictionary_rebuild_source_path(slot),
-        "language": _inventory_language(values.get("language")),
+        "language": language,
+        "publisherUpdate": sidecar.publisher_update if sidecar else False,
     }
 
 

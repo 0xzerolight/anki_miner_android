@@ -49,7 +49,6 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 - Extensive filtering: i+1, frequency limits, blacklist, wordsets, proper-noun name lists, and more.
 - Offline Yomitan dictionary import - definitions, pitch accent, frequency - chained by priority.
 - Word audio from on-device audio packs - the local-audio-yomichan collection or its generated android.db; sentence audio from your device's Japanese text-to-speech.
-- Optional Jisho.org online fallback for definitions (slower, rate-limited).
 - Interface translated into 11 languages besides English.
 - Light and dark themes from ported palettes - Catppuccin, Dracula, Nord, Gruvbox, Solarized, and more. Android 12+ can take colours from your wallpaper.
 
@@ -59,7 +58,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 1. **Read the subtitles or text** and split Japanese into individual words.
 2. **Filter** to content words you don't already know.
 3. **Grab a screenshot and audio clip** from the video for each line.
-4. **Look up definitions** in your configured offline dictionaries, optionally falling back to Jisho online if enabled.
+4. **Look up definitions** in your configured offline dictionaries.
 5. **Send the finished cards to AnkiDroid.**
 
 </details>
@@ -99,7 +98,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 |-------|----------|
 | Cards not reaching Anki | Install AnkiDroid and grant Anki Miner permission when prompted. |
 | APK won't install | Enable install-from-unknown-sources for your browser/file manager; the device must be `arm64-v8a` on Android 8.0+. |
-| No definitions found | Add a dictionary in Settings -> Resources, or enable the Jisho fallback (slower, rate-limited). |
+| No definitions found | Add a dictionary in Settings -> Resources. |
 | Setup notice on a mining tab | Open Settings and finish the flagged step (tokenizer, dictionary, or AnkiDroid). |
 | Sentence audio missing or wrong | Install a Japanese text-to-speech voice in your Android system settings. |
 | Word audio missing on cards | Import an audio pack or android.db under Settings -> Resources, and map the expression audio field. |

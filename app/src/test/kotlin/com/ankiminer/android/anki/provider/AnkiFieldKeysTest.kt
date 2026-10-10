@@ -12,18 +12,18 @@ import org.junit.Test
  * side changes, this test must fail — keep the two literals in step.
  */
 class AnkiFieldKeysTest {
-    /** The exact 19 logical keys `BridgeJsonCodec.validateSettings`/`ANKI_FIELDS` accepts. */
+    /** The exact 20 logical keys `BridgeJsonCodec.validateSettings`/`ANKI_FIELDS` accepts. */
     private val bridgeAnkiFields =
         setOf(
             "word", "sentence", "definition", "glossary", "picture", "audio", "expression_furigana",
             "expression_reading", "sentence_furigana", "sentence_reading", "pitch_position",
             "pitch_category", "pitch_graph", "pitch_text", "frequency", "frequency_sort", "source",
-            "expression_audio", "sentence_translation",
+            "expression_audio", "sentence_translation", "language",
         )
 
     @Test
-    fun `ALL is exactly the 19 duplicate-free keys the bridge validates`() {
-        assertEquals(19, AnkiFieldKeys.ALL.size)
+    fun `ALL is exactly the 20 duplicate-free keys the bridge validates`() {
+        assertEquals(20, AnkiFieldKeys.ALL.size)
         assertEquals("ALL must contain no duplicates", AnkiFieldKeys.ALL.size, AnkiFieldKeys.ALL.toSet().size)
         assertEquals(bridgeAnkiFields, AnkiFieldKeys.ALL.toSet())
     }
@@ -43,7 +43,7 @@ class AnkiFieldKeysTest {
     @Test
     fun `OPTIONAL is ALL minus REQUIRED and partitions ALL with REQUIRED`() {
         assertEquals(AnkiFieldKeys.ALL.toSet() - AnkiFieldKeys.REQUIRED, AnkiFieldKeys.OPTIONAL.toSet())
-        assertEquals(18, AnkiFieldKeys.OPTIONAL.size)
+        assertEquals(19, AnkiFieldKeys.OPTIONAL.size)
         assertTrue(
             "OPTIONAL must be disjoint from REQUIRED",
             AnkiFieldKeys.OPTIONAL.none { it in AnkiFieldKeys.REQUIRED },

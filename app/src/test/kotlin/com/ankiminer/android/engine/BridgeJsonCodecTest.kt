@@ -11,6 +11,9 @@ import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.NotMinedGroup
+import com.ankiminer.android.mining.NotMinedReason
+import com.ankiminer.android.mining.ProcessingResult
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
 import java.io.ByteArrayOutputStream
@@ -286,6 +289,42 @@ class BridgeJsonCodecTest {
                     ),
             )
         assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.encodeVideoRun(malformed) }
+    }
+
+    @Test
+    fun `a snapshot carrying Jisho is refused now that desktop v3_8_0 removed it`() {
+        val jishoEntry =
+            BridgeJsonValue.ArrayValue(
+                listOf(
+                    BridgeJsonValue.ObjectValue(
+                        mapOf(
+                            "kind" to BridgeJsonValue.Text("jisho"),
+                            "dict_id" to BridgeJsonValue.Null,
+                            "enabled" to BridgeJsonValue.Bool(true),
+                        ),
+                    ),
+                ),
+            )
+        listOf(
+            mapOf("dictionary_chain" to jishoEntry),
+            mapOf("jisho_delay" to BridgeJsonValue.Decimal(1.0)),
+        ).forEach { settings ->
+            val request = videoRequest(audioOnly = false).copy(configSnapshot = MiningConfigSnapshot(settings))
+            assertThrows(settings.keys.single(), BridgeProtocolException::class.java) {
+                BridgeJsonCodec.encodeVideoRun(request)
+            }
+        }
+    }
+
+    @Test
+    fun `a Japanese snapshot maps the Language field`() {
+        val settings =
+            mapOf(
+                "anki_fields" to BridgeJsonValue.ObjectValue(mapOf("language" to BridgeJsonValue.Text("Language"))),
+            )
+        val request = videoRequest(audioOnly = false).copy(configSnapshot = MiningConfigSnapshot(settings))
+
+        assertEquals(BridgeMessage.VideoRun(request), BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(request)))
     }
 
     @Test
@@ -988,6 +1027,113 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `terminal result carries the not-mined report and the run's language`() {
+        val fixture = fixtures("contracts/mining_protocol_v1.json", "valid").first { it.name == "successful terminal" }
+        val result = checkNotNull((BridgeJsonCodec.decode(fixture.message) as BridgeMessage.Terminal).result)
+
+        assertEquals(
+            listOf(
+                NotMinedGroup(NotMinedReason.KNOWN, listOf("犬")),
+                NotMinedGroup(NotMinedReason.NO_DEFINITION, listOf("𠮟る")),
+            ),
+            result.notMined,
+        )
+        assertEquals("ja", result.minedFormsLanguage)
+    }
+
+    @Test
+    fun `a ten thousand form not-mined report with non-BMP forms decodes intact`() {
+        val reasons = listOf(NotMinedReason.KNOWN, NotMinedReason.NO_DEFINITION, NotMinedReason.I_PLUS_ONE, NotMinedReason.ANKI_FAILED)
+        val groups =
+            reasons.mapIndexed { group, reason ->
+                NotMinedGroup(reason, (0 until 2_500).map { index -> "𠮟${group}語$index😀" }.sorted())
+            }
+        val notMined =
+            groups.joinToString(prefix = "[", postfix = "]") { group ->
+                """{"reason":"${group.reason.wire}","forms":${group.forms.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }}}"""
+            }
+
+        val result = decodeResult(notMined = notMined, language = "\"de\"")
+
+        assertEquals(groups, result.notMined)
+        assertEquals(10_000, result.notMined.orEmpty().sumOf { it.forms.size })
+        assertTrue("𠮟3語2499😀" in result.notMined.orEmpty().last().forms)
+        assertEquals("de", result.minedFormsLanguage)
+    }
+
+    @Test
+    fun `an unstamped result decodes a null report and a blank language`() {
+        val result = decodeResult(notMined = "null", language = "\"\"")
+
+        assertNull(result.notMined)
+        assertEquals("", result.minedFormsLanguage)
+        assertEquals(emptyList<NotMinedGroup>(), decodeResult(notMined = "[]", language = "\"\"").notMined)
+    }
+
+    @Test
+    fun `processing result decoder rejects a malformed not-mined report or language`() {
+        mapOf(
+            """[{"reason":"typo","forms":["猫"]}]""" to "\"ja\"",
+            """[{"reason":"known","forms":["猫"]},{"reason":"known","forms":["犬"]}]""" to "\"ja\"",
+            """[{"reason":"known","forms":[]}]""" to "\"ja\"",
+            """[{"reason":"known","forms":["猫"],"extra":1}]""" to "\"ja\"",
+            """[{"reason":"known"}]""" to "\"ja\"",
+            """{"known":["猫"]}""" to "\"ja\"",
+            "null" to "\"JA\"",
+            "null" to "\"japanese\"",
+            "null" to "\"j\"",
+            "null" to "null",
+        ).forEach { (notMined, language) ->
+            assertThrows("$notMined / $language", BridgeProtocolException::class.java) {
+                decodeResult(notMined = notMined, language = language)
+            }
+        }
+        // The pre-v3.8 result shape, without either key.
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(terminalJson(resultFields = "")) }
+    }
+
+    @Test
+    fun `not-mined reasons are the bridge schema's in declaration order`() {
+        // test_schemas pins the same list to the vendored engine's NotMinedReason.
+        val schema =
+            checkNotNull(javaClass.getResourceAsStream("/schemas/mining.schema.json")) {
+                "schemas/mining.schema.json missing from the test classpath"
+            }
+        val wires = mutableListOf<String>()
+        JsonFactory().createParser(schema).use { parser ->
+            // The first "enum" after the notMinedGroup key is its reason list.
+            while (parser.nextToken() != null && parser.currentName() != "notMinedGroup") Unit
+            while (parser.nextToken() != null && !(parser.currentToken() == JsonToken.FIELD_NAME && parser.currentName() == "enum")) Unit
+            check(parser.nextToken() == JsonToken.START_ARRAY)
+            while (parser.nextToken() == JsonToken.VALUE_STRING) wires += parser.text
+        }
+
+        assertEquals(wires, NotMinedReason.entries.map { it.wire })
+        assertEquals(
+            setOf(NotMinedReason.NO_DEFINITION, NotMinedReason.MEDIA_FAILED, NotMinedReason.ANKI_FAILED),
+            NotMinedReason.entries.filter { it.failure }.toSet(),
+        )
+    }
+
+    private fun decodeResult(
+        notMined: String,
+        language: String,
+    ): ProcessingResult =
+        checkNotNull(
+            (
+                BridgeJsonCodec.decode(
+                    terminalJson(""","minedFormsLanguage":$language,"notMined":$notMined"""),
+                ) as BridgeMessage.Terminal
+            ).result,
+        )
+
+    private fun terminalJson(resultFields: String): String =
+        """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"run_${"a".repeat(32)}","outcome":"success","result":""" +
+            """{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,""" +
+            """"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"","minedForms":[],""" +
+            """"ankiWriteState":"no_note_write","failureIsTransient":false$resultFields},"error":null}}"""
+
+    @Test
     fun `terminal error carries an optional fault id without making it mandatory`() {
         val runId = "run_${"a".repeat(32)}"
         fun terminal(error: String) =
@@ -1279,6 +1425,38 @@ class BridgeJsonCodecTest {
             hebrew.extraCardFields.first(),
         )
         assertEquals(LanguageUnavailableReason.DATA_REQUIRED, arabic.unavailableReason)
+        // Desktop v3.8.0 scoped three more fields and gave every note a Language field.
+        assertEquals(BridgeJsonValue.Text("jp"), japanese.scopedDefaults["pitch_category_format"])
+        assertEquals(BridgeJsonValue.Integer(0), japanese.scopedDefaults["max_sentence_chars"])
+        assertEquals(
+            BridgeJsonValue.Text("IsClickCard"),
+            (japanese.scopedDefaults["card_type_marker_fields"] as BridgeJsonValue.ObjectValue).values["click"],
+        )
+        assertEquals(
+            BridgeJsonValue.Text(""),
+            (japanese.scopedDefaults["anki_fields"] as BridgeJsonValue.ObjectValue).values["language"],
+        )
+        assertEquals(BridgeJsonValue.Text(""), japanese.scopedDefaults["anki_note_type"])
+    }
+
+    @Test
+    fun `a profile card field carries the other field names that map to it`() {
+        val message =
+            fixtures("contracts/mining_protocol_v1.json", "valid").first { it.name == "language profiles result" }.message
+        val pos = """"key":"pos","capability":"pos_tag","placeholder":"POS","rawHtml":false"""
+        assertTrue(pos in message)
+        fun hebrew(raw: String) =
+            (BridgeJsonCodec.decode(raw) as BridgeMessage.LanguageProfilesResult).profiles.single { it.code == "he" }
+
+        val decoded = hebrew(message.replace(pos, "$pos,\"aliases\":[\"PartOfSpeech\"]"))
+        assertEquals(listOf("PartOfSpeech"), decoded.extraCardFields.single { it.key == "pos" }.aliases)
+        // Absent reads as none: the committed fixture predates the field.
+        assertEquals(emptyList<String>(), hebrew(message).extraCardFields.single { it.key == "pos" }.aliases)
+        listOf("[\"\"]", "[\"POS\",\"POS\"]", "\"POS\"", "[1]").forEach { aliases ->
+            assertThrows(BridgeProtocolException::class.java) {
+                BridgeJsonCodec.decode(message.replace(pos, "$pos,\"aliases\":$aliases"))
+            }
+        }
     }
 
     @Test
@@ -1486,6 +1664,35 @@ class BridgeJsonCodecTest {
                 """"screenshot_animated_quality":-1""",
             )
         rejected.forEach { setting ->
+            assertEquals(
+                setting,
+                BridgeProtocolCategory.INVALID_VALUE,
+                protocolFailure { BridgeJsonCodec.decode(videoRunWithSettings(setting)) }.category,
+            )
+        }
+    }
+
+    @Test
+    fun `accepts the animated size pair and rejects a non-positive one`() {
+        val decoded =
+            BridgeJsonCodec.decode(
+                videoRunWithSettings(""""screenshot_animated_fps":12,"screenshot_animated_height":480"""),
+            ) as BridgeMessage.VideoRun
+
+        assertEquals(
+            BridgeJsonValue.Integer(12L),
+            decoded.request.configSnapshot.settings["screenshot_animated_fps"],
+        )
+        assertEquals(
+            BridgeJsonValue.Integer(480L),
+            decoded.request.configSnapshot.settings["screenshot_animated_height"],
+        )
+        listOf(
+            """"screenshot_animated_fps":0""",
+            """"screenshot_animated_fps":1.5""",
+            """"screenshot_animated_height":0""",
+            """"screenshot_animated_height":-720""",
+        ).forEach { setting ->
             assertEquals(
                 setting,
                 BridgeProtocolCategory.INVALID_VALUE,
