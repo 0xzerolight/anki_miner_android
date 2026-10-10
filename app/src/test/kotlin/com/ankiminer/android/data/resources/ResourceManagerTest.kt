@@ -22,18 +22,29 @@ import com.ankiminer.android.media.SafSelectionRecord
 import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.snapshotProductionSettings
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.util.ArrayDeque
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.concurrent.thread
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -2835,6 +2846,272 @@ class ResourceManagerTest {
             assertEquals(ResourceFailureOrigin.RECOMMENDED_SET, failure.origin)
         }
 
+    @Test
+    fun updateInstallDownloadsInstallsInPlaceAndKeepsOtherFailureCards() =
+        runTest {
+            val opened = mutableListOf<String>()
+            val harness =
+                Harness(
+                    installedCatalogDictionaryValid = true,
+                    downloadConnections =
+                        DownloadConnectionFactory { url, _ ->
+                            opened += url
+                            ArchiveConnection(HttpURLConnection.HTTP_OK, UPDATE_ARCHIVE)
+                        },
+                )
+            // A card another flow owns: a success must not clear it.
+            harness.manager.installCatalogDictionary("not-in-the-catalog", replace = false)
+            val card = checkNotNull(harness.manager.state.value.failure)
+            assertEquals(ResourceFailureOrigin.CATALOG_DICTIONARY, card.origin)
+            harness.bridge.clearRequests()
+            harness.foregroundLease.events.clear()
+
+            val code = harness.manager.installResourceUpdate(JITENDEX_UPDATE, JAPANESE)
+
+            assertNull(code)
+            assertEquals(listOf(JITENDEX_UPDATE.downloadUrl), opened)
+            assertEquals(card, harness.manager.state.value.failure)
+            val install = harness.bridge.requestsOfType("resource.update.install").single()
+            val operationId = stringField(install, "operationId")
+            assertEquals("dictionary", stringField(install, "kind"))
+            assertEquals("jitendex", stringField(install, "slotId"))
+            assertEquals(JITENDEX_UPDATE.title, stringField(install, "displayName"))
+            assertEquals(JAPANESE, stringField(install, "language"))
+            val sourcePath = stringField(install, "sourcePath")
+            assertTrue(sourcePath.endsWith("/downloads/update-$operationId.zip"))
+            assertFalse("the staged archive outlived the install", File(sourcePath).exists())
+            // The installed slot is re-read, and nothing else is dispatched: no delete, no reorder.
+            assertEquals(
+                listOf("resource.update.install", "resource.dictionary.list", "resource.local.list"),
+                harness.bridge.requestTypes,
+            )
+            assertEquals("start:DOWNLOADING", harness.foregroundLease.events.first())
+            assertEquals("stop", harness.foregroundLease.events.last())
+            assertNull(harness.manager.state.value.activeOperation)
+        }
+
+    @Test
+    fun busyUpdateInstallReturnsItsCodeWithoutACard() =
+        runTest {
+            val coordinator = RuntimeWorkCoordinator()
+            val harness =
+                Harness(
+                    runtimeWorkCoordinator = coordinator,
+                    installedCatalogDictionaryValid = true,
+                    downloadConnections = DownloadConnectionFactory { _, _ -> error("a busy install must not download") },
+                )
+            val lease = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
+            try {
+                assertEquals("resource_busy", harness.manager.installResourceUpdate(JITENDEX_UPDATE, JAPANESE))
+            } finally {
+                lease.close()
+            }
+
+            assertNull(harness.manager.state.value.failure)
+            assertTrue(harness.bridge.requestsOfType("resource.update.install").isEmpty())
+        }
+
+    @Test
+    fun refusedForegroundStartDefersTheUpdateWithoutACard() =
+        runTest {
+            val harness =
+                Harness(
+                    installedCatalogDictionaryValid = true,
+                    foregroundStartFailure = true,
+                    downloadConnections =
+                        DownloadConnectionFactory { _, _ -> error("no foreground importance, no download") },
+                )
+
+            val code = harness.manager.installResourceUpdate(JITENDEX_UPDATE, JAPANESE)
+
+            assertEquals("resource_foreground_refused", code)
+            assertNull(harness.manager.state.value.failure)
+            assertNull(harness.manager.state.value.activeOperation)
+            assertTrue(harness.bridge.requestsOfType("resource.update.install").isEmpty())
+        }
+
+    @Test
+    fun failedUpdateDownloadLeavesTheInstalledSlotAndRecordsNoCard() =
+        runTest {
+            val harness =
+                Harness(
+                    installedCatalogDictionaryValid = true,
+                    downloadConnections =
+                        DownloadConnectionFactory { _, _ -> ArchiveConnection(HttpURLConnection.HTTP_NOT_FOUND, ByteArray(0)) },
+                )
+            val before = harness.manager.state.value.dictionaries
+
+            val code = harness.manager.installResourceUpdate(JITENDEX_UPDATE, JAPANESE)
+
+            assertEquals("download_http_rejected", code)
+            assertNull(harness.manager.state.value.failure)
+            assertTrue(harness.bridge.requestsOfType("resource.update.install").isEmpty())
+            assertEquals(before, harness.manager.state.value.dictionaries)
+            assertTrue(harness.manager.state.value.dictionaries.single { it.slotId == "jitendex" }.isUsable)
+            assertTrue(harness.downloadRoot.listFiles().orEmpty().isEmpty())
+        }
+
+    @Test
+    fun staleOrFailedUpdateInstallReturnsThePythonCodeWithoutACard() =
+        runTest {
+            listOf("resource_update_stale", "dictionary_import_failed").forEach { pythonCode ->
+                val harness =
+                    Harness(
+                        rootName = "manager-$pythonCode",
+                        installedCatalogDictionaryValid = true,
+                        downloadConnections =
+                            DownloadConnectionFactory { _, _ -> ArchiveConnection(HttpURLConnection.HTTP_OK, UPDATE_ARCHIVE) },
+                    )
+                harness.bridge.updateInstallFailureCode = pythonCode
+
+                assertEquals(pythonCode, harness.manager.installResourceUpdate(JITENDEX_UPDATE, JAPANESE))
+                assertNull(harness.manager.state.value.failure)
+                assertTrue(harness.downloadRoot.listFiles().orEmpty().isEmpty())
+            }
+        }
+
+    @Test
+    fun updateCheckRunsOnTheCallerWithoutALeaseOrTheResourceExecutor() =
+        runTest {
+            val coordinator = RuntimeWorkCoordinator()
+            val resourceExecutor = TrackingExecutor()
+            val harness = Harness(runtimeWorkCoordinator = coordinator, resourceExecutor = resourceExecutor)
+            var heldKind: RuntimeWorkCoordinator.Kind? = RuntimeWorkCoordinator.Kind.MINING
+            var onResourceExecutor = true
+            harness.bridge.onUpdatesCheck = {
+                heldKind = coordinator.activeKind.value
+                onResourceExecutor = resourceExecutor.executing
+                """{"schemaVersion":1,"type":"resource.updates.checked","payload":{"checked":2,"reached":true,"failedCount":1,"updates":[]}}"""
+            }
+
+            val result = harness.manager.checkResourceUpdates(UPDATE_CHECK_REQUEST)
+
+            assertEquals(ResourceUpdateCheck(checked = 2, reached = true, failedCount = 1, updates = emptyList()), result)
+            assertNull(heldKind)
+            assertFalse(onResourceExecutor)
+            assertEquals(
+                """{"schemaVersion":1,"type":"resource.updates.check","payload":{"operationId":"resource_0123abcd","language":"ja","dictionaryIds":["jitendex"],"frequencyIds":[],"pitchIds":[]}}""",
+                harness.bridge.requestsOfType("resource.updates.check").single(),
+            )
+        }
+
+    @Test
+    fun updateCheckIsRefusedUntilReadyAndWhileTheRuntimeIsBusy() =
+        runTest {
+            val notReady = Harness(rootName = "manager-pending", autoRecover = false)
+            val pending =
+                runCatching { notReady.manager.checkResourceUpdates(UPDATE_CHECK_REQUEST) }.exceptionOrNull()
+            assertEquals("resource_not_ready", (pending as ResourceBridgeException).code)
+
+            val coordinator = RuntimeWorkCoordinator()
+            val busy = Harness(rootName = "manager-busy", runtimeWorkCoordinator = coordinator)
+            val lease = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
+            val refused =
+                try {
+                    runCatching { busy.manager.checkResourceUpdates(UPDATE_CHECK_REQUEST) }.exceptionOrNull()
+                } finally {
+                    lease.close()
+                }
+            assertEquals("resource_busy", (refused as ResourceBridgeException).code)
+
+            assertTrue(notReady.bridge.requestsOfType("resource.updates.check").isEmpty())
+            assertTrue(busy.bridge.requestsOfType("resource.updates.check").isEmpty())
+            assertNull(busy.manager.state.value.failure)
+        }
+
+    @Test
+    fun recoveryRequestedDuringAnUpdateCheckIsSkippedWithoutStoppingIt() {
+        val harness = Harness()
+        val checkStarted = CountDownLatch(1)
+        val releaseCheck = CountDownLatch(1)
+        harness.bridge.onUpdatesCheck = {
+            checkStarted.countDown()
+            if (!releaseCheck.await(5, TimeUnit.SECONDS)) error("the check was never released")
+            """{"schemaVersion":1,"type":"resource.updates.checked","payload":{"checked":1,"reached":true,"failedCount":0,"updates":[]}}"""
+        }
+        val seen = Collections.synchronizedList(mutableListOf<ResourceStartupReadiness>())
+        val recorder =
+            CoroutineScope(Dispatchers.Unconfined).launch {
+                harness.manager.state.collect { seen += it.startupReadiness }
+            }
+        val checkFailure = AtomicReference<Throwable?>()
+        val check =
+            thread {
+                checkFailure.set(
+                    runCatching {
+                        kotlinx.coroutines.runBlocking { harness.manager.checkResourceUpdates(UPDATE_CHECK_REQUEST) }
+                    }.exceptionOrNull(),
+                )
+            }
+        try {
+            assertTrue(checkStarted.await(5, TimeUnit.SECONDS))
+            assertTrue(harness.manager.isUpdateCheckRunning())
+            harness.bridge.clearRequests()
+
+            kotlinx.coroutines.runBlocking { harness.manager.recoverAndRefresh() }
+
+            // Skipped outright: no RECOVERING, no cleanup Python would refuse, no cancel, no wait.
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertFalse(ResourceStartupReadiness.RECOVERING in seen)
+            assertEquals(emptyList<String>(), harness.bridge.requestTypes)
+            assertTrue(check.isAlive)
+        } finally {
+            releaseCheck.countDown()
+            check.join(5_000)
+            recorder.cancel()
+        }
+
+        assertNull(checkFailure.get())
+        assertFalse(harness.manager.isUpdateCheckRunning())
+        kotlinx.coroutines.runBlocking { harness.manager.recoverAndRefresh() }
+        assertTrue("resource.cleanup" in harness.bridge.requestTypes)
+        assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+    }
+
+    @Test
+    fun updateCheckIsRefusedWhileRecoveryIsInProgress() =
+        runTest {
+            val executor = PausableExecutor()
+            val harness = Harness(resourceExecutor = executor)
+            executor.paused = true
+            val recovery = launch { harness.manager.recoverAndRefresh() }
+            runCurrent()
+            assertEquals(ResourceStartupReadiness.RECOVERING, harness.manager.state.value.startupReadiness)
+
+            val refused = runCatching { harness.manager.checkResourceUpdates(UPDATE_CHECK_REQUEST) }.exceptionOrNull()
+
+            assertEquals("resource_not_ready", (refused as ResourceBridgeException).code)
+            assertFalse(harness.manager.isUpdateCheckRunning())
+            executor.paused = false
+            while (executor.queued.isNotEmpty()) {
+                executor.runNext()
+                runCurrent()
+            }
+            recovery.join()
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertTrue(harness.bridge.requestsOfType("resource.updates.check").isEmpty())
+        }
+
+    /** Serves one archive body, or an HTTP status with an empty body. */
+    private class ArchiveConnection(
+        private val code: Int,
+        private val body: ByteArray,
+    ) : HttpURLConnection(URL("https://example.invalid/update.zip")) {
+        override fun connect() = Unit
+
+        override fun disconnect() = Unit
+
+        override fun usingProxy(): Boolean = false
+
+        override fun getResponseCode(): Int = code
+
+        override fun getInputStream(): InputStream = ByteArrayInputStream(body)
+
+        override fun getContentLengthLong(): Long = body.size.toLong()
+
+        override fun getHeaderField(name: String?): String? = null
+    }
+
     private inner class Harness(
         rootName: String = "manager",
         initialUserCount: Int = 0,
@@ -2884,6 +3161,8 @@ class ResourceManagerTest {
         activeLanguage: () -> String = { JAPANESE },
         staleFrequency: Pair<String, String>? = null,
         frequencyImportFailureCode: String? = null,
+        downloadConnections: DownloadConnectionFactory =
+            DownloadConnectionFactory { _, _ -> error("network not expected") },
     ) {
         val root = temporary.newFolder(rootName)
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
@@ -2952,7 +3231,7 @@ class ResourceManagerTest {
                 downloader =
                     PinnedResourceDownloader(
                         downloadRoot,
-                        connections = DownloadConnectionFactory { _, _ -> error("network not expected") },
+                        connections = downloadConnections,
                         availableBytes = { Long.MAX_VALUE / 2 },
                     ),
                 safStager = stager,
@@ -3221,9 +3500,24 @@ class ResourceManagerTest {
         private val staleFrequency: Pair<String, String>? = null,
         private val frequencyImportFailureCode: String? = null,
     ) : PyBridge {
-        private val requests = mutableListOf<String>()
+        // Synchronized: an update check dispatches from its own thread, beside recovery.
+        private val requests = Collections.synchronizedList(mutableListOf<String>())
         var userCount = initialUserCount
             private set
+
+        /** Answers `resource.updates.check`; Python refuses `resource.cleanup` while it runs. */
+        var onUpdatesCheck: (rawRequest: String) -> String = {
+            envelope("resource.updates.checked", """{"checked":0,"reached":true,"failedCount":0,"updates":[]}""")
+        }
+
+        /** Thrown by `resource.update.install` instead of the family envelope. */
+        var updateInstallFailureCode: String? = null
+
+        /** Runs as Python receives `resource.operation.cancel`. */
+        var onCancel: (operationId: String) -> Unit = {}
+
+        @Volatile
+        private var updateCheckActive = false
 
         /** Mutable so a delete can drop the slot the next inventory reports. */
         private var installedPitchSourceId: String? = installedPitchSourceId
@@ -3288,8 +3582,27 @@ class ResourceManagerTest {
                 "resource.catalog.get" -> catalogResponse()
                 "resource.dictionary.list" -> dictionaryListResponse()
                 "resource.local.list" -> inventoryResponse()
-                "resource.cleanup" ->
+                "resource.cleanup" -> {
+                    if (updateCheckActive) {
+                        throw ResourceBridgeException("resource_operation_active", "an update check is running")
+                    }
                     envelope("resource.cleanup.result", """{"clean":true}""")
+                }
+                "resource.updates.check" -> {
+                    updateCheckActive = true
+                    try {
+                        onUpdatesCheck(rawRequest)
+                    } finally {
+                        updateCheckActive = false
+                    }
+                }
+                "resource.update.install" -> {
+                    updateInstallFailureCode?.let { throw ResourceBridgeException(it, "simulated update failure") }
+                    when (stringField(rawRequest, "kind")) {
+                        "dictionary" -> importedDictionaryResponse()
+                        else -> error("Unexpected update kind: $rawRequest")
+                    }
+                }
                 "resource.languagedata.install" -> {
                     val resourceId = stringField(rawRequest, "resourceId")
                     val catalog = checkNotNull(FrozenResourceCatalog.catalogOf(resourceId))
@@ -3475,6 +3788,7 @@ class ResourceManagerTest {
                 "resource.knownwords.export" -> exportResponse(rawRequest)
                 "resource.operation.cancel" -> {
                     if (failCancelDelivery) error("simulated cancel delivery failure")
+                    onCancel(stringField(rawRequest, "operationId"))
                     envelope(
                         "resource.operation.cancel.result",
                         """{"operationId":"${stringField(rawRequest, "operationId")}","accepted":true}""",
@@ -3609,6 +3923,25 @@ class ResourceManagerTest {
     }
 
     companion object {
+        private val UPDATE_ARCHIVE = "publisher archive".toByteArray()
+        private val JITENDEX_UPDATE =
+            ResourceUpdate(
+                kind = ResourceUpdateKind.DICTIONARY,
+                slotId = "jitendex",
+                currentRevision = "2026.07.09.0",
+                latestRevision = "2026.10.03.0",
+                title = "Jitendex.org [2026-10-03]",
+                downloadUrl = "https://publisher.invalid/jitendex.zip",
+                maxArchiveBytes = 1_073_741_824,
+            )
+        private val UPDATE_CHECK_REQUEST =
+            ResourceUpdateCheckRequest(
+                operationId = "resource_0123abcd",
+                language = JAPANESE,
+                dictionaryIds = listOf("jitendex"),
+                frequencyIds = emptyList(),
+                pitchIds = emptyList(),
+            )
         private const val INPUT_URI = "content://fixtures/known-words.json"
         private const val EXPORT_URI = "content://fixtures/known-words-export.txt"
         private val DIRECT_EXECUTOR = Executor { task -> task.run() }

@@ -1,6 +1,7 @@
 package com.ankiminer.android
 
 import android.app.Application
+import android.net.ConnectivityManager
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiProviderRuntime
 import com.ankiminer.android.anki.provider.BridgeNoteTypeFillSource
@@ -17,6 +18,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.AndroidResourceDocumentWriter
 import com.ankiminer.android.data.resources.AndroidResourceForegroundLease
 import com.ankiminer.android.data.resources.AndroidResourceManager
+import com.ankiminer.android.data.resources.DictionaryUpdateCoordinator
 import com.ankiminer.android.data.resources.HttpsDownloadConnectionFactory
 import com.ankiminer.android.data.resources.PinnedResourceDownloader
 import com.ankiminer.android.data.resources.ResourceDocumentWriter
@@ -460,11 +462,16 @@ class AnkiMinerApplication : Application() {
         DataStoreDiagnosticsSettingsRepository(this)
     }
 
+    /** Device-local update timing: the release check's state and the dictionary-update stamp. */
+    private val updateCheckRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        DataStoreUpdateCheckRepository(this)
+    }
+
     internal val updateCheckCoordinator: UpdateCheckCoordinator by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
         UpdateCheckCoordinator(
-            repository = DataStoreUpdateCheckRepository(this),
+            repository = updateCheckRepository,
             client = GitHubUpdateCheckClient(HttpsDownloadConnectionFactory()),
             currentVersion = BuildConfig.VERSION_NAME,
         )
@@ -529,6 +536,19 @@ class AnkiMinerApplication : Application() {
             activeLanguage = { miningLanguage.value },
         )
     }
+    /** Desktop's dictionary updates; MainActivity starts the weekly run while it is resumed. */
+    internal val dictionaryUpdateCoordinator: DictionaryUpdateCoordinator by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        DictionaryUpdateCoordinator(
+            resources = resourceManager,
+            settings = settingsRepository,
+            stamp = updateCheckRepository,
+            runtimeWork = runtimeWorkCoordinator.activeKind,
+            unmeteredNetwork = ::activeNetworkUnmetered,
+        )
+    }
+
     internal val resourceStartupReadiness: StateFlow<ResourceStartupReadiness> by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
@@ -770,6 +790,10 @@ class AnkiMinerApplication : Application() {
             )
         }
     }
+
+    /** No active network counts as metered: an automatic update then waits. */
+    private fun activeNetworkUnmetered(): Boolean =
+        getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered == false
 
     internal fun refreshMiningAdmission() {
         applicationScope.launch { refreshMiningAdmissionAndAwait() }

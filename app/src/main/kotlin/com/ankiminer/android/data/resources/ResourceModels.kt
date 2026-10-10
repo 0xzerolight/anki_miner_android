@@ -828,6 +828,46 @@ data class CatalogDictionaryStatus(
         get() = slotOccupied && !installed
 }
 
+/** The slot families a publisher update can rebuild; [wireValue] is the bridge `kind`. */
+enum class ResourceUpdateKind(
+    val wireValue: String,
+    /** The largest archive that family's import accepts (`dictionary_updates._FAMILIES`). */
+    val maxArchiveBytes: Long,
+) {
+    DICTIONARY("dictionary", 1024L * 1024 * 1024),
+    FREQUENCY("frequency", 512L * 1024 * 1024),
+    PITCH("pitch", 512L * 1024 * 1024),
+}
+
+/** What `resource.updates.check` asks: the active language's chains, disabled entries included. */
+data class ResourceUpdateCheckRequest(
+    val operationId: String,
+    val language: String,
+    val dictionaryIds: List<String>,
+    val frequencyIds: List<String>,
+    val pitchIds: List<String>,
+)
+
+/** A newer revision one installed slot's publisher posts. Nothing pins [downloadUrl]'s archive. */
+data class ResourceUpdate(
+    val kind: ResourceUpdateKind,
+    val slotId: String,
+    val currentRevision: String,
+    val latestRevision: String,
+    /** The publisher's title, else the installed one, else the slot id. */
+    val title: String,
+    val downloadUrl: String,
+    val maxArchiveBytes: Long,
+)
+
+/** Desktop `UpdateCheck`: [reached] is true when nothing was checkable or a publisher answered. */
+data class ResourceUpdateCheck(
+    val checked: Int,
+    val reached: Boolean,
+    val failedCount: Int,
+    val updates: List<ResourceUpdate>,
+)
+
 class ResourceBridgeException(
     val code: String,
     override val message: String,

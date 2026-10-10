@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.resources.DictionaryUpdateUiState
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.WordListKind
@@ -262,6 +263,7 @@ internal fun SettingsRoute(
     val languageDownload by viewModel.languageDownload.collectAsStateWithLifecycle()
     val diagnosticsExport by diagnosticsViewModel.state.collectAsStateWithLifecycle()
     val languageDefaults by viewModel.languageDefaults.collectAsStateWithLifecycle()
+    val dictionaryUpdates by viewModel.dictionaryUpdates.collectAsStateWithLifecycle()
     if (!draftState.loaded) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -418,6 +420,8 @@ internal fun SettingsRoute(
         onSelectedCategoryChange = onSelectedCategoryChange,
         miningLanguage = languageDefaults?.code ?: LanguageScope.JAPANESE,
         languageDefaults = LanguageDefaults.orJapanese(languageDefaults),
+        dictionaryUpdates = dictionaryUpdates,
+        onUpdateDictionariesNow = viewModel::updateDictionariesNow,
         modifier = modifier,
     )
 }
@@ -479,6 +483,8 @@ private fun SettingsScreen(
     onSelectedCategoryChange: (SettingsCategory) -> Unit = {},
     miningLanguage: String = LanguageScope.JAPANESE,
     languageDefaults: LanguageDefaults = LanguageDefaults.JAPANESE,
+    dictionaryUpdates: DictionaryUpdateUiState = DictionaryUpdateUiState(),
+    onUpdateDictionariesNow: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
@@ -504,10 +510,12 @@ private fun SettingsScreen(
                 title = title,
                 breadcrumb = breadcrumb,
                 haystack =
-                    listOf(
-                        normalizeSettingsText(title),
-                        normalizeSettingsText(detail),
-                        normalizeSettingsText(breadcrumb),
+                    (
+                        listOf(
+                            normalizeSettingsText(title),
+                            normalizeSettingsText(detail),
+                            normalizeSettingsText(breadcrumb),
+                        ) + entry.keywords.map(::normalizeSettingsText)
                     ).filter(String::isNotEmpty),
             )
         }
@@ -655,6 +663,8 @@ private fun SettingsScreen(
                     ),
                 miningLanguage = miningLanguage,
                 languageDefaults = languageDefaults,
+                dictionaryUpdates = dictionaryUpdates,
+                onUpdateDictionariesNow = onUpdateDictionariesNow,
             )
         SettingsSearchJumpHandler(
             entries = resolvedEntries,

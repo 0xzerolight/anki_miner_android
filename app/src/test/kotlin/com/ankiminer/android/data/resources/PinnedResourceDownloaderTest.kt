@@ -607,6 +607,191 @@ class PinnedResourceDownloaderTest {
         assertTrue(root.listFiles().orEmpty().isEmpty())
     }
 
+    @Test
+    fun unpinnedDownloadRefusesAPlainHttpUrlBeforeOpeningAConnection() {
+        val opened = AtomicInteger()
+        val root = temporary.newFolder("unpinned-http")
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = root,
+                connections =
+                    HttpsDownloadConnectionFactory {
+                        opened.incrementAndGet()
+                        error("an http URL must never be opened")
+                    },
+                availableBytes = { Long.MAX_VALUE / 2 },
+            )
+
+        val failure =
+            assertThrows(ResourceDownloadException::class.java) {
+                downloader.downloadUnpinned(
+                    "http://example.invalid/update.zip",
+                    1024,
+                    "resource_update1",
+                    ResourceCancellationSignal(),
+                ) { _, _, _ -> }
+            }
+
+        assertEquals("download_url_invalid", failure.stableCode)
+        assertEquals(0, opened.get())
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun unpinnedDownloadRefusesARedirectToPlainHttp() {
+        val connection =
+            FakeConnection(
+                code = HttpURLConnection.HTTP_MOVED_TEMP,
+                input = ByteArrayInputStream(byteArrayOf()),
+                contentLength = 0,
+                location = "http://mirror.invalid/update.zip",
+            )
+        val root = temporary.newFolder("unpinned-redirect")
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = root,
+                connections = HttpsDownloadConnectionFactory { connection },
+                availableBytes = { Long.MAX_VALUE / 2 },
+            )
+
+        val failure =
+            assertThrows(ResourceDownloadException::class.java) {
+                downloader.downloadUnpinned(
+                    "https://publisher.invalid/latest.zip",
+                    1024,
+                    "resource_update1",
+                    ResourceCancellationSignal(),
+                ) { _, _, _ -> }
+            }
+
+        assertEquals("download_redirect_invalid", failure.stableCode)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun unpinnedDownloadEnforcesTheSizeCapOnTheDeclaredAndTheStreamedLength() {
+        val content = ByteArray(16) { it.toByte() }
+        listOf(content.size.toLong(), -1L).forEach { declared ->
+            val root = temporary.newFolder("unpinned-cap$declared")
+            val downloader =
+                PinnedResourceDownloader(
+                    stagingRoot = root,
+                    connections =
+                        DownloadConnectionFactory { _, _ ->
+                            FakeConnection(
+                                code = HttpURLConnection.HTTP_OK,
+                                input = ByteArrayInputStream(content),
+                                contentLength = declared,
+                            )
+                        },
+                    availableBytes = { Long.MAX_VALUE / 2 },
+                    retryDelay = IMMEDIATE_RETRY,
+                )
+
+            val failure =
+                assertThrows(ResourceDownloadException::class.java) {
+                    downloader.downloadUnpinned(
+                        "https://publisher.invalid/latest.zip",
+                        content.size - 1L,
+                        "resource_update1",
+                        ResourceCancellationSignal(),
+                    ) { _, _, _ -> }
+                }
+
+            assertEquals("download_too_large", failure.stableCode)
+            assertTrue(root.listFiles().orEmpty().isEmpty())
+        }
+    }
+
+    @Test
+    fun unpinnedDownloadRestartsFromZeroAndStagesAnFsyncedFileUnderTheOperationId() {
+        val content = "publisher archive bytes".toByteArray()
+        val seenOffsets = mutableListOf<Long>()
+        var syncs = 0
+        val responses =
+            ArrayDeque<HttpURLConnection>().apply {
+                add(
+                    FakeConnection(
+                        code = HttpURLConnection.HTTP_OK,
+                        input = DisconnectingInput(content, 5),
+                        contentLength = content.size.toLong(),
+                    ),
+                )
+                add(
+                    FakeConnection(
+                        code = HttpURLConnection.HTTP_OK,
+                        input = ByteArrayInputStream(content),
+                        contentLength = content.size.toLong(),
+                    ),
+                )
+            }
+        val root = temporary.newFolder("unpinned-retry")
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = root,
+                connections =
+                    DownloadConnectionFactory { _, offset ->
+                        seenOffsets += offset
+                        responses.removeFirst()
+                    },
+                availableBytes = { Long.MAX_VALUE / 2 },
+                retryDelay = IMMEDIATE_RETRY,
+                retryJitterMillis = { 0 },
+                syncOutput = { output ->
+                    syncs += 1
+                    output.fd.sync()
+                },
+            )
+
+        val staged =
+            downloader.downloadUnpinned(
+                "https://publisher.invalid/latest.zip",
+                1024,
+                "resource_update1",
+                ResourceCancellationSignal(),
+            ) { _, _, _ -> }
+
+        // No pin to prove a resumed range belongs to the same release, so a retry starts over.
+        assertEquals(listOf(0L, 0L), seenOffsets)
+        assertEquals("update-resource_update1.zip", staged.file.name)
+        assertEquals(root.canonicalFile, staged.file.canonicalFile.parentFile)
+        assertTrue(content.contentEquals(staged.file.readBytes()))
+        assertEquals(content.size.toLong(), staged.sizeBytes)
+        assertEquals(1, syncs)
+        // Not a catalog name: a process death before the import leaves it for reconcile to delete.
+        downloader.reconcile(emptyList())
+        assertFalse(staged.file.exists())
+    }
+
+    @Test
+    fun unpinnedDownloadChecksFreeSpaceForTheDeclaredLength() {
+        val content = ByteArray(64)
+        val root = temporary.newFolder("unpinned-space")
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = root,
+                connections =
+                    DownloadConnectionFactory { _, _ ->
+                        FakeConnection(
+                            code = HttpURLConnection.HTTP_OK,
+                            input = ByteArrayInputStream(content),
+                            contentLength = content.size.toLong(),
+                        )
+                    },
+                availableBytes = { 10L },
+            )
+
+        assertThrows(ResourceStorageException::class.java) {
+            downloader.downloadUnpinned(
+                "https://publisher.invalid/latest.zip",
+                1024,
+                "resource_update1",
+                ResourceCancellationSignal(),
+            ) { _, _, _ -> }
+        }
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
     private fun archive(content: ByteArray) =
         ResourceArchive(
             url = "https://example.invalid/pinned.zip",

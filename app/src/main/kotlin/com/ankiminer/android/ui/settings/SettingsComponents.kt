@@ -14,6 +14,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.triStateToggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -34,6 +35,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +59,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -132,9 +135,36 @@ internal fun CollapsibleSettingGroup(
     onExpandedChange: (Boolean) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
+    SettingsDisclosure(
+        title = stringResource(R.string.settings_disclosure_summary, title, selectedCount, totalCount),
+        forceOpen = forceOpen,
+        titleStyle = titleStyle,
+        expanded = expanded,
+        onExpandedChange = onExpandedChange,
+        content = content,
+    )
+}
+
+/**
+ * Rows behind a plain disclosure header, collapsed unless [initiallyExpanded]: desktop's
+ * `make_disclosure`, which hides power-user options ("Edit the pattern (advanced)", "Customise
+ * marker field names") until asked. [forceOpen] locks it open while what it hides is the only
+ * account of a problem, such as a validation error in one of its fields.
+ */
+@Composable
+internal fun SettingsDisclosure(
+    title: String,
+    modifier: Modifier = Modifier,
+    forceOpen: Boolean = false,
+    initiallyExpanded: Boolean = false,
+    titleStyle: TextStyle = MaterialTheme.typography.titleSmall,
+    expanded: Boolean? = null,
+    onExpandedChange: (Boolean) -> Unit = {},
+    content: @Composable () -> Unit,
+) {
     val expandedLabel = stringResource(R.string.disclosure_expanded)
     val collapsedLabel = stringResource(R.string.disclosure_collapsed)
-    var ownExpanded by rememberSaveable { mutableStateOf(false) }
+    var ownExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     val isExpanded = expanded ?: ownExpanded
     val showContent = isExpanded || forceOpen
     TextButton(
@@ -144,7 +174,7 @@ internal fun CollapsibleSettingGroup(
         },
         enabled = !forceOpen,
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
                 .semantics {
@@ -154,12 +184,7 @@ internal fun CollapsibleSettingGroup(
         colors = accentTextButtonColors(),
     ) {
         Text(
-            stringResource(
-                R.string.settings_disclosure_summary,
-                title,
-                selectedCount,
-                totalCount,
-            ),
+            title,
             style = titleStyle,
             textAlign = TextAlign.Start,
             modifier = Modifier.weight(1f),
@@ -464,8 +489,48 @@ internal fun BooleanSetting(
     }
 }
 
+/**
+ * A three-state checkbox row: desktop's tristate boxes, whose partly checked state shows a stored
+ * mix the box cannot make itself (a subset of the name lists, a user's own cleanup pattern). The
+ * caller decides what a click writes; nothing here stores the third state.
+ */
+@Composable
+internal fun TriStateSetting(
+    label: String,
+    state: ToggleableState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
+            .triStateToggleable(
+                state = state,
+                enabled = enabled,
+                role = Role.Checkbox,
+                onClick = onClick,
+            ).padding(vertical = AnkiMinerTokens.Space.line),
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            color =
+                if (enabled) {
+                    Color.Unspecified
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_CONTENT_ALPHA)
+                },
+        )
+        TriStateCheckbox(state = state, onClick = null, enabled = enabled)
+    }
+}
+
 /** Material 3's disabled content opacity; `Checkbox` applies the same value internally. */
-private const val DISABLED_CONTENT_ALPHA = 0.38f
+internal const val DISABLED_CONTENT_ALPHA = 0.38f
 
 /** Segments when they fit; full-width radio rows at compact width or large text. */
 @Composable
@@ -476,6 +541,7 @@ internal fun <T> AdaptiveChoiceSelector(
     onSelect: (T) -> Unit,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    optionEnabled: (T) -> Boolean = { true },
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val useSegments =
@@ -492,7 +558,7 @@ internal fun <T> AdaptiveChoiceSelector(
                                 count = values.size,
                             ),
                         modifier = Modifier.heightIn(min = 48.dp),
-                        enabled = enabled,
+                        enabled = enabled && optionEnabled(value),
                         colors = segmentedActionColors(),
                     ) { Text(label(value), maxLines = 2) }
                 }
@@ -504,6 +570,7 @@ internal fun <T> AdaptiveChoiceSelector(
             ) {
                 values.forEach { value ->
                     val isSelected = value == selected
+                    val valueEnabled = enabled && optionEnabled(value)
                     Row(
                         modifier =
                             Modifier
@@ -511,7 +578,7 @@ internal fun <T> AdaptiveChoiceSelector(
                                 .heightIn(min = 48.dp)
                                 .selectable(
                                     selected = isSelected,
-                                    enabled = enabled,
+                                    enabled = valueEnabled,
                                     role = Role.RadioButton,
                                     onClick = { onSelect(value) },
                                 ).padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.line),
@@ -521,7 +588,7 @@ internal fun <T> AdaptiveChoiceSelector(
                         RadioButton(
                             selected = isSelected,
                             onClick = null,
-                            enabled = enabled,
+                            enabled = valueEnabled,
                             colors = radioActionColors(),
                         )
                         Text(label(value), modifier = Modifier.weight(1f))
@@ -548,13 +615,15 @@ internal fun <T> NullableChoice(
     values: List<T>,
     optionLabel: @Composable (T) -> String,
     onChange: (T) -> Unit,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    optionEnabled: (T) -> Boolean = { true },
 ) {
     val overridden = value != null
     val overrideState = stringResource(R.string.b3_settings_android_override_state)
     Column(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .semantics { if (overridden) stateDescription = overrideState },
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
@@ -570,6 +639,7 @@ internal fun <T> NullableChoice(
             label = optionLabel,
             onSelect = onChange,
             enabled = enabled,
+            optionEnabled = optionEnabled,
         )
     }
 }

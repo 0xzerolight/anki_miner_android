@@ -3,6 +3,9 @@ package com.ankiminer.android.vm
 import androidx.lifecycle.viewModelScope
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.R
+import com.ankiminer.android.anki.provider.ModelSummary
+import com.ankiminer.android.anki.provider.NoteTypeFill
+import com.ankiminer.android.anki.provider.NoteTypePreset
 import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledDictionary
@@ -21,9 +24,11 @@ import com.ankiminer.android.data.settings.AnimatedScreenshotFormat
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
+import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.LanguageDefaults
 import com.ankiminer.android.data.settings.LanguageProfileFixtures
+import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SettingsBackupException
 import com.ankiminer.android.data.settings.SettingsBackupFailure
@@ -795,6 +800,106 @@ class SettingsViewModelTest {
                 BridgeJsonValue.Text("D"),
                 repository.snapshot(listOf("first")).settings["anki_deck_name"],
             )
+        }
+
+    @Test
+    fun noteTypePresetSurvivesAStaleSettingsDraftAcrossAutoSaveAndLanguageSwitch() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                SessionSettingsRepository(
+                    AppSettings(
+                        noteType = "Lapis",
+                        fieldMap = mapOf("word" to "Expression"),
+                        cardType = CardType.WORD_AND_SENTENCE,
+                    ),
+                )
+            val resources = SessionResourceManager(resources("first"))
+            val settingsViewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = resources,
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            val setupViewModel =
+                setupSessionViewModel(
+                    repository = repository,
+                    resources = resources,
+                    noteTypes =
+                        listOf(
+                            ModelSummary(
+                                id = 1,
+                                name = "Lapis",
+                                fieldNames =
+                                    listOf(
+                                        "Expression",
+                                        "Sentence",
+                                        "PitchCategories",
+                                        "IsWordAndSentenceCard",
+                                    ),
+                            ),
+                        ),
+                    noteTypeFillSource = { _, _ ->
+                        Result.success(
+                            NoteTypeFill(
+                                preset =
+                                    NoteTypePreset(
+                                        id = "lapis",
+                                        name = "Lapis",
+                                        pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
+                                        cardTypeMarkerFields =
+                                            mapOf(CardType.WORD_AND_SENTENCE to "IsWordAndSentenceCard"),
+                                        supportedCardTypes = CardType.entries.toSet(),
+                                        boldTargetInSentence = true,
+                                    ),
+                                fields =
+                                    mapOf("sentence" to "Sentence", "pitch_category" to "PitchCategories"),
+                                extraFields = emptyMap(),
+                            ),
+                        )
+                    },
+                )
+            advanceUntilIdle()
+
+            // The user's own radio and toggle edits reach storage first, as on the device.
+            settingsViewModel.updateDraft(
+                settingsViewModel.draftState.value.draft.copy(
+                    pitchFormat = PitchCategoryFormat.JAPANESE,
+                    boldTarget = false,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(PitchCategoryFormat.JAPANESE, repository.current.pitchCategoryFormat)
+            assertEquals(false, repository.current.boldTargetInSentence)
+
+            setupViewModel.fillFieldsAutomatically()
+            advanceUntilIdle()
+            assertEquals(PitchCategoryFormat.ROMAJI, repository.current.pitchCategoryFormat)
+
+            // Any later Settings autosave must not write the pre-fill draft back.
+            settingsViewModel.updateDraft(
+                settingsViewModel.draftState.value.draft.copy(tags = "mined"),
+            )
+            advanceUntilIdle()
+
+            assertEquals("mined", repository.current.tags)
+            assertEquals(PitchCategoryFormat.ROMAJI, repository.current.pitchCategoryFormat)
+            assertEquals(true, repository.current.boldTargetInSentence)
+            assertEquals("Sentence", repository.current.fieldMap["sentence"])
+            assertEquals("PitchCategories", repository.current.fieldMap["pitch_category"])
+            assertEquals(CardType.WORD_AND_SENTENCE, repository.current.cardType)
+            assertEquals("IsWordAndSentenceCard", repository.current.cardTypeMarkerField)
+            // The radio and toggle show what the fill wrote.
+            assertEquals(PitchCategoryFormat.ROMAJI, settingsViewModel.draftState.value.draft.pitchFormat)
+            assertEquals(true, settingsViewModel.draftState.value.draft.boldTarget)
+
+            // A language switch folds the draft in before parking the outgoing language.
+            assertTrue(settingsViewModel.switchLanguage("he"))
+            advanceUntilIdle()
+
+            val parkedJapanese = repository.current.parkedLanguages().single { it.language == "ja" }
+            assertEquals(PitchCategoryFormat.ROMAJI, parkedJapanese.pitchCategoryFormat)
+            assertEquals("IsWordAndSentenceCard", parkedJapanese.cardTypeMarkerField)
+            assertEquals(true, repository.current.boldTargetInSentence)
         }
 
     @Test

@@ -2,16 +2,23 @@ package com.ankiminer.android.ui.settings
 
 import android.content.Context
 import android.os.Build
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -22,21 +29,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
+import com.ankiminer.android.data.resources.DictionaryUpdateUiState
 import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.ResourceFailure
@@ -44,6 +58,8 @@ import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.AnimatedScreenshotFormat
+import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.LanguageDefaults
@@ -63,6 +79,9 @@ import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.ui.theme.accentTextButtonColors
+import com.ankiminer.android.ui.theme.accentTextColor
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.disabledActionContentColor
 import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.FrequencyBandEnd
@@ -113,6 +132,9 @@ internal data class SettingsScreenCallbacks(
     val miningLanguage: String = LanguageScope.JAPANESE,
     /** What the active language's unset scoped settings resolve to; their rows show these values. */
     val languageDefaults: LanguageDefaults = LanguageDefaults.JAPANESE,
+    /** The Updates block under the dictionary panel. */
+    val dictionaryUpdates: DictionaryUpdateUiState = DictionaryUpdateUiState(),
+    val onUpdateDictionariesNow: () -> Unit = {},
 )
 
 internal enum class KnownWordsFailureTarget {
@@ -164,12 +186,14 @@ internal fun LazyListScope.settingsCategoryContent(
                 recorder,
                 expansion,
                 callbacks,
+                language,
             )
         SettingsCategory.MEDIA ->
             mediaSettings(
                 draft,
                 recorder,
-                callbacks.onDraftChange,
+                onOpenSpeechSettings = callbacks.onOpenSpeechSettings,
+                onDraftChange = callbacks.onDraftChange,
             )
         SettingsCategory.RESOURCES ->
             resourceSettings(
@@ -244,6 +268,7 @@ private fun LazyListScope.ankiSettings(
     recorder: SettingsCardIndexRecorder,
     expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
+    language: LanguageSettingsState,
 ) {
     settingsCard(SettingsCategory.ANKI, recorder, "anki-deck-options") {
         SettingsSection(stringResource(R.string.settings_anki_target)) {
@@ -281,6 +306,15 @@ private fun LazyListScope.ankiSettings(
                     callbacks,
                 )
             },
+            fieldRowExtras = { key ->
+                AnkiFieldRowSettings(
+                    key = key,
+                    draft = draft,
+                    onDraftChange = callbacks.onDraftChange,
+                    showsToneColor = language.showsToneColor,
+                    showsPitch = language.showsPitch,
+                )
+            },
         )
     }
     // After anki-target, so TARGET's deep-link index stays 3, and ahead of the conditional
@@ -300,98 +334,77 @@ private fun LazyListScope.ankiSettings(
     }
 }
 
-/** Internal rather than private so the instrumented tests can compose the real group. */
+/** The field-map row each formatting setting follows, as on desktop's Cards & Anki page. */
+private const val TONE_COLOR_AFTER_FIELD = "sentence_reading"
+private const val PITCH_FORMAT_AFTER_FIELD = "pitch_category"
+
+/**
+ * The settings that format a mapped field, drawn right after its row in the Anki field map:
+ * "Colour the reading by tone" after Sentence reading (tonal languages), the pitch category format
+ * after Pitch category (languages with pitch). Desktop moved both there from pages of their own.
+ *
+ * Internal rather than private so the instrumented tests compose the real rows.
+ */
+@Composable
+internal fun AnkiFieldRowSettings(
+    key: String,
+    draft: SettingsDraft,
+    onDraftChange: (SettingsDraft) -> Unit,
+    showsToneColor: Boolean,
+    showsPitch: Boolean,
+) {
+    when {
+        key == TONE_COLOR_AFTER_FIELD && showsToneColor ->
+            Column(Modifier.testTag(SettingsCategoryTestTags.TONE_COLOR)) {
+                // Off unless set: the engine leaves readings uncoloured by default.
+                NullableToggle(
+                    stringResource(R.string.settings_reading_tone_color),
+                    draft.readingToneColor,
+                    false,
+                ) { onDraftChange(draft.copy(readingToneColor = it)) }
+            }
+        key == PITCH_FORMAT_AFTER_FIELD && showsPitch ->
+            Column(Modifier.testTag(SettingsCategoryTestTags.PITCH_FORMAT)) {
+                NullableChoice(
+                    label = stringResource(R.string.settings_pitch_format),
+                    value = draft.pitchFormat,
+                    engineDefault = EngineDefaults.PITCH_CATEGORY_FORMAT,
+                    values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
+                    optionLabel = { value ->
+                        stringResource(
+                            when (value) {
+                                PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
+                                PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
+                            },
+                        )
+                    },
+                    onChange = { onDraftChange(draft.copy(pitchFormat = it)) },
+                )
+                SupportingText(stringResource(R.string.settings_pitch_format_help))
+            }
+    }
+}
+
+/** Card keys of the Media tab: desktop's two Card Media sections. */
+internal const val MEDIA_SENTENCE_AUDIO_KEY = "media-sentence-audio"
+internal const val MEDIA_SCREENSHOT_KEY = "media-screenshot"
+
+/**
+ * Desktop's Card Media page: Sentence audio (format, bitrate, padding, text-to-speech, then the
+ * Android-only subtitle offset) and Screenshot (offset, then the animated clip: format, length,
+ * size).
+ *
+ * No failure origin deep-links here. Internal rather than private so the instrumented tests can
+ * compose the real group.
+ */
 internal fun LazyListScope.mediaSettings(
     draft: SettingsDraft,
     recorder: SettingsCardIndexRecorder,
+    onOpenSpeechSettings: () -> Unit = {},
     onDraftChange: (SettingsDraft) -> Unit,
 ) {
-    settingsCard(SettingsCategory.MEDIA, recorder, "media-options") {
-        // Read once per composition: MimeTypeMap is a process-wide singleton and the answer cannot
-        // change while the app runs.
-        val avifNameable =
-            remember { platformCanNameFilesFor("avif") }
-        SettingsSection(stringResource(R.string.settings_media)) {
-            NumericField(
-                draft.audioPadding,
-                { onDraftChange(draft.copy(audioPadding = it)) },
-                stringResource(R.string.settings_audio_padding),
-                error = validationMessage(draft, SettingsFieldKey.AUDIO_PADDING),
-                imeAction = ImeAction.Next,
-                placeholder = inheritedDefault(EngineDefaults.AUDIO_PADDING_SECONDS),
-            )
-            NumericField(
-                draft.screenshotOffset,
-                { onDraftChange(draft.copy(screenshotOffset = it)) },
-                stringResource(R.string.settings_screenshot_offset),
-                error = validationMessage(draft, SettingsFieldKey.SCREENSHOT_OFFSET),
-                imeAction = ImeAction.Next,
-                placeholder = inheritedDefault(EngineDefaults.SCREENSHOT_OFFSET_SECONDS),
-            )
-            BooleanSetting(
-                label = stringResource(R.string.settings_animated_screenshots),
-                checked = draft.animatedScreenshots,
-                onCheckedChange = { onDraftChange(draft.copy(animatedScreenshots = it)) },
-            )
-            SupportingText(stringResource(R.string.settings_animated_screenshots_summary))
-            // A .avif this device cannot name would be stored by AnkiDroid as .bin, so the mapper
-            // sends WebP instead. Say so rather than silently producing a different format.
-            if (draft.animatedScreenshots && !avifNameable) {
-                SupportingText(stringResource(R.string.settings_animated_screenshots_webp_only))
-            }
-            BooleanSetting(
-                label = stringResource(R.string.settings_animated_match_audio),
-                checked = draft.animatedScreenshotMatchAudio,
-                enabled = draft.animatedScreenshots,
-                onCheckedChange = {
-                    onDraftChange(draft.copy(animatedScreenshotMatchAudio = it))
-                },
-            )
-            SupportingText(stringResource(R.string.settings_animated_match_audio_help))
-            NumericField(
-                draft.animatedScreenshotDuration,
-                { onDraftChange(draft.copy(animatedScreenshotDuration = it)) },
-                stringResource(R.string.settings_animated_clip_duration),
-                // Match-audio derives the window from the subtitle and the audio padding, so the
-                // configured length has no effect while it is on. Desktop's media panel greys the
-                // same field out rather than letting it read as if it still applied.
-                enabled = draft.animatedScreenshots && !draft.animatedScreenshotMatchAudio,
-                error = validationMessage(draft, SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION),
-                imeAction = ImeAction.Next,
-                modifier = Modifier.testTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION),
-                placeholder =
-                    inheritedDefault(EngineDefaults.ANIMATED_SCREENSHOT_DURATION_SECONDS),
-            )
-            SupportingText(stringResource(R.string.settings_animated_clip_duration_help))
-            NumericField(
-                draft.animatedScreenshotQuality,
-                { onDraftChange(draft.copy(animatedScreenshotQuality = it)) },
-                stringResource(R.string.settings_animated_quality),
-                integer = true,
-                enabled = draft.animatedScreenshots,
-                error = validationMessage(draft, SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY),
-                imeAction = ImeAction.Next,
-                modifier = Modifier.testTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_QUALITY),
-                placeholder = inheritedDefault(EngineDefaults.ANIMATED_SCREENSHOT_QUALITY),
-            )
-            SupportingText(stringResource(R.string.settings_animated_quality_help))
-            NumericField(
-                draft.subtitleOffset,
-                { onDraftChange(draft.copy(subtitleOffset = it)) },
-                stringResource(R.string.settings_subtitle_offset),
-                allowNegative = true,
-                error = validationMessage(draft, SettingsFieldKey.SUBTITLE_OFFSET),
-                imeAction = ImeAction.Next,
-                placeholder = inheritedDefault(EngineDefaults.SUBTITLE_OFFSET_SECONDS),
-            )
-            NumericField(
-                draft.bitrate,
-                { onDraftChange(draft.copy(bitrate = it)) },
-                stringResource(R.string.settings_audio_bitrate),
-                integer = true,
-                error = validationMessage(draft, SettingsFieldKey.BITRATE),
-                placeholder = inheritedDefault(EngineDefaults.AUDIO_BITRATE_KBPS),
-            )
+    settingsCard(SettingsCategory.MEDIA, recorder, MEDIA_SENTENCE_AUDIO_KEY) {
+        SettingsSection(stringResource(R.string.settings_media_sentence_audio)) {
             NullableChoice(
                 label = stringResource(R.string.settings_audio_format),
                 value = draft.audioFormat,
@@ -407,9 +420,262 @@ internal fun LazyListScope.mediaSettings(
                 },
                 onChange = { onDraftChange(draft.copy(audioFormat = it)) },
             )
+            NumericField(
+                draft.bitrate,
+                { onDraftChange(draft.copy(bitrate = it)) },
+                stringResource(R.string.settings_audio_bitrate),
+                integer = true,
+                error = validationMessage(draft, SettingsFieldKey.BITRATE),
+                imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.AUDIO_BITRATE_KBPS),
+            )
+            NumericField(
+                draft.audioPadding,
+                { onDraftChange(draft.copy(audioPadding = it)) },
+                stringResource(R.string.settings_audio_padding),
+                error = validationMessage(draft, SettingsFieldKey.AUDIO_PADDING),
+                imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.AUDIO_PADDING_SECONDS),
+            )
+            // Desktop's Text-to-speech row, moved here from the word-audio sources. Android speaks
+            // with the device's offline voice, so the row is on or off rather than a list of web
+            // voices.
+            BooleanSetting(
+                label = stringResource(R.string.settings_reading_tts),
+                checked = draft.readingTts,
+                onCheckedChange = { onDraftChange(draft.copy(readingTts = it)) },
+            )
+            SupportingText(stringResource(R.string.settings_reading_tts_help))
+            // Only with text-to-speech on: the button has nothing to set up otherwise.
+            if (draft.readingTts) {
+                SecondaryActionButton(
+                    onClick = onOpenSpeechSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.settings_open_speech_services))
+                }
+            }
+            NumericField(
+                draft.subtitleOffset,
+                { onDraftChange(draft.copy(subtitleOffset = it)) },
+                stringResource(R.string.settings_subtitle_offset),
+                allowNegative = true,
+                error = validationMessage(draft, SettingsFieldKey.SUBTITLE_OFFSET),
+                placeholder = inheritedDefault(EngineDefaults.SUBTITLE_OFFSET_SECONDS),
+            )
+        }
+    }
+    settingsCard(SettingsCategory.MEDIA, recorder, MEDIA_SCREENSHOT_KEY) {
+        // Read once per composition: MimeTypeMap is a process-wide singleton and the answer cannot
+        // change while the app runs.
+        val avifNameable =
+            remember { platformCanNameFilesFor("avif") }
+        SettingsSection(stringResource(R.string.settings_media_screenshot)) {
+            NumericField(
+                draft.screenshotOffset,
+                { onDraftChange(draft.copy(screenshotOffset = it)) },
+                stringResource(R.string.settings_screenshot_offset),
+                error = validationMessage(draft, SettingsFieldKey.SCREENSHOT_OFFSET),
+                placeholder = inheritedDefault(EngineDefaults.SCREENSHOT_OFFSET_SECONDS),
+            )
+            BooleanSetting(
+                label = stringResource(R.string.settings_animated_screenshots),
+                checked = draft.animatedScreenshots,
+                onCheckedChange = { onDraftChange(draft.copy(animatedScreenshots = it)) },
+            )
+            SupportingText(stringResource(R.string.settings_animated_screenshots_summary))
+            // The tuning rows stay visible and go disabled while the feature is off, as on desktop.
+            AnimatedFormatChoice(draft, onDraftChange, avifNameable)
+            ClipLengthField(draft, onDraftChange)
+            SupportingText(stringResource(R.string.settings_animated_clip_duration_help))
+            AnimatedSizeChoice(draft, onDraftChange)
+            SupportingText(stringResource(R.string.settings_animated_quality_help))
         }
     }
 }
+
+/**
+ * Desktop's Animated Format combo. Unset keeps the choice made before this was a setting: AVIF
+ * wherever the device can name it. A `.avif` this device cannot name would be stored by AnkiDroid
+ * as `.bin`, so there AVIF is offered disabled, with the reason, and WebP is what the run sends.
+ */
+@Composable
+private fun AnimatedFormatChoice(
+    draft: SettingsDraft,
+    onDraftChange: (SettingsDraft) -> Unit,
+    avifNameable: Boolean,
+) {
+    NullableChoice(
+        label = stringResource(R.string.settings_animated_format),
+        value = draft.animatedScreenshotFormat?.takeIf { avifNameable || it != AnimatedScreenshotFormat.AVIF },
+        engineDefault = if (avifNameable) AnimatedScreenshotFormat.AVIF else AnimatedScreenshotFormat.WEBP,
+        values = listOf(AnimatedScreenshotFormat.AVIF, AnimatedScreenshotFormat.WEBP),
+        optionLabel = { value ->
+            stringResource(
+                when (value) {
+                    AnimatedScreenshotFormat.AVIF -> R.string.settings_animated_format_avif
+                    AnimatedScreenshotFormat.WEBP -> R.string.settings_animated_format_webp
+                },
+            )
+        },
+        onChange = { onDraftChange(draft.copy(animatedScreenshotFormat = it)) },
+        enabled = draft.animatedScreenshots,
+        modifier = Modifier.testTag(SettingsCategoryTestTags.ANIMATED_FORMAT),
+        optionEnabled = { it != AnimatedScreenshotFormat.AVIF || avifNameable },
+    )
+    SupportingText(stringResource(R.string.settings_animated_format_help))
+    if (draft.animatedScreenshots && !avifNameable) {
+        SupportingText(stringResource(R.string.settings_animated_screenshots_webp_only))
+    }
+}
+
+/**
+ * Desktop's one Clip length stepper: half-second steps whose lowest value, "Same as sentence
+ * audio", is match-audio. [ClipLengthStepper] keeps the length the user had set across a trip down
+ * to that value and back.
+ */
+@Composable
+private fun ClipLengthField(
+    draft: SettingsDraft,
+    onDraftChange: (SettingsDraft) -> Unit,
+) {
+    val stepper = remember { ClipLengthStepper() }
+    val length = draft.clipLength
+    val enabled = draft.animatedScreenshots
+    val locale = currentUiLocale()
+    val value =
+        if (length.sameAsAudio) {
+            stringResource(R.string.settings_animated_match_audio)
+        } else {
+            stringResource(
+                R.string.settings_animated_clip_length_seconds,
+                // The Android locale's decimal separator, as every other number on the page.
+                String.format(locale, "%.1f", length.seconds),
+            )
+        }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .testTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
+    ) {
+        Text(
+            stringResource(R.string.settings_animated_clip_duration),
+            style = MaterialTheme.typography.titleSmall,
+            color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_CONTENT_ALPHA),
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ClipLengthStepButton(
+                icon = R.drawable.ic_step_down,
+                description = stringResource(R.string.settings_animated_clip_length_shorter),
+                testTag = SettingsCategoryTestTags.ANIMATED_CLIP_SHORTER,
+                enabled = enabled && !length.sameAsAudio,
+            ) { onDraftChange(draft.withClipLength(stepper.step(length, up = false))) }
+            Text(
+                value,
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                textAlign = TextAlign.Center,
+                color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_CONTENT_ALPHA),
+            )
+            ClipLengthStepButton(
+                icon = R.drawable.ic_step_up,
+                description = stringResource(R.string.settings_animated_clip_length_longer),
+                testTag = SettingsCategoryTestTags.ANIMATED_CLIP_LONGER,
+                enabled =
+                    enabled &&
+                        (length.sameAsAudio || length.seconds < AnimatedScreenshotLimits.CLIP_DURATION_SECONDS.endInclusive),
+            ) { onDraftChange(draft.withClipLength(stepper.step(length, up = true))) }
+        }
+    }
+}
+
+@Composable
+private fun ClipLengthStepButton(
+    @DrawableRes icon: Int,
+    description: String,
+    testTag: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    OutlinedIconButton(
+        onClick = onClick,
+        modifier =
+            Modifier
+                .minimumInteractiveComponentSize()
+                .testTag(testTag)
+                .semantics { contentDescription = description },
+        enabled = enabled,
+        shape = MaterialTheme.shapes.small,
+        colors =
+            IconButtonDefaults.outlinedIconButtonColors(
+                contentColor = accentTextColor(),
+                disabledContentColor = disabledActionContentColor(),
+            ),
+        border = actionBorder(enabled = enabled),
+    ) {
+        Icon(painter = painterResource(icon), contentDescription = null)
+    }
+}
+
+/**
+ * Desktop's Size combo: Small, Balanced and High set frame rate, height and quality together. A
+ * stored triple matching none shows as Custom with its values and stays until a preset is picked;
+ * Custom cannot be picked back.
+ */
+@Composable
+private fun AnimatedSizeChoice(
+    draft: SettingsDraft,
+    onDraftChange: (SettingsDraft) -> Unit,
+) {
+    val size = draft.animatedSize
+    val options =
+        buildList {
+            AnimatedSizePreset.entries.forEach { preset ->
+                add(preset.name to stringResource(animatedSizeLabel(preset)))
+            }
+            if (size is AnimatedSize.Custom) {
+                add(
+                    CUSTOM_SIZE to
+                        stringResource(R.string.settings_animated_size_custom, size.fps, size.height, size.quality),
+                )
+            }
+        }
+    SettingsDropdown(
+        label = stringResource(R.string.settings_animated_size),
+        options = options,
+        selected =
+            when (size) {
+                is AnimatedSize.Preset -> size.preset.name
+                is AnimatedSize.Custom -> CUSTOM_SIZE
+            },
+        onSelect = { picked ->
+            AnimatedSizePreset.entries
+                .firstOrNull { it.name == picked }
+                ?.takeIf { size != AnimatedSize.Preset(it) }
+                ?.let { onDraftChange(draft.withAnimatedSize(it)) }
+        },
+        isOptionEnabled = { it != CUSTOM_SIZE },
+        enabled = draft.animatedScreenshots,
+        modifier = Modifier.testTag(SettingsCategoryTestTags.ANIMATED_SIZE),
+    )
+}
+
+private const val CUSTOM_SIZE = "custom"
+
+@StringRes
+private fun animatedSizeLabel(preset: AnimatedSizePreset): Int =
+    when (preset) {
+        AnimatedSizePreset.SMALL -> R.string.settings_animated_size_small
+        AnimatedSizePreset.BALANCED -> R.string.settings_animated_size_balanced
+        AnimatedSizePreset.HIGH -> R.string.settings_animated_size_high
+    }
 
 /**
  * What the example sentence is and looks like, mirroring desktop's Sentences page: subtitle text
@@ -426,84 +692,34 @@ internal fun LazyListScope.sentencesSettings(
 ) {
     settingsCard(SettingsCategory.SENTENCES, recorder, "subtitle-text") {
         SettingsSection(stringResource(R.string.settings_subtitle_text)) {
-            SettingTextField(
-                value = draft.subtitleRegex,
-                onChange = { onDraftChange(draft.copy(subtitleRegex = it)) },
-                label = stringResource(R.string.settings_subtitle_regex),
-                error = validationMessage(draft, SettingsFieldKey.SUBTITLE_REGEX),
-                // An empty field runs the language's own pattern, so say which one.
-                placeholder =
-                    inherited.subtitleRegexFilter.takeIf(String::isNotEmpty)?.let(::inheritedDefault),
+            // Desktop's one cleanup box (D15 extension): its state is derived from the filter toggle
+            // and the pattern, so nothing new is stored. Partly checked means the user's own
+            // pattern is in use; a click adds every built-in piece to it.
+            TriStateSetting(
+                label = stringResource(R.string.settings_subtitle_cleanup),
+                state = draft.subtitleCleanupState(inherited),
+                onClick = { onDraftChange(draft.withSubtitleCleanupClicked(inherited)) },
+                modifier = Modifier.testTag(SettingsCategoryTestTags.SUBTITLE_CLEANUP),
             )
-            // Not an error: the engine compiles with Python's regex dialect, so a pattern this
-            // platform cannot parse may still be valid there.
-            if (draft.subtitleRegexWarning) {
-                SupportingText(stringResource(R.string.settings_subtitle_regex_uncompilable))
-            }
-            SettingTextField(
-                value = draft.subtitleRegexReplacement,
-                onChange = { onDraftChange(draft.copy(subtitleRegexReplacement = it)) },
-                label = stringResource(R.string.settings_subtitle_replacement),
-                error = validationMessage(draft, SettingsFieldKey.SUBTITLE_REGEX_REPLACEMENT),
-            )
-            NullableToggle(
-                stringResource(R.string.settings_use_subtitle_regex),
-                draft.useSubtitleRegex,
-                inherited.useSubtitleRegexFilter,
-            ) { onDraftChange(draft.copy(useSubtitleRegex = it)) }
-            Text(
-                stringResource(R.string.settings_subtitle_presets),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            SupportingText(stringResource(R.string.settings_subtitle_cleanup_help))
+            val pieces = subtitleCleanupPieces(inherited.subtitleRegexFilter)
+            SettingsDisclosure(
+                title = stringResource(R.string.settings_subtitle_edit_pattern),
+                // Open from the start when the pattern is the user's own, as desktop opens it.
+                initiallyExpanded = subtitlePatternIsCustom(draft.effectiveSubtitleRegex(inherited), pieces),
+                // A rejected pattern blocks every settings write, so its field must stay in view.
+                forceOpen =
+                    SettingsFieldKey.SUBTITLE_REGEX in draft.validation ||
+                        SettingsFieldKey.SUBTITLE_REGEX_REPLACEMENT in draft.validation ||
+                        draft.subtitleRegexWarning,
             ) {
-                SUBTITLE_REGEX_PRESETS.forEach { preset ->
-                    val label = stringResource(preset.label)
-                    val description =
-                        stringResource(
-                            R.string.settings_subtitle_preset_description,
-                            label,
-                            preset.pattern,
-                        )
-                    SecondaryActionButton(
-                        onClick = {
-                            onDraftChange(
-                                draft.copy(
-                                    subtitleRegex =
-                                        appendSubtitleRegexPreset(
-                                            draft.subtitleRegex,
-                                            preset.pattern,
-                                        ),
-                                    // Appending a pattern while the filter is off looked like the
-                                    // preset did nothing. Tapping one is a request to filter, so
-                                    // turn the filter on with it; the toggle stays available for
-                                    // parking a pattern afterwards.
-                                    useSubtitleRegex = true,
-                                ),
-                            )
-                        },
-                        modifier =
-                            Modifier.semantics { contentDescription = description },
-                    ) { Text(label) }
-                }
+                SubtitlePatternFields(draft, onDraftChange, inherited)
             }
         }
     }
     settingsCard(SettingsCategory.SENTENCES, recorder, "sentence-options") {
         SettingsSection(stringResource(R.string.settings_sentence_options)) {
-            NullableToggle(
-                stringResource(R.string.settings_deduplicate),
-                draft.deduplicate,
-                EngineDefaults.DEDUPLICATE_SENTENCES,
-            ) { onDraftChange(draft.copy(deduplicate = it)) }
-            NullableToggle(
-                stringResource(R.string.settings_i_plus_one),
-                draft.iPlusOne,
-                EngineDefaults.USE_I_PLUS_ONE_FILTER,
-            ) { onDraftChange(draft.copy(iPlusOne = it)) }
+            SentenceRuleChoice(draft, onDraftChange)
             // No master toggle: each cap is off at 0, which its help line says.
             NumericField(
                 draft.maxDuration,
@@ -545,6 +761,107 @@ internal fun LazyListScope.sentencesSettings(
         }
     }
 }
+
+/** The raw pattern, its replacement and the preset buttons, behind "Edit the pattern (advanced)". */
+@Composable
+private fun SubtitlePatternFields(
+    draft: SettingsDraft,
+    onDraftChange: (SettingsDraft) -> Unit,
+    inherited: LanguageDefaults,
+) {
+    SettingTextField(
+        value = draft.subtitleRegex,
+        onChange = { onDraftChange(draft.copy(subtitleRegex = it)) },
+        label = stringResource(R.string.settings_subtitle_regex),
+        error = validationMessage(draft, SettingsFieldKey.SUBTITLE_REGEX),
+        // An empty field runs the language's own pattern, so say which one.
+        placeholder =
+            inherited.subtitleRegexFilter.takeIf(String::isNotEmpty)?.let(::inheritedDefault),
+    )
+    // Not an error: the engine compiles with Python's regex dialect, so a pattern this platform
+    // cannot parse may still be valid there.
+    if (draft.subtitleRegexWarning) {
+        SupportingText(stringResource(R.string.settings_subtitle_regex_uncompilable))
+    }
+    SettingTextField(
+        value = draft.subtitleRegexReplacement,
+        onChange = { onDraftChange(draft.copy(subtitleRegexReplacement = it)) },
+        label = stringResource(R.string.settings_subtitle_replacement),
+        error = validationMessage(draft, SettingsFieldKey.SUBTITLE_REGEX_REPLACEMENT),
+    )
+    Text(
+        stringResource(R.string.settings_subtitle_presets),
+        style = MaterialTheme.typography.titleSmall,
+    )
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+    ) {
+        SUBTITLE_REGEX_PRESETS.forEach { preset ->
+            val label = stringResource(preset.label)
+            val description =
+                stringResource(
+                    R.string.settings_subtitle_preset_description,
+                    label,
+                    preset.pattern,
+                )
+            SecondaryActionButton(
+                onClick = {
+                    onDraftChange(
+                        draft.copy(
+                            subtitleRegex =
+                                appendSubtitleRegexPreset(
+                                    draft.subtitleRegex,
+                                    preset.pattern,
+                                ),
+                            // Appending a pattern while the filter is off looked like the preset
+                            // did nothing. Tapping one is a request to filter, so turn the filter
+                            // on with it; the cleanup box above stays available for parking a
+                            // pattern afterwards.
+                            useSubtitleRegex = true,
+                        ),
+                    )
+                },
+                modifier =
+                    Modifier.semantics { contentDescription = description },
+            ) { Text(label) }
+        }
+    }
+}
+
+/**
+ * Desktop's Sentence Rule combo over the dedup and i+1 booleans. The help line under it is the
+ * picked rule's own tooltip on desktop.
+ */
+@Composable
+private fun SentenceRuleChoice(
+    draft: SettingsDraft,
+    onDraftChange: (SettingsDraft) -> Unit,
+) {
+    val rule = draft.sentenceRule
+    val options = SentenceRule.entries.map { it.name to stringResource(sentenceRuleLabel(it)) }
+    SettingsDropdown(
+        label = stringResource(R.string.settings_sentence_rule),
+        options = options,
+        selected = rule.name,
+        onSelect = { picked -> onDraftChange(draft.withSentenceRule(SentenceRule.valueOf(picked))) },
+        modifier = Modifier.testTag(SettingsCategoryTestTags.SENTENCE_RULE),
+    )
+    when (rule) {
+        SentenceRule.ALL -> Unit
+        SentenceRule.ONE_PER_SENTENCE -> SupportingText(stringResource(R.string.settings_sentence_rule_dedup_help))
+        SentenceRule.I_PLUS_ONE -> SupportingText(stringResource(R.string.settings_sentence_rule_i_plus_one_help))
+    }
+}
+
+@StringRes
+private fun sentenceRuleLabel(rule: SentenceRule): Int =
+    when (rule) {
+        SentenceRule.ALL -> R.string.settings_sentence_rule_all
+        SentenceRule.ONE_PER_SENTENCE -> R.string.settings_sentence_rule_dedup
+        SentenceRule.I_PLUS_ONE -> R.string.settings_sentence_rule_i_plus_one
+    }
 
 /**
  * One resource panel behind a disclosure, closed until asked.
@@ -745,6 +1062,14 @@ private fun LazyListScope.dictionarySourcesCard(
                             )
                         }
                     OtherLanguageSlotsNote(otherLanguageSlots)
+                    DictionaryUpdatesSection(
+                        automatic = draft.autoUpdateDictionaries,
+                        onAutomaticChange = {
+                            callbacks.onDraftChange(draft.copy(autoUpdateDictionaries = it))
+                        },
+                        state = callbacks.dictionaryUpdates,
+                        onUpdateNow = callbacks.onUpdateDictionariesNow,
+                    )
                 },
             )
         }
@@ -811,25 +1136,8 @@ private fun LazyListScope.pitchSourcesCard(
                         callbacks,
                     )
                     OtherLanguageSlotsNote(otherLanguageSlots)
-                    // Belongs to the sources above it, not to a card of its own: it only decides how
-                    // the pitch a source supplies is written onto the card.
-                    NullableChoice(
-                        label = stringResource(R.string.settings_pitch_format),
-                        value = draft.pitchFormat,
-                        engineDefault = EngineDefaults.PITCH_CATEGORY_FORMAT,
-                        values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
-                        optionLabel = { value ->
-                            stringResource(
-                                when (value) {
-                                    PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
-                                    PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
-                                },
-                            )
-                        },
-                        onChange = {
-                            callbacks.onDraftChange(draft.copy(pitchFormat = it))
-                        },
-                    )
+                    // The pitch category format moved to the Anki field map, beside the Pitch
+                    // category row it formats, as on desktop.
                 },
             )
         }
@@ -934,8 +1242,8 @@ private fun LazyListScope.audioSourcesCard(
     callbacks: SettingsScreenCallbacks,
     otherLanguageSlots: List<Pair<String, String>>,
 ) {
-    // One card: the pack priority list, its importer, and the reading text-to-speech switch
-    // that decides what happens when no pack has the word.
+    // One card: the pack priority list, its importer, and the device voice that speaks a word no
+    // pack has. Sentence text-to-speech moved to Media, as desktop's Text-to-speech row did.
     settingsCard(SettingsCategory.RESOURCES, recorder, AUDIO_SOURCES_KEY) {
         val installedPackIds = resources.audioPacks.mapTo(mutableSetOf()) { it.packId }
         val rows =
@@ -994,24 +1302,6 @@ private fun LazyListScope.audioSourcesCard(
                             callbacks.miningLanguage,
                             onOpenSpeechSettings = callbacks.onOpenSpeechSettings,
                         )
-                    }
-                    SettingsSection(stringResource(R.string.settings_reading_audio)) {
-                        BooleanSetting(
-                            label = stringResource(R.string.settings_reading_tts),
-                            checked = draft.readingTts,
-                            onCheckedChange = {
-                                callbacks.onDraftChange(draft.copy(readingTts = it))
-                            },
-                        )
-                        // Only with read-aloud on: the button has nothing to set up otherwise.
-                        if (draft.readingTts) {
-                            SecondaryActionButton(
-                                onClick = callbacks.onOpenSpeechSettings,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text(stringResource(R.string.settings_open_speech_services))
-                            }
-                        }
                     }
                 },
             )
@@ -1141,6 +1431,7 @@ private fun LazyListScope.wordFilterSettings(
         callbacks.onDraftChange,
         showsKanaFilters = language.showsKanaFilters,
         showsNameWordsets = language.showsNameWordsets,
+        showsHangulFilters = language.showsHangulFilters,
         inherited = callbacks.languageDefaults,
         unusableDecksHidden = setup.unusableDecksHidden,
     )
@@ -1189,8 +1480,9 @@ private fun LazyListScope.wordFilterSettings(
 
 /**
  * Which words get mined, mirroring desktop's Word Filters page: the frequency band, the known-words
- * rules and excluded decks, the script filters and the reading threshold. The kana rows and the
- * name wordsets are Japanese; desktop shows them only under `kana_filters` and `name_wordsets`.
+ * rules and excluded decks, the name lists, the script filters and the reading threshold. The kana
+ * rows and the name box are Japanese (desktop `kana_filters`, `name_wordsets`); the hangul rows are
+ * Korean (`hangul_filters`) and write the same two booleans as Script type.
  *
  * Internal rather than private so the instrumented tests can compose the real card.
  */
@@ -1202,6 +1494,7 @@ internal fun LazyListScope.wordFilterOptions(
     onDraftChange: (SettingsDraft) -> Unit,
     showsKanaFilters: Boolean = true,
     showsNameWordsets: Boolean = true,
+    showsHangulFilters: Boolean = false,
     inherited: LanguageDefaults = LanguageDefaults.JAPANESE,
     unusableDecksHidden: Boolean = false,
 ) {
@@ -1295,17 +1588,21 @@ internal fun LazyListScope.wordFilterOptions(
                     SupportingText(stringResource(R.string.anki_deck_unusable_hidden))
                 }
             }
+            if (showsNameWordsets) {
+                NameWordsetsRow(draft, resources, onDraftChange)
+            }
             if (showsKanaFilters) {
-                NullableToggle(
-                    stringResource(R.string.settings_exclude_hiragana),
-                    draft.hiragana,
-                    inherited.excludeHiraganaOnly,
-                ) { onDraftChange(draft.copy(hiragana = it)) }
-                NullableToggle(
-                    stringResource(R.string.settings_exclude_katakana),
-                    draft.katakana,
-                    inherited.excludeKatakanaOnly,
-                ) { onDraftChange(draft.copy(katakana = it)) }
+                ScriptTypeChoice(draft, onDraftChange, inherited)
+            }
+            if (showsHangulFilters) {
+                HangulFilter.entries.forEach { filter ->
+                    NullableToggle(
+                        stringResource(filter.label),
+                        filter.value(draft),
+                        filter.default(inherited),
+                    ) { onDraftChange(filter.write(draft, it)) }
+                    SupportingText(stringResource(filter.help))
+                }
             }
             NumericField(
                 draft.readingOccurrence,
@@ -1324,51 +1621,70 @@ internal fun LazyListScope.wordFilterOptions(
                 error = validationMessage(draft, SettingsFieldKey.WORKERS),
                 placeholder = inheritedDefault(EngineDefaults.MAX_PARALLEL_WORKERS),
             )
-            if (showsNameWordsets) {
-                HorizontalDivider()
-                CollapsibleSettingGroup(
-                    title = stringResource(R.string.settings_wordsets),
-                    selectedCount =
-                        resources.wordsets.count { it.wordsetId in draft.enabledWordsets },
-                    totalCount = resources.wordsets.size,
-                    forceOpen = resources.wordsets.isEmpty(),
-                ) {
-                    if (resources.wordsets.isEmpty()) {
-                        Text(
-                            stringResource(R.string.bundled_wordsets_unavailable),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    } else {
-                        resources.wordsets.forEach { wordset ->
-                            BooleanSetting(
-                                label = wordset.displayName,
-                                detail =
-                                    stringResource(
-                                        R.string.settings_resource_entries,
-                                        wordset.entryCount,
-                                    ),
-                                checked = wordset.wordsetId in draft.enabledWordsets,
-                                onCheckedChange = { checked ->
-                                    onDraftChange(
-                                        draft.copy(
-                                            enabledWordsets =
-                                                if (checked) {
-                                                    (draft.enabledWordsets + wordset.wordsetId)
-                                                        .distinct()
-                                                } else {
-                                                    draft.enabledWordsets - wordset.wordsetId
-                                                },
-                                        ),
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
+
+/**
+ * Desktop's one names box (D15 item 2) over the bundled wordsets: checked skips every list, clear
+ * skips none. A subset saved before the box existed shows partly checked and is kept until clicked.
+ */
+@Composable
+private fun NameWordsetsRow(
+    draft: SettingsDraft,
+    resources: ResourceManagerState,
+    onDraftChange: (SettingsDraft) -> Unit,
+) {
+    HorizontalDivider()
+    val catalog = resources.wordsets.map { it.wordsetId }
+    TriStateSetting(
+        label = stringResource(R.string.settings_skip_names),
+        state = nameWordsetsState(draft.enabledWordsets, catalog),
+        enabled = catalog.isNotEmpty(),
+        onClick = {
+            onDraftChange(draft.copy(enabledWordsets = nameWordsetsAfterClick(draft.enabledWordsets, catalog)))
+        },
+        modifier = Modifier.testTag(SettingsCategoryTestTags.NAME_WORDSETS),
+    )
+    if (catalog.isEmpty()) {
+        Text(
+            stringResource(R.string.bundled_wordsets_unavailable),
+            color = MaterialTheme.colorScheme.error,
+        )
+    } else {
+        SupportingText(stringResource(R.string.settings_skip_names_help))
+    }
+}
+
+/** Desktop's Script Type combo over the two kana booleans; an unset pair shows the language default. */
+@Composable
+private fun ScriptTypeChoice(
+    draft: SettingsDraft,
+    onDraftChange: (SettingsDraft) -> Unit,
+    inherited: LanguageDefaults,
+) {
+    val current = draft.scriptType(inherited)
+    val options = ScriptType.entries.map { it.name to stringResource(scriptTypeLabel(it)) }
+    SettingsDropdown(
+        label = stringResource(R.string.settings_script_type),
+        options = options,
+        selected = current.name,
+        onSelect = { picked ->
+            val type = ScriptType.valueOf(picked)
+            if (type != current) onDraftChange(draft.withScriptType(type))
+        },
+        modifier = Modifier.testTag(SettingsCategoryTestTags.SCRIPT_TYPE),
+    )
+}
+
+@StringRes
+private fun scriptTypeLabel(type: ScriptType): Int =
+    when (type) {
+        ScriptType.KEEP -> R.string.settings_script_type_keep
+        ScriptType.HIRAGANA -> R.string.settings_script_type_hiragana
+        ScriptType.KATAKANA -> R.string.settings_script_type_katakana
+        ScriptType.ALL_KANA -> R.string.settings_script_type_all_kana
+    }
 
 /**
  * One end of the frequency band. [onLeave] puts the band back in order when the field is left:

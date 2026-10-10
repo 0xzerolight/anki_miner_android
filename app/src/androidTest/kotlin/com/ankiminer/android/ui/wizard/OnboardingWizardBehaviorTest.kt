@@ -262,10 +262,10 @@ class OnboardingWizardBehaviorTest {
             }
         }
 
-        composeRule.onNodeWithText("日本語 — Japanese").performClick()
-        composeRule.onNodeWithText("Deutsch — German").performClick()
-        composeRule.onNodeWithText("日本語 — Japanese").performClick()
-        composeRule.onNodeWithText("한국어 — Korean (download)").performClick()
+        composeRule.onNodeWithText("日本語").performClick()
+        composeRule.onNodeWithText("Deutsch").performClick()
+        composeRule.onNodeWithText("日本語").performClick()
+        composeRule.onNodeWithText("한국어 (download)").performClick()
         composeRule.onNodeWithText("needs a one-time download", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(listOf<String>(), downloads) }
 
@@ -389,8 +389,8 @@ class OnboardingWizardBehaviorTest {
             }
         }
 
-        composeRule.onNodeWithText("日本語 — Japanese").performClick()
-        composeRule.onNodeWithText("한국어 — Korean (download)").performClick()
+        composeRule.onNodeWithText("日本語").performClick()
+        composeRule.onNodeWithText("한국어 (download)").performClick()
         composeRule.onNodeWithText("Next").performClick()
         composeRule.runOnIdle { assertEquals(listOf("ko"), downloads) }
 

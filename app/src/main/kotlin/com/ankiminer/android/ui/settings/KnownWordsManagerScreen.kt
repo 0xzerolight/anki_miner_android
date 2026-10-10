@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,6 +45,8 @@ import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.MAX_KNOWN_WORDS_MUTATION
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.ui.mining.LocalMiningContentStyle
+import com.ankiminer.android.ui.mining.MiningContentStyle
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
@@ -362,7 +366,11 @@ internal fun KnownWordsManagerScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(word, Modifier.weight(1f))
+                            Text(
+                                word,
+                                Modifier.weight(1f),
+                                style = knownWordTextStyle(LocalTextStyle.current, LocalMiningContentStyle.current),
+                            )
                             Checkbox(
                                 checked = word in selectedWords,
                                 onCheckedChange = {
@@ -471,3 +479,12 @@ private fun KnownWordsFailure(
             )
         }
 }
+
+/**
+ * A known word is mined text: it takes the mining language's locale, and an Arabic, Persian or
+ * Hebrew word lays out right to left, as desktop's Manage Known Words does.
+ */
+internal fun knownWordTextStyle(
+    base: TextStyle,
+    content: MiningContentStyle,
+): TextStyle = base.merge(content.textStyle)

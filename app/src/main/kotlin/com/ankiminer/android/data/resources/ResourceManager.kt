@@ -186,6 +186,32 @@ interface ResourceManager {
         term: String,
     )
 
+    /**
+     * Ask each installed slot's publisher whether a newer revision is out (`resource.updates.check`).
+     *
+     * Takes no operation lock and no runtime lease, and blocks the calling thread while publishers
+     * answer, with no overall bound (Python's fetch has per-read timeouts only), so it runs on the
+     * caller's IO dispatcher and never queues imports behind it on the resource executor. Refused
+     * (`resource_not_ready`, `resource_busy`) unless startup recovery is READY and the runtime is
+     * idle; while it runs, [recoverAndRefresh] is skipped. Throws [ResourceBridgeException].
+     */
+    suspend fun checkResourceUpdates(request: ResourceUpdateCheckRequest): ResourceUpdateCheck =
+        throw ResourceBridgeException("resource_updates_unavailable", "Dictionary updates are unavailable")
+
+    /** A dictionary update check is talking to publishers; startup recovery must not run under it. */
+    fun isUpdateCheckRunning(): Boolean = false
+
+    /**
+     * Download [update]'s archive and rebuild its slot in place for [language], keeping its chain
+     * position and on/off state. Never records a failure card: desktop reports an update failure
+     * on its status line only. Null when installed, otherwise the failure code
+     * (`resource_busy` and `resource_foreground_refused` mean it never started).
+     */
+    suspend fun installResourceUpdate(
+        update: ResourceUpdate,
+        language: String,
+    ): String? = "resource_updates_unavailable"
+
     fun cancelActive()
 
     fun dismissFailure()
@@ -351,9 +377,31 @@ internal class AndroidResourceManager(
     @Volatile
     private var startupRecoveryTailPending = false
 
+    /**
+     * Pairs an update check's start with recovery's: `resource.cleanup` refuses while a check holds
+     * its Python operation, and a check must not start once recovery has left READY.
+     */
+    private val updateCheckMonitor = Any()
+
+    @Volatile
+    private var updateCheckRunning = false
+
+    override fun isUpdateCheckRunning(): Boolean = updateCheckRunning
+
     override suspend fun recoverAndRefresh() {
-        startupRecoveryTailPending = false
-        mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
+        // Skipped, not waited on: a check has no overall bound. Startup recovery never meets one
+        // (a check needs READY), and a later refresh recovers once it has finished.
+        val admitted =
+            synchronized(updateCheckMonitor) {
+                if (updateCheckRunning) return@synchronized false
+                startupRecoveryTailPending = false
+                mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
+                true
+            }
+        if (!admitted) {
+            AppLog.i(LogComponent.RESOURCES, "recovery", "outcome" to "skip", "code" to "update_check_running")
+            return
+        }
         val interrupted = runOnExecutor(resourceExecutor) { operationJournal.read() }
         val clearInterruptedAudioInput = interrupted?.origin == ResourceFailureOrigin.AUDIO
         val retainKnownWordsInput =
@@ -2105,6 +2153,88 @@ internal class AndroidResourceManager(
         }
     }
 
+    override suspend fun checkResourceUpdates(request: ResourceUpdateCheckRequest): ResourceUpdateCheck {
+        synchronized(updateCheckMonitor) {
+            if (updateCheckRunning) {
+                throw ResourceBridgeException("resource_busy", "A dictionary update check is already running")
+            }
+            // Under the monitor recovery leaves READY under, so the two never overlap.
+            if (mutableState.value.startupReadiness != ResourceStartupReadiness.READY) {
+                throw ResourceBridgeException("resource_not_ready", "Startup recovery has not finished")
+            }
+            if (runtimeWorkCoordinator.activeKind.value != null) {
+                throw ResourceBridgeException("resource_busy", "The runtime is busy")
+            }
+            updateCheckRunning = true
+        }
+        try {
+            return ResourceBridgeCodec.decodeUpdatesChecked(
+                bridge.dispatch(ResourceBridgeCodec.encodeUpdatesCheckRequest(request), null),
+            )
+        } finally {
+            updateCheckRunning = false
+        }
+    }
+
+    override suspend fun installResourceUpdate(
+        update: ResourceUpdate,
+        language: String,
+    ): String? {
+        var failureCode: String? = null
+        val installed =
+            runOperation(
+                strings.resolve(R.string.resource_operation_update, listOf(update.title)),
+                ResourceOperationPhase.DOWNLOADING,
+                // Logs only: the failure sink records no card.
+                failureOrigin =
+                    when (update.kind) {
+                        ResourceUpdateKind.DICTIONARY -> ResourceFailureOrigin.CUSTOM_DICTIONARY
+                        ResourceUpdateKind.FREQUENCY -> ResourceFailureOrigin.FREQUENCY
+                        ResourceUpdateKind.PITCH -> ResourceFailureOrigin.PITCH
+                    },
+                holdsForegroundLease = true,
+                clearMatchingFailureOnSuccess = false,
+                failureSink = { code -> failureCode = code },
+            ) { operation ->
+                val staged =
+                    downloader.downloadUnpinned(
+                        update.downloadUrl,
+                        update.maxArchiveBytes,
+                        operation.id,
+                        operation.cancellation,
+                    ) { current, total, phase -> updateProgress(operation, phase, current, total) }
+                try {
+                    updateProgress(operation, ResourceOperationPhase.IMPORTING)
+                    operation.cancellation.check()
+                    if (update.kind == ResourceUpdateKind.FREQUENCY) {
+                        ResourceBridgeCodec.validateFrequencyArchiveMetadata(staged.file)
+                    }
+                    operation.pythonStarted.set(true)
+                    val slotId =
+                        decodePublishedMutation(
+                            raw =
+                                bridge.dispatch(
+                                    ResourceBridgeCodec.encodeUpdateInstallRequest(
+                                        operation.id,
+                                        update,
+                                        staged.file.canonicalPath,
+                                        language,
+                                    ),
+                                    ResourceProgressSink(operation),
+                                ),
+                            decode = { raw -> ResourceBridgeCodec.decodeInstalledUpdate(update.kind, raw) },
+                        )
+                    if (slotId != update.slotId) {
+                        throw ResourceBridgeException("invalid_resource_response", "The update rebuilt another slot")
+                    }
+                    refreshAfterCommittedMutation()
+                } finally {
+                    staged.file.delete()
+                }
+            }
+        return if (installed) null else failureCode ?: "resource_operation_failed"
+    }
+
     override fun cancelActive() {
         val operation = synchronized(activeMonitor) { active } ?: return
         operation.cancelDelivery.compareAndSet(
@@ -2155,6 +2285,12 @@ internal class AndroidResourceManager(
         requiresStartupReady: Boolean = true,
         waitForMutex: Boolean = false,
         clearMatchingFailureOnSuccess: Boolean = true,
+        /**
+         * The quiet mode dictionary updates use, since desktop reports them on its status line
+         * only. When set, busy, a refused foreground start and every failure go here as their
+         * code instead of to a failure card. Pair it with [clearMatchingFailureOnSuccess] false.
+         */
+        failureSink: ((code: String) -> Unit)? = null,
         onAdmitted: (ActiveOperation) -> Unit = {},
         block: (ActiveOperation) -> Unit,
     ): Boolean {
@@ -2162,17 +2298,23 @@ internal class AndroidResourceManager(
             requiresStartupReady &&
                 mutableState.value.startupReadiness != ResourceStartupReadiness.READY
         ) {
+            failureSink?.invoke("resource_not_ready")
             return false
         }
         if (waitForMutex) {
             operationMutex.lock()
         } else if (!operationMutex.tryLock()) {
+            failureSink?.invoke("resource_busy")
             return false
         }
         try {
             val workLease =
                 runtimeWorkCoordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE)
             if (workLease == null) {
+                if (failureSink != null) {
+                    failureSink("resource_busy")
+                    return false
+                }
                 recordFailure(
                     "resource_busy",
                     strings.resolve(R.string.resource_failure_busy),
@@ -2199,11 +2341,38 @@ internal class AndroidResourceManager(
             mutableState.update { it.copy(activeOperation = initialProgress) }
             var completed = false
             var foregroundStarted = false
+
+            fun fail(
+                code: String,
+                message: () -> String,
+                faultId: String? = null,
+            ) {
+                if (failureSink != null) {
+                    failureSink(code)
+                } else {
+                    recordFailure(operation, code, message(), faultId)
+                }
+            }
             try {
                 // Before journal admission and work: without foreground process importance this
                 // non-resumable operation must not start.
                 if (holdsForegroundLease) {
-                    foregroundLease.start(initialProgress)
+                    try {
+                        foregroundLease.start(initialProgress)
+                    } catch (failure: Exception) {
+                        // A background start on API 31+ throws here: nothing ran, so a quiet
+                        // caller defers instead of failing.
+                        if (failureSink == null) throw failure
+                        AppLog.w(
+                            LogComponent.RESOURCES,
+                            "operation.foreground",
+                            failure,
+                            "operation" to operation.id,
+                            "outcome" to "skip",
+                        )
+                        failureSink("resource_foreground_refused")
+                        return false
+                    }
                     foregroundStarted = true
                 }
                 onAdmitted(operation)
@@ -2229,9 +2398,11 @@ internal class AndroidResourceManager(
                 // instrumentation: silent — reconciliation already recorded retry state
             } catch (_: ResourceInventoryReconciliationException) {
                 // Mutation committed. The recorded setup failure owns reconciliation-only Retry.
+                failureSink?.invoke("resource_inventory_failed")
                 // instrumentation: silent — cancel-delivery failure is recorded below
             } catch (_: ResourceCancellationDeliveryException) {
                 recordCancelDeliveryFailure(operation)
+                failureSink?.invoke("resource_cancel_delivery_failed")
             } catch (failure: CancellationException) {
                 operation.cancellation.cancel()
                 cancelPython(operation)
@@ -2245,6 +2416,7 @@ internal class AndroidResourceManager(
                             "outcome" to "skip",
                         )
                     }
+                    failureSink?.invoke(failure.stableCode)
                 } else {
                     AppLog.e(
                         LogComponent.RESOURCES,
@@ -2254,7 +2426,7 @@ internal class AndroidResourceManager(
                         "code" to failure.stableCode,
                         "outcome" to "fail",
                     )
-                    recordFailure(operation, failure.stableCode, downloadUserMessage(failure))
+                    fail(failure.stableCode, { downloadUserMessage(failure) })
                 }
             } catch (failure: ResourceStorageException) {
                 AppLog.e(
@@ -2265,11 +2437,7 @@ internal class AndroidResourceManager(
                     "code" to "insufficient_storage",
                     "outcome" to "fail",
                 )
-                recordFailure(
-                    operation,
-                    "insufficient_storage",
-                    strings.resolve(R.string.resource_failure_storage),
-                )
+                fail("insufficient_storage", { strings.resolve(R.string.resource_failure_storage) })
             } catch (failure: ResourceBridgeException) {
                 if (failure.code == "resource_operation_cancelled") {
                     AppLog.d(LogComponent.RESOURCES, "operation.run") {
@@ -2279,6 +2447,7 @@ internal class AndroidResourceManager(
                             "outcome" to "skip",
                         )
                     }
+                    failureSink?.invoke(failure.code)
                 } else {
                     AppLog.e(
                         LogComponent.RESOURCES,
@@ -2290,7 +2459,7 @@ internal class AndroidResourceManager(
                         "outcome" to "fail",
                     )
                     // userMessage(code) is unchanged; the id rides beside it into diagnostics only.
-                    recordFailure(operation, failure.code, userMessage(failure.code), failure.faultId)
+                    fail(failure.code, { userMessage(failure.code) }, failure.faultId)
                 }
             } catch (failure: SafAccessException) {
                 // Provider-side access failures (no persistable grant, provider gone,
@@ -2304,7 +2473,7 @@ internal class AndroidResourceManager(
                     "code" to safAccessCode(failure.kind),
                     "outcome" to "fail",
                 )
-                recordFailure(operation, safAccessCode(failure.kind), safAccessUserMessage(failure.kind))
+                fail(safAccessCode(failure.kind), { safAccessUserMessage(failure.kind) })
             } catch (failure: Exception) {
                 AppLog.e(
                     LogComponent.RESOURCES,
@@ -2314,11 +2483,7 @@ internal class AndroidResourceManager(
                     "code" to "resource_operation_failed",
                     "outcome" to "fail",
                 )
-                recordFailure(
-                    operation,
-                    "resource_operation_failed",
-                    strings.resolve(R.string.resource_failure_operation),
-                )
+                fail("resource_operation_failed", { strings.resolve(R.string.resource_failure_operation) })
             } finally {
                 if (completed && clearMatchingFailureOnSuccess) {
                     mutableState.update { current ->
@@ -3150,6 +3315,8 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_download_incomplete)
             "download_resume_invalid" ->
                 strings.resolve(R.string.resource_failure_download_resume_invalid)
+            "download_too_large" ->
+                strings.resolve(R.string.resource_failure_download_too_large)
             "import_staging_failed" ->
                 strings.resolve(R.string.resource_failure_import_staging)
             "word_list_not_utf8" ->
