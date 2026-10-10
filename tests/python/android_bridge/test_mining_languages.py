@@ -559,7 +559,7 @@ def test_a_hebrew_novel_is_decoded_and_split_with_the_hebrew_seams(tmp_path: Pat
         )
     )
     config = _hebrew_config(tmp_path)
-    loader_kwargs = reading_mining._reading_loader_kwargs(config)
+    loader_kwargs = reading_mining._reading_loader_kwargs(config, "txt")
 
     from anki_miner.languages.registry import get_profile
 
@@ -576,7 +576,81 @@ def test_a_japanese_reading_run_keeps_the_pre_transition_loader_call(tmp_path: P
     import android_bridge.reading_mining as reading_mining
 
     config = SimpleNamespace(known_words_db_path=tmp_path / "known_words.db")
-    assert reading_mining._reading_loader_kwargs(config) == {}
+    # A ja volume keeps the loader's own manga-ocr block gate too.
+    for source_kind in ("txt", "mokuro"):
+        assert reading_mining._reading_loader_kwargs(config, source_kind) == {}
+
+
+def _indonesian_config(tmp_path: Path) -> object:
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    return map_config_settings({"language": "id", "anki_note_type": "Basic"}, paths).engine_config
+
+
+def test_a_mokuro_volume_is_gated_on_the_mining_languages_script(tmp_path: Path) -> None:
+    """Desktop ``load_reading_source``: a volume's blocks pass the language's script gate.
+
+    Indonesian's parser keeps every line (no bilingual-cue gate), the case where
+    the loader otherwise falls back to its Japanese block check. Only the mokuro
+    kind changes; an EPUB keeps the parser's seams.
+    """
+    _runtime_lane()
+    import android_bridge.reading_mining as reading_mining
+    from anki_miner.languages.registry import get_profile
+
+    config = _indonesian_config(tmp_path)
+    mokuro = reading_mining._reading_loader_kwargs(config, "mokuro")
+    epub = reading_mining._reading_loader_kwargs(config, "epub")
+
+    assert mokuro["has_target_script"] == get_profile("id").script.contains_target_script
+    assert "has_target_script" not in epub
+    assert {key: value for key, value in mokuro.items() if key != "has_target_script"} == epub
+
+
+def test_an_indonesian_mokuro_volume_yields_its_own_lines_and_drops_untouched_sfx(tmp_path: Path) -> None:
+    _runtime_lane()
+    import json
+
+    import android_bridge.reading_mining as reading_mining
+    from android_bridge.protocol import encode_message
+
+    job = tmp_path / "reading-job-v1-a"
+    job.mkdir()
+    source = job / "volume.mokuro"
+    blocks = [
+        {"box": [1, 2, 30, 40], "lines": ["Saya suka", "kucing."]},
+        # A translated volume's sound effect, left in Japanese.
+        {"box": [5, 6, 35, 46], "lines": ["ドドド"]},
+    ]
+    volume = {
+        "version": "0.2.4",
+        "title": "Komik",
+        "title_uuid": "title-fixture",
+        "volume": "Jilid 1",
+        "volume_uuid": "volume-fixture",
+        "pages": [{"version": "0.2.4", "img_width": 1, "img_height": 1, "img_path": "001.png", "blocks": blocks}],
+    }
+    source.write_text(json.dumps(volume, ensure_ascii=False), encoding="utf-8")
+    request = reading_mining._parse_request(
+        encode_message(
+            "mining.reading.run",
+            {
+                "sourceKind": "mokuro",
+                "sourcePath": str(source),
+                "imageArchivePath": None,
+                "seriesName": None,
+                "stagingRoot": str(tmp_path),
+                "cacheDir": str(tmp_path),
+                "nativeLibraryDir": "/native",
+                "configSnapshot": {"settings": {"language": "id", "anki_note_type": "Basic"}},
+            },
+        )
+    )
+    loader_kwargs = reading_mining._reading_loader_kwargs(_indonesian_config(tmp_path), "mokuro")
+
+    document = reading_mining._load_document(request, lambda: False, loader_kwargs=loader_kwargs)
+
+    # The balloon's OCR lines join with one space, as a space-delimited language's do.
+    assert [unit.text for unit in document.units] == ["Saya suka kucing."]
 
 
 # ---------------------------------------------------------------- subtitle cues
