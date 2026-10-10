@@ -45,7 +45,7 @@ class SettingsSearchJumpTest {
     @Test
     fun searchingFromAnotherCategoryJumpsToTheOwningCard() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val katakanaLabel = context.getString(R.string.settings_exclude_katakana)
+        val scriptTypeLabel = context.getString(R.string.settings_script_type)
         var resolvedJumpIndex: Int? = null
 
         composeRule.setContent {
@@ -56,15 +56,15 @@ class SettingsSearchJumpTest {
 
         val list = composeRule.onNodeWithTag(SettingsCategoryTestTags.LIST)
         list.performScrollToNode(hasTestTag(SettingsCategoryTestTags.SEARCH))
-        composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).performTextInput("katakana")
-        list.performScrollToNode(hasText(katakanaLabel))
-        composeRule.onNodeWithText(katakanaLabel).performClick()
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).performTextInput("script")
+        list.performScrollToNode(hasText(scriptTypeLabel))
+        composeRule.onNodeWithText(scriptTypeLabel).performClick()
 
         composeRule.runOnIdle {
             assertEquals(SettingsCardIndexRecorder.FIRST_CARD_INDEX, resolvedJumpIndex)
         }
-        list.performScrollToNode(hasText(katakanaLabel))
-        composeRule.onNodeWithText(katakanaLabel).assertIsDisplayed()
+        list.performScrollToNode(hasText(scriptTypeLabel))
+        composeRule.onNodeWithText(scriptTypeLabel).assertIsDisplayed()
         list.performScrollToNode(hasTestTag(SettingsCategoryTestTags.SEARCH))
         // EditableText, not assertTextEquals: a text field's merged Text also carries its
         // placeholder, so assertTextEquals("") fails against an empty field hinting
@@ -82,7 +82,7 @@ class SettingsSearchJumpTest {
     @Test
     fun queryHidesTabsAndHeaderAndAJumpLandsBelowTheStickyStrip() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val katakanaLabel = context.getString(R.string.settings_exclude_katakana)
+        val scriptTypeLabel = context.getString(R.string.settings_script_type)
         val ankiTab = context.getString(SettingsCategory.ANKI.label)
         composeRule.setContent {
             AnkiMinerTheme {
@@ -95,16 +95,16 @@ class SettingsSearchJumpTest {
         // first tab out of view.
         composeRule.onNodeWithText(ankiTab).assertExists()
 
-        composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).performTextInput("katakana")
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).performTextInput("script")
         composeRule.onNodeWithText("header-marker").assertDoesNotExist()
         composeRule.onNodeWithText(ankiTab).assertDoesNotExist()
 
-        list.performScrollToNode(hasText(katakanaLabel))
-        composeRule.onNodeWithText(katakanaLabel).performClick()
+        list.performScrollToNode(hasText(scriptTypeLabel))
+        composeRule.onNodeWithText(scriptTypeLabel).performClick()
         composeRule.waitForIdle()
 
         val strip = composeRule.onNodeWithTag(SettingsCategoryTestTags.STICKY_HEADER).getUnclippedBoundsInRoot()
-        val target = composeRule.onNodeWithText(katakanaLabel).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val target = composeRule.onNodeWithText(scriptTypeLabel).assertIsDisplayed().getUnclippedBoundsInRoot()
         assertTrue("target top ${target.top} sits under the strip ending at ${strip.bottom}", target.top >= strip.bottom)
     }
 
@@ -129,7 +129,7 @@ class SettingsSearchJumpTest {
     @Test
     fun pendingProductionJumpSurvivesStateRestoration() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val katakanaLabel = context.getString(R.string.settings_exclude_katakana)
+        val scriptTypeLabel = context.getString(R.string.settings_script_type)
         val restorationTester = StateRestorationTester(composeRule)
         var resolutions = 0
         restorationTester.setContent {
@@ -140,10 +140,10 @@ class SettingsSearchJumpTest {
 
         val list = composeRule.onNodeWithTag(SettingsCategoryTestTags.LIST)
         list.performScrollToNode(hasTestTag(SettingsCategoryTestTags.SEARCH))
-        composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).performTextInput("katakana")
-        list.performScrollToNode(hasText(katakanaLabel))
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).performTextInput("script")
+        list.performScrollToNode(hasText(scriptTypeLabel))
         composeRule.mainClock.autoAdvance = false
-        composeRule.onNodeWithText(katakanaLabel).performClick()
+        composeRule.onNodeWithText(scriptTypeLabel).performClick()
 
         // Restore while the jump is still pending: the handler clears pendingJumpId as soon as a
         // jump resolves, so a resolved jump has nothing left to survive.
@@ -251,12 +251,12 @@ private fun SettingsSearchJumpFixture(
                 record(SettingsCategory.WORD_FILTERS, "filtering-options")
             }
         }
-    val title = stringResource(R.string.settings_exclude_katakana)
+    val title = stringResource(R.string.settings_script_type)
     val breadcrumb = stringResource(SettingsCategory.WORD_FILTERS.label)
     val entries =
         listOf(
             ResolvedSettingsEntry(
-                id = "word_filters.exclude_katakana",
+                id = "word_filters.script_type",
                 category = SettingsCategory.WORD_FILTERS,
                 cardKey = "filtering-options",
                 title = title,

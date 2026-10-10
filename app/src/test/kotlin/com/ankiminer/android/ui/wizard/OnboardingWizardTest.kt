@@ -27,7 +27,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import java.util.Locale
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OnboardingWizardTest {
@@ -191,7 +190,7 @@ class OnboardingWizardTest {
     }
 
     @Test
-    fun languageChoicesPutTheActiveLanguageFirstAndDropWhatThisBuildCannotMine() {
+    fun languageChoicesUseNativeNamesInDesktopOrderAndDropWhatThisBuildCannotMine() {
         val choices =
             wizardLanguageChoices(
                 profiles =
@@ -201,13 +200,13 @@ class OnboardingWizardTest {
                         profile("ko", "한국어", "Korean", LanguageUnavailableReason.DATA_REQUIRED),
                         profile("xx", "Xx", "Unminable", LanguageUnavailableReason.UNSUPPORTED),
                     ),
-                uiLocale = Locale.ENGLISH,
                 activeCode = "ja",
             )
 
-        assertEquals(listOf("ja", "ko", "th"), choices.map { it.code })
-        assertEquals("日本語 — Japanese", choices.first().label)
-        assertEquals(listOf(false, true, false), choices.map { it.needsDownload })
+        // Thai, then Han, then Hangul (desktop language_choices._SCRIPT_ORDER); no English names.
+        assertEquals(listOf("th", "ja", "ko"), choices.map { it.code })
+        assertEquals(listOf("ไทย", "日本語", "한국어"), choices.map { it.label })
+        assertEquals(listOf(false, false, true), choices.map { it.needsDownload })
     }
 
     @Test

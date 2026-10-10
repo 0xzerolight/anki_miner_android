@@ -504,10 +504,12 @@ private fun SettingsScreen(
                 title = title,
                 breadcrumb = breadcrumb,
                 haystack =
-                    listOf(
-                        normalizeSettingsText(title),
-                        normalizeSettingsText(detail),
-                        normalizeSettingsText(breadcrumb),
+                    (
+                        listOf(
+                            normalizeSettingsText(title),
+                            normalizeSettingsText(detail),
+                            normalizeSettingsText(breadcrumb),
+                        ) + entry.keywords.map(::normalizeSettingsText)
                     ).filter(String::isNotEmpty),
             )
         }
