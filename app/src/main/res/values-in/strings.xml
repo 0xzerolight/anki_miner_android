@@ -478,6 +478,7 @@
     <string name="resource_operation_export_known_words">Ekspor kata yang dikenal</string>
     <string name="resource_operation_revert_mined_words">Batalkan kata yang di-mining</string>
     <string name="resource_operation_dictionary_lookup">Pencarian kamus</string>
+    <string name="resource_failure_download_too_large">Arsip pembaruan lebih besar daripada yang diizinkan untuk jenis sumber daya ini.</string>
     <string name="resource_failure_busy">Selesaikan atau batalkan proses mining aktif sebelum mengubah sumber daya</string>
     <string name="resource_failure_download_cancelled">Operasi sumber daya dibatalkan</string>
     <string name="resource_failure_download_redirect_limit">Pengunduhan sumber daya terlalu sering dialihkan</string>

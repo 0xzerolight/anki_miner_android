@@ -478,6 +478,7 @@
     <string name="resource_operation_export_known_words">导出已知单词</string>
     <string name="resource_operation_revert_mined_words">撤销已挖词的单词</string>
     <string name="resource_operation_dictionary_lookup">词典查询</string>
+    <string name="resource_failure_download_too_large">更新压缩包超出了此类资源允许的大小。</string>
     <string name="resource_failure_busy">更改资源前，请完成或取消当前挖词任务</string>
     <string name="resource_failure_download_cancelled">资源操作已取消</string>
     <string name="resource_failure_download_redirect_limit">资源下载重定向次数过多</string>

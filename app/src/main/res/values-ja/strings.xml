@@ -480,6 +480,7 @@
     <string name="resource_operation_export_known_words">既知単語をエクスポート</string>
     <string name="resource_operation_revert_mined_words">採掘済み単語を元に戻す</string>
     <string name="resource_operation_dictionary_lookup">辞書検索</string>
+    <string name="resource_failure_download_too_large">更新アーカイブが、この種類のリソースで許可されるサイズを超えています。</string>
     <string name="resource_failure_busy">リソースを変更する前に、実行中の採掘を完了またはキャンセルしてください</string>
     <string name="resource_failure_download_cancelled">リソース操作がキャンセルされました</string>
     <string name="resource_failure_download_redirect_limit">リソースのダウンロードのリダイレクト回数が上限を超えました</string>

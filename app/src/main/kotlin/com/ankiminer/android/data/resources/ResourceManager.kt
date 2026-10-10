@@ -3150,6 +3150,8 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_download_incomplete)
             "download_resume_invalid" ->
                 strings.resolve(R.string.resource_failure_download_resume_invalid)
+            "download_too_large" ->
+                strings.resolve(R.string.resource_failure_download_too_large)
             "import_staging_failed" ->
                 strings.resolve(R.string.resource_failure_import_staging)
             "word_list_not_utf8" ->

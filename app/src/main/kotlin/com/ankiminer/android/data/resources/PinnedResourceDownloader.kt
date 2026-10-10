@@ -455,18 +455,7 @@ internal class PinnedResourceDownloader(
             } else if (append) {
                 validateContentRange(connection.getHeaderField("Content-Range"), offset, archive.sizeBytes)
             } else if (status != HttpURLConnection.HTTP_OK) {
-                val code = if (status in RETRYABLE_HTTP) "download_http_retryable" else "download_http_rejected"
-                throw ResourceDownloadException(
-                    code,
-                    "Resource host returned HTTP $status",
-                    formatArguments = listOf(status),
-                    retryAfterMillis =
-                        if (status == 429 || status == HttpURLConnection.HTTP_UNAVAILABLE) {
-                            parseRetryAfter(connection.getHeaderField("Retry-After"))
-                        } else {
-                            null
-                        },
-                )
+                throw httpStatusFailure(status, connection)
             }
             val contentLength = connection.contentLengthLong
             val expectedRemaining = archive.sizeBytes - offset
@@ -537,6 +526,165 @@ internal class PinnedResourceDownloader(
         }
     }
 
+    /**
+     * Downloads a publisher's update archive, which nothing pins: neither its SHA-256 nor its size
+     * is known in advance, so the import's own validation is what vets it. [connections] holds
+     * every hop, redirects included, to HTTPS. The body is capped at [maxBytes] and fsynced, and is
+     * staged as `update-<operationId>.zip`, a name [reconcile] deletes on the next start if the
+     * process dies before the import reads it. Every attempt starts from byte zero: without a pin,
+     * a resumed range could splice two releases into one file. The caller deletes the file.
+     */
+    fun downloadUnpinned(
+        url: String,
+        maxBytes: Long,
+        operationId: String,
+        cancellation: ResourceCancellationSignal,
+        onProgress: (Long, Long, ResourceOperationPhase) -> Unit,
+    ): StagedArchive {
+        require(maxBytes > 0)
+        require(UPDATE_OPERATION_ID.matches(operationId))
+        preparePrivateRoot()
+        val staged = File(stagingRoot, "update-$operationId.zip")
+        try {
+            var lastFailure: IOException? = null
+            repeat(MAX_ATTEMPTS) { attempt ->
+                cancellation.check()
+                try {
+                    return unpinnedAttempt(url, maxBytes, staged, cancellation, onProgress)
+                } catch (failure: ResourceDownloadException) {
+                    if (failure.stableCode !in RETRYABLE_CODES) throw failure
+                    lastFailure = failure
+                    if (attempt < MAX_ATTEMPTS - 1) {
+                        awaitRetry(attempt, failure.retryAfterMillis, cancellation)
+                    }
+                } catch (failure: ResourceStorageException) {
+                    throw failure
+                } catch (failure: LocalDownloadIOException) {
+                    throw localFailure(FREE_SPACE_RESERVE_BYTES, failure.localCause)
+                } catch (failure: IOException) {
+                    lastFailure = failure
+                    if (attempt < MAX_ATTEMPTS - 1) {
+                        awaitRetry(attempt, retryAfterMillis = null, cancellation)
+                    }
+                }
+            }
+            throw ResourceDownloadException(
+                "download_retry_exhausted",
+                "Resource download failed after $MAX_ATTEMPTS bounded attempts",
+                lastFailure,
+                formatArguments = listOf(MAX_ATTEMPTS),
+            )
+        } catch (failure: Exception) {
+            try {
+                deleteEntry(staged)
+            } catch (cleanup: Exception) {
+                failure.addSuppressed(cleanup)
+            }
+            throw failure
+        }
+    }
+
+    private fun unpinnedAttempt(
+        url: String,
+        maxBytes: Long,
+        staged: File,
+        cancellation: ResourceCancellationSignal,
+        onProgress: (Long, Long, ResourceOperationPhase) -> Unit,
+    ): StagedArchive {
+        val connection =
+            try {
+                connections.open(url, 0L, cancellation)
+            } catch (failure: IOException) {
+                cancellation.check(failure)
+                throw failure
+            }
+        val activeInput = AtomicReference<InputStream?>()
+        val cancellationRegistration =
+            cancellation.invokeOnCancellation {
+                try {
+                    connection.disconnect()
+                } finally {
+                    activeInput.get()?.close()
+                }
+            }
+        try {
+            cancellation.check()
+            val status = connection.responseCode
+            if (status != HttpURLConnection.HTTP_OK) throw httpStatusFailure(status, connection)
+            val declared = connection.contentLengthLong
+            if (declared > maxBytes) {
+                throw ResourceDownloadException("download_too_large", "Update archive exceeds its size cap")
+            }
+            checkFreeSpace(declared.coerceAtLeast(0L))
+            val progressTotal = declared.coerceAtLeast(0L)
+            val digest = MessageDigest.getInstance("SHA-256")
+            var total = 0L
+            val output = localIo { FileOutputStream(staged, false) }
+            var primaryFailure: Throwable? = null
+            try {
+                val rawInput = connection.inputStream
+                activeInput.set(rawInput)
+                BufferedInputStream(rawInput, BUFFER_BYTES).use { input ->
+                    try {
+                        val buffer = ByteArray(BUFFER_BYTES)
+                        onProgress(0L, progressTotal, ResourceOperationPhase.DOWNLOADING)
+                        while (true) {
+                            cancellation.check()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > maxBytes) {
+                                throw ResourceDownloadException("download_too_large", "Update archive exceeds its size cap")
+                            }
+                            localIo { writeChunk(output, buffer, count) }
+                            digest.update(buffer, 0, count)
+                            onProgress(total, progressTotal, ResourceOperationPhase.DOWNLOADING)
+                        }
+                        localIo { syncOutput(output) }
+                    } finally {
+                        activeInput.compareAndSet(rawInput, null)
+                    }
+                }
+            } catch (failure: Throwable) {
+                primaryFailure = failure
+                throw failure
+            } finally {
+                try {
+                    output.close()
+                } catch (closeFailure: IOException) {
+                    if (primaryFailure == null) throw LocalDownloadIOException(closeFailure)
+                    if (primaryFailure !== closeFailure) primaryFailure?.addSuppressed(closeFailure)
+                }
+            }
+            if (declared >= 0L && total != declared) {
+                throw ResourceDownloadException("download_incomplete", "Update response ended before its declared length")
+            }
+            return StagedArchive(staged, digest.digest().joinToString("") { "%02x".format(it) }, total)
+        } catch (failure: IOException) {
+            cancellation.check(failure)
+            throw failure
+        } finally {
+            cancellationRegistration.close()
+            connection.disconnect()
+        }
+    }
+
+    private fun httpStatusFailure(
+        status: Int,
+        connection: HttpURLConnection,
+    ): ResourceDownloadException =
+        ResourceDownloadException(
+            if (status in RETRYABLE_HTTP) "download_http_retryable" else "download_http_rejected",
+            "Resource host returned HTTP $status",
+            formatArguments = listOf(status),
+            retryAfterMillis =
+                if (status == 429 || status == HttpURLConnection.HTTP_UNAVAILABLE) {
+                    parseRetryAfter(connection.getHeaderField("Retry-After"))
+                } else {
+                    null
+                },
+        )
+
     private fun validateContentRange(value: String?, offset: Long, total: Long) {
         val match = value?.let(CONTENT_RANGE::matchEntire)
             ?: throw ResourceDownloadException("download_resume_invalid", "Resource host returned an invalid range")
@@ -606,7 +754,13 @@ internal class PinnedResourceDownloader(
         failure: IOException,
     ): IOException {
         val remaining = (archive.sizeBytes - partial.length()).coerceAtLeast(0L)
-        val required = remaining + FREE_SPACE_RESERVE_BYTES
+        return localFailure(remaining + FREE_SPACE_RESERVE_BYTES, failure)
+    }
+
+    private fun localFailure(
+        required: Long,
+        failure: IOException,
+    ): IOException {
         val available = availableBytes(stagingRoot).coerceAtLeast(0L)
         if (available < required || isStorageExhaustion(failure)) {
             return ResourceStorageException(required, available, failure)
@@ -732,6 +886,9 @@ internal class PinnedResourceDownloader(
         private const val RETRY_BASE_DELAY_MILLIS = 500L
         private const val RETRY_MAX_DELAY_MILLIS = 60_000L
         private val SHA_256 = Regex("[0-9a-f]{64}")
+
+        /** The resource operation id shape, so an update's staged name stays a plain file name. */
+        private val UPDATE_OPERATION_ID = Regex("[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
         private val STAGED_FILE = Regex("([0-9a-f]{64})\\.(part|ready)")
         private val CONTENT_RANGE = Regex("bytes ([0-9]+)-([0-9]+)/([0-9]+)")
         private val RETRYABLE_HTTP = setOf(408, 425, 429, 500, 502, 503, 504)

@@ -493,6 +493,7 @@
     <string name="resource_operation_export_known_words">Export known words</string>
     <string name="resource_operation_revert_mined_words">Revert mined words</string>
     <string name="resource_operation_dictionary_lookup">Dictionary lookup</string>
+    <string name="resource_failure_download_too_large">The update archive is larger than this kind of resource allows.</string>
     <string name="resource_failure_busy">Finish or cancel the active mining run before changing resources</string>
     <string name="resource_failure_download_cancelled">Resource operation was cancelled</string>
     <string name="resource_failure_download_redirect_limit">Resource download redirected too many times</string>
