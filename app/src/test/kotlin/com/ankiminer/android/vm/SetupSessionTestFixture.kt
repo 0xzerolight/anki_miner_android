@@ -2,6 +2,8 @@ package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
+import com.ankiminer.android.anki.provider.ModelSummary
+import com.ankiminer.android.anki.provider.NoteTypeFillSource
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
@@ -32,11 +34,13 @@ internal fun setupSessionViewModel(
     repository: SessionSettingsRepository,
     resources: SessionResourceManager = SessionResourceManager(),
     deckNames: List<String> = emptyList(),
+    noteTypes: List<ModelSummary> = emptyList(),
+    noteTypeFillSource: NoteTypeFillSource? = null,
 ): SetupViewModel =
     SetupViewModel(
         resources = resources,
         settingsRepository = repository,
-        ankiSetup = SessionAnkiSetupManager(deckNames),
+        ankiSetup = SessionAnkiSetupManager(deckNames, noteTypes),
         pythonReadiness = MutableStateFlow(PythonRuntimeReadiness.Pending),
         miningAdmission =
             MutableStateFlow(
@@ -50,6 +54,7 @@ internal fun setupSessionViewModel(
         runtimeWorkState = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null),
         refreshExternalReadiness = {},
         strings = testStringResourceResolver,
+        noteTypeFillSource = noteTypeFillSource,
     )
 
 internal class SessionSettingsRepository(initial: AppSettings) : AppSettingsRepository {
@@ -149,9 +154,14 @@ internal class SessionResourceManager(
     override fun dismissFailure() = Unit
 }
 
-private class SessionAnkiSetupManager(deckNames: List<String>) : AnkiSetupManager {
+private class SessionAnkiSetupManager(
+    deckNames: List<String>,
+    noteTypes: List<ModelSummary>,
+) : AnkiSetupManager {
     override val state: StateFlow<AnkiSetupManagerState> =
-        MutableStateFlow(AnkiSetupManagerState(availableDeckNames = deckNames)).asStateFlow()
+        MutableStateFlow(
+            AnkiSetupManagerState(availableNoteTypes = noteTypes, availableDeckNames = deckNames),
+        ).asStateFlow()
 
     override fun refresh(
         noteType: String?,

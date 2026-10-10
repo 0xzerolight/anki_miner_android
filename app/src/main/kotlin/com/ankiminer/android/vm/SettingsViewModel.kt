@@ -864,6 +864,9 @@ internal data class SettingsDraftState(
     val dirty: Boolean,
     val loaded: Boolean,
     val deckDirty: Boolean,
+    // "Fill in automatically" writes these two from SetupViewModel, as the wizard writes the deck.
+    val pitchFormatDirty: Boolean,
+    val boldTargetDirty: Boolean,
     val dictionarySourcesDirty: Boolean,
     val frequencySourcesDirty: Boolean,
     val pitchSourcesDirty: Boolean,
@@ -883,6 +886,8 @@ internal class SettingsDraftStore(
                 dirty = false,
                 loaded = initiallyLoaded,
                 deckDirty = false,
+                pitchFormatDirty = false,
+                boldTargetDirty = false,
                 dictionarySourcesDirty = false,
                 frequencySourcesDirty = false,
                 pitchSourcesDirty = false,
@@ -901,6 +906,10 @@ internal class SettingsDraftStore(
                     dirty = true,
                     loaded = true,
                     deckDirty = current.deckDirty || value.deckName != current.draft.deckName,
+                    pitchFormatDirty =
+                        current.pitchFormatDirty || value.pitchFormat != current.draft.pitchFormat,
+                    boldTargetDirty =
+                        current.boldTargetDirty || value.boldTarget != current.draft.boldTarget,
                     dictionarySourcesDirty =
                         current.dictionarySourcesDirty ||
                             value.dictionarySources != current.draft.dictionarySources,
@@ -930,23 +939,35 @@ internal class SettingsDraftStore(
             if (current.loaded && current.dirty) {
                 // Auto-save keeps the draft dirty for the rest of the activity-scoped session, so
                 // this branch must still merge newly installed resources into the pending edit
-                // instead of hiding them. Only explicit local edits own the deck or resource-chain
-                // fields; otherwise adopt persisted state so projections cannot copy display-only
-                // inventory merges or out-of-band wizard selections back into storage.
+                // instead of hiding them. Only explicit local edits own the deck, the fields a
+                // note-type preset also writes, or the resource-chain fields; otherwise adopt
+                // persisted state so projections cannot copy display-only inventory merges or
+                // out-of-band wizard and preset writes back into storage.
                 val persistedDraft = SettingsDraft.from(settings, resources)
-                val persistedDeckName = persistedDraft.deckName
-                val deckDirty = current.deckDirty && current.draft.deckName != persistedDeckName
+                val deckDirty = current.deckDirty && current.draft.deckName != persistedDraft.deckName
+                val pitchFormatDirty =
+                    current.pitchFormatDirty && current.draft.pitchFormat != persistedDraft.pitchFormat
+                val boldTargetDirty =
+                    current.boldTargetDirty && current.draft.boldTarget != persistedDraft.boldTarget
                 val mergedDraft = current.draft.withInventory(resources, settings.language)
                 SettingsDraftState(
                     draft =
-                        if (deckDirty) {
-                            mergedDraft
-                        } else {
-                            mergedDraft.copy(deckName = persistedDeckName)
-                        },
+                        mergedDraft.copy(
+                            deckName = if (deckDirty) mergedDraft.deckName else persistedDraft.deckName,
+                            pitchFormat =
+                                if (pitchFormatDirty) {
+                                    mergedDraft.pitchFormat
+                                } else {
+                                    persistedDraft.pitchFormat
+                                },
+                            boldTarget =
+                                if (boldTargetDirty) mergedDraft.boldTarget else persistedDraft.boldTarget,
+                        ),
                     dirty = true,
                     loaded = true,
                     deckDirty = deckDirty,
+                    pitchFormatDirty = pitchFormatDirty,
+                    boldTargetDirty = boldTargetDirty,
                     dictionarySourcesDirty =
                         current.dictionarySourcesDirty &&
                             mergedDraft.dictionarySources != persistedDraft.dictionarySources,
@@ -968,6 +989,8 @@ internal class SettingsDraftStore(
                     dirty = false,
                     loaded = true,
                     deckDirty = false,
+                    pitchFormatDirty = false,
+                    boldTargetDirty = false,
                     dictionarySourcesDirty = false,
                     frequencySourcesDirty = false,
                     pitchSourcesDirty = false,
@@ -989,6 +1012,8 @@ internal class SettingsDraftStore(
                 dirty = false,
                 loaded = true,
                 deckDirty = false,
+                pitchFormatDirty = false,
+                boldTargetDirty = false,
                 dictionarySourcesDirty = false,
                 frequencySourcesDirty = false,
                 pitchSourcesDirty = false,
@@ -1014,6 +1039,8 @@ internal class SettingsDraftStore(
                         dirty = false,
                         loaded = true,
                         deckDirty = false,
+                        pitchFormatDirty = false,
+                        boldTargetDirty = false,
                         dictionarySourcesDirty = false,
                         frequencySourcesDirty = false,
                         pitchSourcesDirty = false,
@@ -1034,6 +1061,14 @@ internal class SettingsDraftStore(
                             dirty &&
                                 currentDraft.deckName != baseline.deckName &&
                                 rebased.deckName != persistedDraft.deckName,
+                        pitchFormatDirty =
+                            dirty &&
+                                currentDraft.pitchFormat != baseline.pitchFormat &&
+                                rebased.pitchFormat != persistedDraft.pitchFormat,
+                        boldTargetDirty =
+                            dirty &&
+                                currentDraft.boldTarget != baseline.boldTarget &&
+                                rebased.boldTarget != persistedDraft.boldTarget,
                         dictionarySourcesDirty =
                             dirty &&
                                 currentDraft.dictionarySources != baseline.dictionarySources &&
@@ -1309,6 +1344,8 @@ internal class SettingsViewModel(
                 currentState.editRevision != state.editRevision ||
                 currentState.draft != state.draft ||
                 currentState.deckDirty != state.deckDirty ||
+                currentState.pitchFormatDirty != state.pitchFormatDirty ||
+                currentState.boldTargetDirty != state.boldTargetDirty ||
                 currentState.dictionarySourcesDirty != state.dictionarySourcesDirty ||
                 currentState.frequencySourcesDirty != state.frequencySourcesDirty ||
                 currentState.pitchSourcesDirty != state.pitchSourcesDirty ||
@@ -1365,6 +1402,18 @@ internal class SettingsViewModel(
         state.draft.toPersistableSettings(current).let { candidate ->
             candidate.copy(
                 deckName = if (state.deckDirty) candidate.deckName else current.deckName,
+                pitchCategoryFormat =
+                    if (state.pitchFormatDirty) {
+                        candidate.pitchCategoryFormat
+                    } else {
+                        current.pitchCategoryFormat
+                    },
+                boldTargetInSentence =
+                    if (state.boldTargetDirty) {
+                        candidate.boldTargetInSentence
+                    } else {
+                        current.boldTargetInSentence
+                    },
                 dictionarySources =
                     if (state.dictionarySourcesDirty) {
                         candidate.dictionarySources
