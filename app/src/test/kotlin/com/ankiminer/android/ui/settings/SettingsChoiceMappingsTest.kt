@@ -1,10 +1,12 @@
 package com.ankiminer.android.ui.settings
 
 import androidx.compose.ui.state.ToggleableState
+import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
+import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.LanguageDefaults
 import com.ankiminer.android.data.settings.LanguageProfileFixtures
 import com.ankiminer.android.engine.BridgeJsonValue
@@ -43,6 +45,32 @@ class SettingsChoiceMappingsTest {
         assertEquals(true, picked.hiragana)
         assertEquals(true, picked.katakana)
         assertEquals(ScriptType.ALL_KANA, picked.scriptType(inherited))
+    }
+
+    // Korean script filters (the ko profile's filter_options in languages/ko/script.py).
+
+    @Test
+    fun `the Korean script filters write the kana flags the ko profile binds them to`() {
+        assertEquals(R.string.settings_exclude_hangul_only, HangulFilter.HANGUL_ONLY.label)
+        assertEquals(R.string.settings_exclude_hanja, HangulFilter.HANJA_CONTAINING.label)
+        val korean = draft(AppSettings(language = "ko"))
+
+        fun engineFlags(filter: HangulFilter): List<BridgeJsonValue?> {
+            val saved = filter.write(korean, true).toSettings(AppSettings())
+            val engine = EngineSettingsSnapshotMapper.map(saved, emptyList()).settings
+            return listOf(engine["exclude_hiragana_only_words"], engine["exclude_katakana_only_words"])
+        }
+        // hangul_only -> exclude_hiragana_only_words; hanja_containing -> exclude_katakana_only_words.
+        assertEquals(listOf(BridgeJsonValue.Bool(true), null), engineFlags(HangulFilter.HANGUL_ONLY))
+        assertEquals(listOf(null, BridgeJsonValue.Bool(true)), engineFlags(HangulFilter.HANJA_CONTAINING))
+
+        // Each row shows the flag it writes, and that flag's language default while unset.
+        val stored = draft(AppSettings(language = "ko", excludeHiraganaOnly = true, excludeKatakanaOnly = false))
+        assertEquals(true, HangulFilter.HANGUL_ONLY.value(stored))
+        assertEquals(false, HangulFilter.HANJA_CONTAINING.value(stored))
+        val inherited = LanguageDefaults.JAPANESE.copy(excludeHiraganaOnly = true, excludeKatakanaOnly = false)
+        assertTrue(HangulFilter.HANGUL_ONLY.default(inherited))
+        assertFalse(HangulFilter.HANJA_CONTAINING.default(inherited))
     }
 
     // Sentence Rule (desktop _SENTENCE_RULE_VALUES and set_sentence_rule).
