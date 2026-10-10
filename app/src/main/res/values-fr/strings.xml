@@ -217,7 +217,7 @@
     <string name="result_not_mined_reason_frequency">Hors de votre plage de fréquence — Paramètres → Filtres de mots</string>
     <string name="result_not_mined_reason_blacklist">Dans votre liste noire — Paramètres → Filtres de mots</string>
     <string name="result_not_mined_reason_script_filter">Exclu par type d\'écriture — Paramètres → Filtres de mots</string>
-    <string name="result_not_mined_reason_name_list">Dans un ensemble de noms — Paramètres → Filtres de mots</string>
+    <string name="result_not_mined_reason_name_list">Dans une liste de noms — Paramètres → Filtres de mots</string>
     <string name="result_not_mined_reason_occurrence">Apparaît moins souvent que votre minimum — Paramètres → Filtres de mots</string>
     <string name="result_not_mined_reason_one_per_sentence">Un autre mot de sa phrase a reçu la carte — Paramètres → Phrases</string>
     <string name="result_not_mined_reason_i_plus_one">Aucune phrase où il est le seul mot inconnu — Paramètres → Phrases</string>

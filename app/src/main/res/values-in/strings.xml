@@ -775,7 +775,7 @@
     <string name="settings_no_dictionaries">Tidak ada kamus yang terpasang.</string>
     <string name="settings_no_frequency_sources">Tidak ada sumber frekuensi yang terpasang.</string>
     <string name="settings_no_audio_packs">Tidak ada paket audio yang terpasang.</string>
-    <string name="settings_pitch_format">Format kategori nada</string>
+    <string name="settings_pitch_format">Format kategori aksen nada</string>
     <string name="settings_pitch_not_installed">Tidak ada sumber aksen nada valid yang terpasang.</string>
     <string name="settings_pitch_japanese">Jepang</string>
     <string name="settings_pitch_romaji">Romaji</string>

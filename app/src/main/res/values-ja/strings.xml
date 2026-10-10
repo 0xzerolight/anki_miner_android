@@ -692,11 +692,11 @@
     <string name="settings_animated_screenshots">アニメーションスクリーンショット</string>
     <string name="settings_animated_screenshots_summary">静止画の代わりに短いループ動画を使用します。メディアが大きくなり、マイニングが遅くなります。</string>
     <string name="settings_animated_screenshots_webp_only">この端末では WebP 形式で保存されます。</string>
-    <string name="settings_animated_match_audio">文の音声と同じ</string>
+    <string name="settings_animated_match_audio">例文音声と同じ</string>
     <string name="settings_animated_clip_duration">クリップの長さ</string>
-    <string name="settings_animated_clip_duration_help">アニメーションクリップの長さです。字幕の長さが上限です。「文の音声と同じ」にすると、文の音声クリップと同じ範囲になります。</string>
+    <string name="settings_animated_clip_duration_help">アニメーションクリップの長さです。字幕の長さが上限です。「例文音声と同じ」にすると、例文音声クリップと同じ範囲になります。</string>
     <string name="settings_animated_quality_help">アニメーションクリップのフレームレート、高さ、品質です。</string>
-    <string name="settings_media_sentence_audio">文章音声</string>
+    <string name="settings_media_sentence_audio">例文音声</string>
     <string name="settings_media_screenshot">スクリーンショット</string>
     <string name="settings_reading_tts_help">漫画や書籍など、音声ソースがないカードに読み上げ音声を追加します。端末のオフライン音声が各文を読み上げます。</string>
     <string name="settings_animated_format">アニメーションフォーマット</string>

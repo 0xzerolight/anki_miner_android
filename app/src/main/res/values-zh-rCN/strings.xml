@@ -207,7 +207,7 @@
     <string name="result_not_mined_reason_frequency">超出你的词频范围——设置 → 单词过滤</string>
     <string name="result_not_mined_reason_blacklist">在你的黑名单中——设置 → 单词过滤</string>
     <string name="result_not_mined_reason_script_filter">因文字类型被排除——设置 → 单词过滤</string>
-    <string name="result_not_mined_reason_name_list">在人名词集中——设置 → 单词过滤</string>
+    <string name="result_not_mined_reason_name_list">在名称列表中——设置 → 单词过滤</string>
     <string name="result_not_mined_reason_occurrence">出现次数少于你设定的最小值——设置 → 单词过滤</string>
     <string name="result_not_mined_reason_one_per_sentence">同句中已为另一个单词创建卡片——设置 → 句子</string>
     <string name="result_not_mined_reason_i_plus_one">没有以它为唯一生词的句子——设置 → 句子</string>
@@ -691,7 +691,7 @@
     <string name="settings_animated_screenshots_webp_only">此设备将片段保存为 WebP。</string>
     <string name="settings_animated_match_audio">与句子音频相同</string>
     <string name="settings_animated_clip_duration">片段长度</string>
-    <string name="settings_animated_clip_duration_help">动图片段的长度，不超过字幕的持续时间。“与句子音频相同”则覆盖整个句子音频片段。</string>
+    <string name="settings_animated_clip_duration_help">动态片段的长度，不超过字幕的持续时间。“与句子音频相同”则覆盖整个句子音频片段。</string>
     <string name="settings_animated_quality_help">动态片段的帧率、高度和质量。</string>
     <string name="settings_media_sentence_audio">句子音频</string>
     <string name="settings_media_screenshot">截图</string>

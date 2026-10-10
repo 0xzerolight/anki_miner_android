@@ -492,7 +492,7 @@
     <string name="dictionary_updates_checking">Suche nach Wörterbuch-Updates…</string>
     <string name="dictionary_updates_downloading">Wörterbuch-Updates werden heruntergeladen…</string>
     <string name="dictionary_updates_up_to_date">Wörterbücher sind aktuell.</string>
-    <string name="dictionary_updates_up_to_date_unchecked">Wörterbücher sind aktuell (%1$d nicht prüfbar).</string>
+    <string name="dictionary_updates_up_to_date_unchecked">Wörterbücher sind aktuell (%1$d konnten nicht geprüft werden).</string>
     <string name="dictionary_updates_could_not_check">Wörterbuch-Updates konnten nicht geprüft werden.</string>
     <string name="dictionary_updates_none_publish">Keines Ihrer Wörterbücher veröffentlicht Updates.</string>
     <string name="dictionary_updates_changed">Ihre Wörterbücher haben sich während der Prüfung geändert. Versuchen Sie es erneut.</string>
@@ -720,9 +720,9 @@
     <string name="settings_script_type_katakana">Reine Katakana-Wörter überspringen</string>
     <string name="settings_script_type_all_kana">Alle reinen Kana-Wörter überspringen (auch gemischte)</string>
     <string name="settings_exclude_hangul_only">Reine Hangul-Wörter ausschließen</string>
-    <string name="settings_exclude_hangul_only_help">Wörter überspringen, die vollständig in Hangul geschrieben sind. Lässt im Deck die mit Hanja geschriebenen Wörter übrig.</string>
+    <string name="settings_exclude_hangul_only_help">Wörter überspringen, die vollständig in Hangul geschrieben sind. Lässt im Stapel die mit Hanja geschriebenen Wörter übrig.</string>
     <string name="settings_exclude_hanja">Wörter mit Hanja ausschließen</string>
-    <string name="settings_exclude_hanja_help">Wörter überspringen, die ein Hanja-Zeichen enthalten, sodass das Deck reinen Hangul-Wortschatz behält.</string>
+    <string name="settings_exclude_hanja_help">Wörter überspringen, die ein Hanja-Zeichen enthalten, sodass der Stapel reinen Hangul-Wortschatz behält.</string>
     <string name="settings_skip_names">Namen von Personen, Orten und Firmen überspringen</string>
     <string name="settings_skip_names_help">Schließt mitgelieferte Listen japanischer Personen-, Orts- und Firmennamen vom Mining aus. Namen auf der Whitelist werden weiterhin gesammelt.</string>
     <string name="settings_subtitle_cleanup">Sprechernamen, Geräuscheffekte und Musiknoten entfernen</string>
