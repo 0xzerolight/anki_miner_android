@@ -1144,6 +1144,7 @@ object ResourceBridgeCodec {
                 "attribution",
                 "rebuildSourcePath",
                 "language",
+                "publisherUpdate",
             ),
             "installed dictionary",
         )
@@ -1165,6 +1166,7 @@ object ResourceBridgeCodec {
             attribution = attributions(value.getValue("attribution"), allowEmpty = true),
             rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
             language = slotLanguage(value.getValue("language")),
+            publisherUpdate = bool(value.getValue("publisherUpdate"), "publisherUpdate"),
         )
         if (!installed.occupied || installed.valid != installed.schemaOk) {
             invalid("Dictionary occupancy or validity flags are inconsistent")
@@ -1176,11 +1178,21 @@ object ResourceBridgeCodec {
             val expected =
                 FrozenResourceCatalog.dictionary(catalogId)
                     ?: invalid("Installed catalog dictionary identity is invalid")
+            // A publisher's update keeps the slot, catalog id and attribution, but catalog titles
+            // embed the release date, so its title and revision never match the frozen pin. It is
+            // held to its catalog's language instead (Python drops the id first, never listing a
+            // slot this would refuse: one refused entry fails the whole list at startup).
+            val identityMatches =
+                if (installed.publisherUpdate) {
+                    FrozenResourceCatalog.catalogOf(catalogId)?.language == installed.language
+                } else {
+                    installed.sourceName == expected.dictionary.title &&
+                        installed.sourceRevision == expected.dictionary.revision
+                }
             if (
                 installed.slotId != expected.slotId ||
-                installed.sourceName != expected.dictionary.title ||
-                installed.sourceRevision != expected.dictionary.revision ||
-                installed.attribution != expected.attribution
+                installed.attribution != expected.attribution ||
+                !identityMatches
             ) {
                 invalid("Installed catalog dictionary identity is invalid")
             }

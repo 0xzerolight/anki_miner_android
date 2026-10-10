@@ -221,6 +221,12 @@ data class InstalledDictionary(
     val rebuildSourcePath: String?,
     /** The mining language the slot was imported for; unstamped legacy slots are Japanese. */
     val language: String = JAPANESE,
+    /**
+     * The publisher's update replaced the archive this slot was built from. A catalog slot keeps
+     * its [catalogResourceId] and [attribution], but its title and revision are the publisher's
+     * latest, not the frozen catalog pin's.
+     */
+    val publisherUpdate: Boolean = false,
 ) {
     val isUsable: Boolean
         get() = occupied && valid && schemaOk

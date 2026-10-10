@@ -229,7 +229,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun dictionaryInventoryPreservesInvalidOccupiedSlots() {
         val raw =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":false,"sourceName":"jitendex","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":"/data/user/0/files/dicts/jitendex/source.zip","language":"ja"}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":false,"sourceName":"jitendex","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":"/data/user/0/files/dicts/jitendex/source.zip","language":"ja","publisherUpdate":false}]}}"""
 
         val installed = ResourceBridgeCodec.decodeDictionaryList(raw).single()
 
@@ -254,13 +254,13 @@ class ResourceBridgeCodecTest {
     @Test
     fun dictionaryInventoryRejectsInconsistentFlagsAndForgedAttribution() {
         val unoccupied =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":false,"valid":false,"sourceName":"fixture","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":null,"language":"ja"}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":false,"valid":false,"sourceName":"fixture","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":null,"language":"ja","publisherUpdate":false}]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeDictionaryList(unoccupied)
         }
 
         val forgedAttribution =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":true,"valid":true,"sourceName":"Fixture","sourceRevision":"1","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[{"name":"Fake","copyright":"Fake","license":"MIT","url":"https://example.com"}],"rebuildSourcePath":null,"language":"ja"}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":true,"valid":true,"sourceName":"Fixture","sourceRevision":"1","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[{"name":"Fake","copyright":"Fake","license":"MIT","url":"https://example.com"}],"rebuildSourcePath":null,"language":"ja","publisherUpdate":false}]}}"""
         val forged =
             assertThrows(ResourceBridgeException::class.java) {
                 ResourceBridgeCodec.decodeDictionaryList(forgedAttribution)
@@ -314,11 +314,94 @@ class ResourceBridgeCodecTest {
     @Test
     fun installedDictionaryWithUnknownCatalogIdentityIsRejected() {
         val unknownCatalogId =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":true,"sourceName":"Jitendex.org [2026-07-09]","sourceRevision":"2026.07.09.0","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"not-in-catalog","attribution":[],"rebuildSourcePath":null,"language":"ja"}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":true,"sourceName":"Jitendex.org [2026-07-09]","sourceRevision":"2026.07.09.0","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"not-in-catalog","attribution":[],"rebuildSourcePath":null,"language":"ja","publisherUpdate":false}]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeDictionaryList(unknownCatalogId)
         }
     }
+
+    /**
+     * Review Focus 3. Catalog titles embed the date, so a publisher's update changes the title and
+     * the revision; the slot keeps its catalog id and attribution. One rejected entry fails the
+     * whole list, and the list is read at startup.
+     */
+    @Test
+    fun publisherUpdatedCatalogDictionaryDecodesWithItsNewTitleAndRevision() {
+        val jitendex = FrozenResourceCatalog.value.dictionary("jitendex-2026.07.09.0")!!
+
+        val installed =
+            ResourceBridgeCodec.decodeDictionaryList(updatedJitendexListing(publisherUpdate = true)).single()
+
+        assertEquals(jitendex.resourceId, installed.catalogResourceId)
+        assertEquals("Jitendex.org [2026-10-03]", installed.sourceName)
+        assertEquals("2026.10.03.0", installed.sourceRevision)
+        assertEquals(jitendex.attribution, installed.attribution)
+        assertTrue(installed.publisherUpdate)
+        val status =
+            ResourceManagerState(catalog = FrozenResourceCatalog.value, dictionaries = listOf(installed))
+                .catalogDictionaries
+                .single { it.resource.slotId == "jitendex" }
+        assertTrue(status.installed)
+        assertTrue(!status.needsRepair)
+    }
+
+    @Test
+    fun catalogDictionaryWithANewTitleAndRevisionIsRejectedUnlessPublisherUpdated() {
+        val failure =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeDictionaryList(updatedJitendexListing(publisherUpdate = false))
+            }
+        assertEquals("Installed catalog dictionary identity is invalid", failure.message)
+    }
+
+    @Test
+    fun publisherUpdatedCatalogDictionaryStillNeedsItsSlotAttributionAndLanguage() {
+        val jitendex = FrozenResourceCatalog.value.dictionary("jitendex-2026.07.09.0")!!
+        val jmdict = FrozenResourceCatalog.value.dictionary("jmdict-en-2026-07-17")!!
+        val forged =
+            listOf(
+                updatedJitendexListing(publisherUpdate = true, attribution = "[]"),
+                updatedJitendexListing(publisherUpdate = true, attribution = attributionJson(jmdict.attribution)),
+                updatedJitendexListing(publisherUpdate = true, slotId = "jmdict"),
+                updatedJitendexListing(publisherUpdate = true, language = "he"),
+            )
+        for (raw in forged) {
+            val failure =
+                assertThrows(ResourceBridgeException::class.java) {
+                    ResourceBridgeCodec.decodeDictionaryList(raw)
+                }
+            assertEquals("Installed catalog dictionary identity is invalid", failure.message)
+        }
+        // The fixture itself is sound: only the forged field above is refused.
+        assertEquals(
+            jitendex.resourceId,
+            ResourceBridgeCodec.decodeDictionaryList(updatedJitendexListing(publisherUpdate = true))
+                .single()
+                .catalogResourceId,
+        )
+    }
+
+    @Test
+    fun dictionaryListingRequiresThePublisherUpdateFlag() {
+        val withoutFlag = updatedJitendexListing(publisherUpdate = false).replace(",\"publisherUpdate\":false", "")
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeDictionaryList(withoutFlag)
+        }
+    }
+
+    private fun updatedJitendexListing(
+        publisherUpdate: Boolean,
+        slotId: String = "jitendex",
+        language: String = "ja",
+        attribution: String =
+            attributionJson(FrozenResourceCatalog.value.dictionary("jitendex-2026.07.09.0")!!.attribution),
+    ): String =
+        """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"$slotId","occupied":true,"valid":true,"sourceName":"Jitendex.org [2026-10-03]","sourceRevision":"2026.10.03.0","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"jitendex-2026.07.09.0","attribution":$attribution,"rebuildSourcePath":null,"language":"$language","publisherUpdate":$publisherUpdate}]}}"""
+
+    private fun attributionJson(entries: List<ResourceAttribution>): String =
+        entries.joinToString(prefix = "[", postfix = "]") { entry ->
+            """{"name":"${entry.name}","copyright":"${entry.copyright}","license":"${entry.license}","url":"${entry.url}"}"""
+        }
 
     @Test
     fun pythonBridgeErrorKeepsItsCodeWhateverOptionalFieldsItCarries() {
