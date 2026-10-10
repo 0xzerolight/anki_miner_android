@@ -170,13 +170,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.resource_panel_dictionaries_heading,
         ),
         entry(
-            "resources.jisho",
-            SettingsCategory.RESOURCES,
-            "dictionary-sources",
-            R.string.settings_jisho,
-            R.string.settings_jisho_disclosure,
-        ),
-        entry(
             "resources.pitch_chain",
             SettingsCategory.RESOURCES,
             "pitch-sources",
@@ -460,7 +453,6 @@ internal fun availableSettingsSearchEntries(
             "resources.lookup_test" -> setup.dictionaries.any { it.isUsable }
             // The cards these find exist only for a language that has them.
             "resources.pitch_import", "resources.pitch_chain", "resources.pitch_format" -> language.showsPitch
-            "resources.jisho" -> language.offersJisho
             // The device voice speaks word audio only outside Japanese.
             "resources.device_voice" -> language.activeCode != LanguageScope.JAPANESE
             "language.script_variant" -> language.scriptVariants.isNotEmpty()

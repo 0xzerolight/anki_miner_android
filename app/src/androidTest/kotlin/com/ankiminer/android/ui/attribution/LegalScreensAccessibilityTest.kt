@@ -72,7 +72,6 @@ class LegalScreensAccessibilityTest {
             "UniDic 2.1.2 — BSD 3-Clause",
             "App icon",
             "Installed dictionaries",
-            "Jisho network privacy notice",
             "Privacy and data handling",
             "Source and third-party notices",
         ).forEach(::assertAttributionHeading)

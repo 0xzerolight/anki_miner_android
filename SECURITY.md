@@ -18,13 +18,13 @@ In scope:
 - Parsing of files you select: subtitles, EPUB, Aozora `.txt`, and Mokuro output.
 - Media extraction through the bundled `ffmpeg` and `ffprobe` executables, including the Storage Access Framework file descriptors handed to those child processes.
 - Card and collection writes through the AnkiDroid ContentProvider.
-- Network handling for Jisho lookups, the GitHub release check, and the one-time resource downloads (UniDic, Yomitan dictionaries, frequency lists, pitch accent files).
+- Network handling for the GitHub release check and the one-time resource downloads (UniDic, Yomitan dictionaries, frequency lists, pitch accent files).
 - Imported audio packs, including a registered `android.db` read as SQLite.
 - Redaction of the diagnostics bundle. Sensitive content surviving into an exported archive is a vulnerability.
 
 Out of scope:
 
-- Vulnerabilities in third-party software (AnkiDroid, Jisho, Yomitan dictionary data).
+- Vulnerabilities in third-party software (AnkiDroid, Yomitan dictionary data).
 - Issues requiring access the user has already granted, such as a file the user picked or a directory the app owns.
 
 ## Supported versions

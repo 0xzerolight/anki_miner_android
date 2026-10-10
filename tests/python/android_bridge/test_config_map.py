@@ -210,7 +210,7 @@ def test_network_expression_audio_kinds_are_rejected(kind: str, tmp_path: Path) 
     assert error.value.code == "unsupported_audio_source"
 
 
-def test_animated_screenshots_are_accepted_with_pinned_tuning(tmp_path: Path) -> None:
+def test_animated_screenshots_are_accepted_with_their_tuning(tmp_path: Path) -> None:
     mapped = map_config_settings(
         {
             **_NOTE_TYPE,
@@ -226,9 +226,8 @@ def test_animated_screenshots_are_accepted_with_pinned_tuning(tmp_path: Path) ->
     assert mapped.screenshot_animated_format == "webp"
     assert mapped.screenshot_animated_clip_duration == 2.0
     assert mapped.screenshot_animated_quality == 30
-    # Pinned, not exposed: the engine must never see a desktop default that
-    # Android has not validated on a phone.  match_audio is off because it
-    # silently overrides clip_duration, which the user can see.
+    # A snapshot without fps/height (every store from before they were settings) keeps the
+    # desktop defaults, so an upgrader's clips do not change.
     assert mapped.screenshot_animated_fps == 20
     assert mapped.screenshot_animated_height == 720
     assert mapped.screenshot_animated_match_audio is False
@@ -248,6 +247,12 @@ def test_animated_screenshots_default_to_off(tmp_path: Path) -> None:
         ("screenshot_animated_quality", 101),
         ("screenshot_animated_quality", -1),
         ("screenshot_animated_format", "gif"),
+        # Desktop checks only that each is an int; ffmpeg's fps and scale filters need it positive.
+        ("screenshot_animated_fps", 0),
+        ("screenshot_animated_fps", True),
+        ("screenshot_animated_fps", 1.5),
+        ("screenshot_animated_height", 0),
+        ("screenshot_animated_height", -720),
     ],
 )
 def test_animated_screenshot_tuning_outside_the_supported_range_is_rejected(
@@ -261,38 +266,31 @@ def test_animated_screenshot_tuning_outside_the_supported_range_is_rejected(
     assert str(error.value).startswith(f"{field}:")
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("screenshot_animated_fps", 30),
-        ("screenshot_animated_height", 480),
-    ],
-)
-def test_pinned_animated_screenshot_fields_are_not_settable(
-    tmp_path: Path,
-    field: str,
-    value: object,
-) -> None:
-    with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({**_NOTE_TYPE, field: value}, _paths(tmp_path))
+def test_animated_fps_and_height_reach_the_engine(tmp_path: Path) -> None:
+    """Desktop's Size presets set both; the snapshot's values are never replaced (Small here)."""
+    mapped = map_config_settings(
+        {
+            **_NOTE_TYPE,
+            "screenshot_animated": True,
+            "screenshot_animated_fps": 12,
+            "screenshot_animated_height": 480,
+        },
+        _paths(tmp_path),
+    ).engine_config
 
-    assert error.value.code == "unknown_config_field"
+    assert mapped.screenshot_animated_fps == 12
+    assert mapped.screenshot_animated_height == 480
+    assert type(mapped.screenshot_animated_fps) is int
 
 
-def test_match_audio_is_settable_and_still_pins_fps_and_height(tmp_path: Path) -> None:
-    """Desktop offers this control, so Android forwards it instead of pinning it off.
-
-    fps and height stay pinned either way: they exist so a card mined on the phone matches one
-    mined on the desktop, which is unrelated to the clip's time range.
-    """
+def test_match_audio_is_settable(tmp_path: Path) -> None:
+    """Desktop offers this control, so Android forwards it instead of pinning it off."""
     mapped = map_config_settings(
         {**_NOTE_TYPE, "screenshot_animated": True, "screenshot_animated_match_audio": True},
         _paths(tmp_path),
     )
 
     assert mapped.engine_config.screenshot_animated_match_audio is True
-    assert mapped.engine_config.screenshot_animated_fps == 20
-    assert mapped.engine_config.screenshot_animated_height == 720
 
 
 def test_match_audio_defaults_off_when_the_snapshot_omits_it(tmp_path: Path) -> None:
@@ -369,11 +367,12 @@ def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
     assert "secondary_subtitle_enabled" not in exposed
     assert "use_sentence_length_filter" not in exposed
     # 49 after Wave B, plus Wave C's language, script_variant and reading_tone_color,
-    # minus jisho_delay (desktop v3.8.0 removed Jisho).
+    # minus jisho_delay (desktop v3.8.0 removed Jisho), plus the animated Size pair.
     assert {"language", "script_variant", "reading_tone_color"} <= exposed
+    assert {"screenshot_animated_fps", "screenshot_animated_height"} <= exposed
     assert "language_stash" not in exposed
     assert "jisho_delay" not in exposed
-    assert len(exposed) == 51
+    assert len(exposed) == 53
     assert exposed <= {field.name for field in fields(AnkiMinerConfig)}
 
 

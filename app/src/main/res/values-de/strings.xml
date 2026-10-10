@@ -729,8 +729,6 @@
     <string name="resource_panel_add_frequency">Häufigkeitsquelle hinzufügen…</string>
     <string name="resource_panel_import_yomitan_zip">Yomitan-ZIP importieren…</string>
     <string name="resource_panel_download_recommended">Empfohlene Ressourcen herunterladen…</string>
-    <string name="resource_panel_meta_online">Online</string>
-    <string name="resource_panel_warning_jisho">Ratenbegrenzt, langsamer</string>
     <string name="resource_panel_warning_missing">Fehlt — erneut importieren</string>
     <string name="resource_panel_warning_repair">Zum Reparieren erneut importieren</string>
     <string name="resource_panel_row_repair">Reparieren</string>
@@ -744,8 +742,6 @@
     <string name="settings_word_audio_voice_available">Für diese Sprache ist eine Stimme installiert.</string>
     <string name="settings_word_audio_voice_missing_data">Die Stimme für diese Sprache ist noch nicht heruntergeladen. Laden Sie sie unter „Sprachdienste verwalten“ herunter.</string>
     <string name="settings_word_audio_voice_unsupported">Dieses Gerät hat keine Sprachsynthese-Stimme für diese Sprache.</string>
-    <string name="settings_jisho">Jisho-Ersatz für Definitionen</string>
-    <string name="settings_jisho_disclosure">Standardmäßig deaktiviert. Wenn aktiviert und dieser Ersatz greift, werden Suchbegriffe aus Ihren Untertiteln oder Leseinhalten an jisho.org gesendet.</string>
     <string name="settings_validation_card_type_marker">Anki-Feld \'%1$s\' ist bereits \'%2$s\' zugeordnet</string>
     <string name="settings_validation_numeric_incomplete">Vervollständigen oder leeren Sie jeden numerischen Wert</string>
     <string name="settings_validation_excluded_decks">Ausgeschlossene Anki-Stapel sind ungültig</string>
@@ -793,13 +789,10 @@
     <string name="attribution_embedded_absent">Das Wörterbuch hat keine lesbaren eingebetteten Metadaten zur Namensnennung bereitgestellt.</string>
     <string name="attribution_derived_terms_title">Bedingungen für Jitendex und abgeleitete Daten</string>
     <string name="attribution_derived_terms">Jitendex wird unter CC BY-SA 4.0 geteilt. Die JMdict/JMnedict-Daten werden von der Electronic Dictionary Research and Development Group unter der EDRDG-Lizenz bereitgestellt. Tatoeba-Beispiele stehen unter CC BY 2.0 FR, Kanji-alive-Audio unter CC BY 4.0 und JmdictFurigana unter CC BY-SA 4.0. Die vollständigen Bedingungen und Mitwirkendenangaben finden Sie unter den untenstehenden Quell-URLs.</string>
-    <string name="attribution_jisho_title">Jisho-Hinweis zum Netzwerkdatenschutz</string>
-    <string name="attribution_jisho_disclosure">Jisho ist standardmäßig deaktiviert. Wenn aktiviert, werden Suchbegriffe aus ausgewählten Untertiteln oder Leseinhalten an https://jisho.org gesendet. Mediendateien, vollständige Sätze, Anki-Daten und Konto-Kennungen werden nie gesendet.</string>
-    <string name="attribution_jisho_rate_limit">Anfragen liegen mindestens eine Sekunde auseinander. Deaktivieren Sie Jisho für vollständig offline Suche.</string>
     <string name="attribution_license">Lizenz: %1$s</string>
     <string name="privacy_title">Datenschutz und Datenverarbeitung</string>
     <string name="privacy_local_processing">Medien, Lesedateien, Anki-Daten, Ressourcen und Einstellungen werden lokal verarbeitet. Keine Konten, Werbung, Analysen oder Absturzberichte.</string>
-    <string name="privacy_network_processing">Ressourcen werden von fest hinterlegten HTTPS-Hosts heruntergeladen. Jisho ist die einzige aus Inhalten abgeleitete Übertragung und bleibt deaktiviert, bis Sie es aktivieren. Remote-Wörterbuchbilder werden blockiert. Offline-TTS sendet nichts.</string>
+    <string name="privacy_network_processing">Ressourcen werden über HTTPS heruntergeladen. Nichts, was aus Ihren Untertiteln, Medien oder Leseinhalten stammt, wird über das Netzwerk gesendet. Remote-Wörterbuchbilder werden blockiert. Offline-TTS sendet nichts.</string>
     <string name="privacy_retention">App-Daten bleiben erhalten, bis sie ersetzt, gelöscht oder die App deinstalliert wird. Notizen in AnkiDroid werden dort verwaltet.</string>
     <string name="privacy_open_policy">Vollständige Datenschutzerklärung öffnen</string>
     <string name="source_notices_title">Quell- und Drittanbieterhinweise</string>

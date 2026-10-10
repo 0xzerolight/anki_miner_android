@@ -26,15 +26,15 @@ _log_handler_installed = False
 # log_handler_install_error() by a future diagnostics-bundle task.
 _log_handler_install_error: str | None = None
 
-# ``composition.toml``'s allowed_external includes ``requests`` for Jisho
-# egress, and a mined vocabulary term reaches urllib3 percent-encoded (e.g.
-# ``keyword=%E6%AE%BA%E3%81%99``), where the later redaction pass -- which
-# matches literal CJK -- cannot see it. A flat WARNING ceiling is not enough:
-# urllib3 2.7's connectionpool logs the retry URL, query string included, at
-# WARNING itself (connectionpool.py:869, hit on any flaky mobile network
-# retry), so that one child logger needs its own ceiling above WARNING. The
-# rest of urllib3 stays at WARNING because its other warnings (TLS, header
-# parsing) carry no URL and are worth keeping.
+# ``composition.toml``'s allowed_external includes ``requests``, and a query
+# string reaches urllib3 percent-encoded (e.g. ``q=%E6%AE%BA%E3%81%99``),
+# where the later redaction pass -- which matches literal CJK -- cannot see
+# it. A flat WARNING ceiling is not enough: urllib3 2.7's connectionpool logs
+# the retry URL, query string included, at WARNING itself
+# (connectionpool.py:869, hit on any flaky mobile network retry), so that one
+# child logger needs its own ceiling above WARNING. The rest of urllib3 stays
+# at WARNING because its other warnings (TLS, header parsing) carry no URL and
+# are worth keeping.
 _THIRD_PARTY_LOG_CEILING = {
     "urllib3": logging.WARNING,
     "urllib3.connectionpool": logging.ERROR,

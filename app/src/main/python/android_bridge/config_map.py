@@ -96,14 +96,18 @@ _INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
     # rejects what would otherwise blow up config construction mid-run.
     "max_parallel_workers": (1, 20),
     "screenshot_animated_quality": (0, 100),
+    # Desktop's Size presets (media_settings_panel.py). Desktop checks only that each is an int;
+    # ffmpeg's fps and scale filters need it positive.
+    "screenshot_animated_fps": (1, None),
+    "screenshot_animated_height": (1, None),
 }
 _LITERAL_FIELDS: Mapping[str, frozenset[str]] = {
     "card_type": frozenset({"", "word_and_sentence", "click", "sentence", "audio"}),
     "audio_format": frozenset({"mp3", "opus"}),
     "pitch_category_format": frozenset({"jp", "romaji"}),
-    # Kotlin resolves this from the device's MIME table, not the user: an
-    # API level that cannot name a .avif file makes AnkiDroid store the clip
-    # as .bin, which the engine has no way to detect.
+    # The user's choice, downgraded by Kotlin to webp where the device's MIME
+    # table cannot name a .avif file: AnkiDroid would store the clip as .bin,
+    # which the engine has no way to detect.
     "screenshot_animated_format": frozenset({"avif", "webp"}),
 }
 _STRING_TUPLE_FIELDS = frozenset({"excluded_decks", "allowed_pos", "excluded_subtypes", "excluded_wordsets"})
@@ -710,19 +714,17 @@ def map_config_settings(
         "expression_audio_chain",
         _default_expression_audio_chain(base, language, AudioSourceEntry),
     )
-    # Pinned rather than exposed.  fps/height stay at the desktop defaults so a
-    # card mined on the phone matches one mined on the desktop.  The format is
-    # deliberately NOT pinned here: Kotlin resolves it from the device MIME
-    # table, because a .avif AnkiDroid cannot name is stored as .bin and the
-    # engine has no way to detect that.
+    # Animated fps/height arrive like any other exposed field, and an absent
+    # one keeps the base config's desktop default (20 fps, 720 px), which is
+    # what every snapshot carried before the two were settings.  Kotlin still
+    # downgrades the format to webp where the device MIME table cannot name a
+    # .avif: AnkiDroid stores such a file as .bin and the engine cannot tell.
     #
     # ``screenshot_animated_match_audio`` used to be pinned False on the grounds
     # that it silently overrides the clip duration the user can see.  Desktop
     # answers that by disabling the clip-duration widget while the box is
     # ticked (media_settings_panel.py), so Android exposes the field and does
     # the same rather than withholding a control desktop offers.
-    updates["screenshot_animated_fps"] = 20
-    updates["screenshot_animated_height"] = 720
     # ``AudioStage.reading_tts_active`` has a settled four-part desktop gate:
     # injected fetcher, master flag, mapped audio field, and a provider bit.
     # Android uses the Google-named bit only as the final compatibility gate;

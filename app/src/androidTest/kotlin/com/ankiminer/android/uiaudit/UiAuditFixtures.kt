@@ -828,10 +828,8 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
                             ResourceChainSelection(dictionary.slotId)
                         },
                     installed = setup.dictionaries,
-                    jishoEnabled = false,
                     strings = dictionaryRowStrings(),
                     onChainChange = {},
-                    onJishoChange = {},
                     onRepair = {},
                     onReplace = {},
                 ),
@@ -855,7 +853,6 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
                         onDismiss = {},
                     )
                 }
-                SupportingText(stringResource(R.string.settings_jisho_disclosure))
             },
         )
         ResourceChainPanel(

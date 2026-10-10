@@ -137,6 +137,8 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "screenshot_animated_clip_duration": 2.0,
         "screenshot_animated_quality": 30,
         "screenshot_animated_match_audio": False,
+        "screenshot_animated_fps": 12,
+        "screenshot_animated_height": 480,
         "subtitle_offset": -0.2,
         "allowed_pos": ["名詞", "動詞"],
         "excluded_subtypes": ["数詞"],
@@ -1550,6 +1552,9 @@ def test_config_schema_accepts_blank_desktop_field_mappings(
         ("screenshot_animated_clip_duration", 0.1),
         ("screenshot_animated_quality", 101),
         ("screenshot_animated_quality", -1),
+        ("screenshot_animated_fps", 0),
+        ("screenshot_animated_fps", 1.5),
+        ("screenshot_animated_height", 0),
     ],
 )
 def test_config_schema_rejects_out_of_range_animated_screenshot_settings(

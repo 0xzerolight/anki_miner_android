@@ -88,10 +88,6 @@ internal data class LanguageSettingsState(
     val showsPitch: Boolean
         get() = activeProfile?.let { PITCH_CAPABILITY in it.capabilities } ?: (activeCode == LanguageScope.JAPANESE)
 
-    /** Jisho is a Japanese dictionary; the declared network egress is Japanese lookups. */
-    val offersJisho: Boolean
-        get() = activeCode == LanguageScope.JAPANESE
-
     val showsToneColor: Boolean
         get() = activeProfile?.let { TONE_COLOR_CAPABILITY in it.capabilities } == true
 

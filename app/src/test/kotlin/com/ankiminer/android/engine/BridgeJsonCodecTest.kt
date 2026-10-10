@@ -1543,6 +1543,35 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `accepts the animated size pair and rejects a non-positive one`() {
+        val decoded =
+            BridgeJsonCodec.decode(
+                videoRunWithSettings(""""screenshot_animated_fps":12,"screenshot_animated_height":480"""),
+            ) as BridgeMessage.VideoRun
+
+        assertEquals(
+            BridgeJsonValue.Integer(12L),
+            decoded.request.configSnapshot.settings["screenshot_animated_fps"],
+        )
+        assertEquals(
+            BridgeJsonValue.Integer(480L),
+            decoded.request.configSnapshot.settings["screenshot_animated_height"],
+        )
+        listOf(
+            """"screenshot_animated_fps":0""",
+            """"screenshot_animated_fps":1.5""",
+            """"screenshot_animated_height":0""",
+            """"screenshot_animated_height":-720""",
+        ).forEach { setting ->
+            assertEquals(
+                setting,
+                BridgeProtocolCategory.INVALID_VALUE,
+                protocolFailure { BridgeJsonCodec.decode(videoRunWithSettings(setting)) }.category,
+            )
+        }
+    }
+
+    @Test
     fun `accepts the wave B engine settings the snapshot mapper emits`() {
         val snapshot =
             EngineSettingsSnapshotMapper.map(

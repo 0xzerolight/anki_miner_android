@@ -160,6 +160,7 @@ class DataStoreAppSettingsRepository internal constructor(
             return stagePreferenceWrite(preferences) { candidate ->
                 decoded.invalidKeys.forEach { candidate -= it }
                 candidate -= Keys.legacyAllowDuplicateCards
+                candidate -= Keys.legacyJishoEnabled
                 if (needsWordsetMigration) {
                     candidate[Keys.enabledWordsets] =
                         EnabledWordsetPreferenceCodec.encode(migratedWordsets)
@@ -205,6 +206,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 !preferences.contains(Keys.enabledWordsets) ||
                 !preferences.contains(Keys.wordsetDefaultsPolicy) ||
                 preferences.contains(Keys.legacyAllowDuplicateCards) ||
+                preferences.contains(Keys.legacyJishoEnabled) ||
                 preferences.contains(Keys.legacyUseSentenceLength)
         }
 
@@ -245,6 +247,12 @@ class DataStoreAppSettingsRepository internal constructor(
                 )
                 candidate.setOrRemove(Keys.animatedScreenshotQuality, value.animatedScreenshotQuality)
                 candidate[Keys.animatedScreenshotMatchAudio] = value.animatedScreenshotMatchAudio
+                candidate.setOrRemove(Keys.animatedScreenshotFps, value.animatedScreenshotFps)
+                candidate.setOrRemove(Keys.animatedScreenshotHeight, value.animatedScreenshotHeight)
+                candidate.setOrRemove(
+                    Keys.animatedScreenshotFormat,
+                    value.animatedScreenshotFormat?.wireValue,
+                )
                 candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
                 candidate.setOrRemove(Keys.audioFormat, value.audioFormat?.wireValue)
                 candidate.setOrRemove(Keys.audioBitrate, value.audioBitrateKbps)
@@ -304,8 +312,9 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate -= Keys.legacyExcludedWordsets
                 candidate -= Keys.legacyAllowDuplicateCards
                 candidate -= Keys.legacyUseSentenceLength
+                candidate -= Keys.legacyJishoEnabled
                 candidate[Keys.readingTtsEnabled] = value.readingTtsEnabled
-                candidate[Keys.jishoEnabled] = value.jishoEnabled
+                candidate[Keys.autoUpdateDictionaries] = value.autoUpdateDictionaries
                 candidate[Keys.miningLanguage] = value.language
                 candidate.setOrRemove(
                     Keys.languageStash,
@@ -438,6 +447,19 @@ class DataStoreAppSettingsRepository internal constructor(
                         },
                     animatedScreenshotMatchAudio =
                         decoder.read(Keys.animatedScreenshotMatchAudio, false, { it }),
+                    animatedScreenshotFps =
+                        decoder.validated(Keys.animatedScreenshotFps) {
+                            AppSettings(animatedScreenshotFps = it)
+                        },
+                    animatedScreenshotHeight =
+                        decoder.validated(Keys.animatedScreenshotHeight) {
+                            AppSettings(animatedScreenshotHeight = it)
+                        },
+                    animatedScreenshotFormat =
+                        decoder.read(Keys.animatedScreenshotFormat, null, { stored ->
+                            AnimatedScreenshotFormat.entries.singleOrNull { it.wireValue == stored }
+                                ?: invalidStoredPreference()
+                        }),
                     subtitleOffsetSeconds =
                         decoder.validated(Keys.subtitleOffset) {
                             AppSettings(subtitleOffsetSeconds = it)
@@ -537,7 +559,8 @@ class DataStoreAppSettingsRepository internal constructor(
                         ) { AppSettingsValidator.validate(AppSettings(audioPacks = it)) },
                     enabledWordsets = decodeEnabledWordsets(preferences, decoder),
                     readingTtsEnabled = decoder.read(Keys.readingTtsEnabled, false, { it }),
-                    jishoEnabled = decoder.read(Keys.jishoEnabled, false, { it }),
+                    // Desktop's default, so an upgrader is opted in as a desktop user is.
+                    autoUpdateDictionaries = decoder.read(Keys.autoUpdateDictionaries, true, { it }),
                     language = storedLanguage,
                     languageStash =
                         decoder.read(
@@ -674,6 +697,9 @@ class DataStoreAppSettingsRepository internal constructor(
             val animatedScreenshotQuality = register(intPreferencesKey("screenshot_animated_quality"))
             val animatedScreenshotMatchAudio =
                 register(booleanPreferencesKey("screenshot_animated_match_audio"))
+            val animatedScreenshotFps = register(intPreferencesKey("screenshot_animated_fps"))
+            val animatedScreenshotHeight = register(intPreferencesKey("screenshot_animated_height"))
+            val animatedScreenshotFormat = register(stringPreferencesKey("screenshot_animated_format"))
             val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))
             val audioFormat = register(stringPreferencesKey("audio_format"))
             val audioBitrate = register(intPreferencesKey("audio_bitrate_kbps"))
@@ -716,8 +742,12 @@ class DataStoreAppSettingsRepository internal constructor(
             val wordsetDefaultsPolicy = register(stringPreferencesKey("wordset_defaults_policy"))
             val legacyExcludedWordsets = stringPreferencesKey("excluded_wordsets_v1")
             val legacyAllowDuplicateCards = booleanPreferencesKey("allow_duplicate_cards")
+
+            // Desktop v3.8.0 removed the online Jisho fallback; dropped by presence, never read.
+            val legacyJishoEnabled = booleanPreferencesKey("jisho_enabled")
+
             val readingTtsEnabled = register(booleanPreferencesKey("reading_tts_enabled"))
-            val jishoEnabled = register(booleanPreferencesKey("jisho_enabled"))
+            val autoUpdateDictionaries = register(booleanPreferencesKey("auto_update_dictionaries"))
             val miningLanguage = register(stringPreferencesKey("mining_language"))
             val languageStash = register(stringPreferencesKey("language_stash_v1"))
 

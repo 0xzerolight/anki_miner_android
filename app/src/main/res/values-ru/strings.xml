@@ -739,8 +739,6 @@
     <string name="resource_panel_add_frequency">Добавить источник частотности…</string>
     <string name="resource_panel_import_yomitan_zip">Импортировать ZIP Yomitan…</string>
     <string name="resource_panel_download_recommended">Загрузить рекомендуемые ресурсы…</string>
-    <string name="resource_panel_meta_online">Онлайн</string>
-    <string name="resource_panel_warning_jisho">С ограничением скорости, медленнее</string>
     <string name="resource_panel_warning_missing">Отсутствует — импортируйте заново</string>
     <string name="resource_panel_warning_repair">Импортируйте заново, чтобы восстановить</string>
     <string name="resource_panel_row_repair">Восстановить</string>
@@ -754,8 +752,6 @@
     <string name="settings_word_audio_voice_available">Голос для этого языка установлен.</string>
     <string name="settings_word_audio_voice_missing_data">Голос для этого языка ещё не загружен. Загрузите его в разделе «Управление речевыми службами».</string>
     <string name="settings_word_audio_voice_unsupported">На этом устройстве нет голоса синтеза речи для этого языка.</string>
-    <string name="settings_jisho">Резервное определение Jisho</string>
-    <string name="settings_jisho_disclosure">Выключено по умолчанию. При включении и переходе к этому резервному варианту термины поиска из субтитров или материалов для чтения отправляются на jisho.org.</string>
     <string name="settings_validation_card_type_marker">Поле Anki \'%1$s\' уже сопоставлено с \'%2$s\'</string>
     <string name="settings_validation_numeric_incomplete">Заполните или очистите все числовые значения</string>
     <string name="settings_validation_excluded_decks">Исключённые колоды Anki недопустимы</string>
@@ -803,13 +799,10 @@
     <string name="attribution_embedded_absent">Словарь не предоставил доступных для чтения встроенных метаданных об атрибуции.</string>
     <string name="attribution_derived_terms_title">Условия Jitendex и производных данных</string>
     <string name="attribution_derived_terms">Jitendex распространяется по CC BY-SA 4.0. Его данные JMdict/JMnedict предоставлены Electronic Dictionary Research and Development Group по лицензии EDRDG. Примеры Tatoeba распространяются по CC BY 2.0 FR, аудио Kanji alive — по CC BY 4.0, а JmdictFurigana — по CC BY-SA 4.0. Полные условия и сведения об участниках приведены по URL источников ниже.</string>
-    <string name="attribution_jisho_title">Уведомление о конфиденциальности сети Jisho</string>
-    <string name="attribution_jisho_disclosure">Jisho выключен по умолчанию. При включении термины поиска из выбранных субтитров или материалов для чтения отправляются на https://jisho.org. Медиафайлы, полные предложения, данные Anki и идентификаторы учётной записи не отправляются.</string>
-    <string name="attribution_jisho_rate_limit">Интервал между запросами не меньше секунды. Отключите Jisho для полностью офлайн-поиска.</string>
     <string name="attribution_license">Лицензия: %1$s</string>
     <string name="privacy_title">Конфиденциальность и обработка данных</string>
     <string name="privacy_local_processing">Медиа, файлы для чтения, данные Anki, ресурсы и настройки обрабатываются локально. Нет учётных записей, рекламы, аналитики и отчётов о сбоях.</string>
-    <string name="privacy_network_processing">Ресурсы загружаются с закреплённых HTTPS-хостов. Jisho — единственный исходящий трафик на основе содержимого и выключен по умолчанию. Удалённые изображения словарей заблокированы. Офлайн-синтез речи ничего не отправляет.</string>
+    <string name="privacy_network_processing">Ресурсы загружаются по HTTPS. Ничего из ваших субтитров, медиафайлов или материалов для чтения не отправляется по сети. Удалённые изображения словарей заблокированы. Офлайн-синтез речи ничего не отправляет.</string>
     <string name="privacy_retention">Данные приложения хранятся до замены, очистки или удаления приложения. Заметками, уже добавленными в AnkiDroid, нужно управлять там.</string>
     <string name="privacy_open_policy">Открыть полную политику конфиденциальности</string>
     <string name="source_notices_title">Уведомления об исходном коде и сторонних компонентах</string>

@@ -734,8 +734,6 @@
     <string name="resource_panel_add_frequency">Añadir fuente de frecuencia…</string>
     <string name="resource_panel_import_yomitan_zip">Importar ZIP de Yomitan…</string>
     <string name="resource_panel_download_recommended">Descargar recursos recomendados…</string>
-    <string name="resource_panel_meta_online">En línea</string>
-    <string name="resource_panel_warning_jisho">Con límite de solicitudes, más lento</string>
     <string name="resource_panel_warning_missing">Falta - reimportar</string>
     <string name="resource_panel_warning_repair">Reimportar para reparar</string>
     <string name="resource_panel_row_repair">Reparar</string>
@@ -749,8 +747,6 @@
     <string name="settings_word_audio_voice_available">Hay una voz instalada para este idioma.</string>
     <string name="settings_word_audio_voice_missing_data">La voz de este idioma aún no está descargada. Descárguela en Administrar servicios de voz.</string>
     <string name="settings_word_audio_voice_unsupported">Este dispositivo no tiene una voz de texto a voz para este idioma.</string>
-    <string name="settings_jisho">Alternativa de definición de Jisho</string>
-    <string name="settings_jisho_disclosure">Desactivado de forma predeterminada. Si se activa y se usa esta alternativa, los términos de búsqueda de sus subtítulos o contenido de lectura se envían a jisho.org.</string>
     <string name="settings_validation_card_type_marker">El campo de Anki \'%1$s\' ya está asignado desde \'%2$s\'</string>
     <string name="settings_validation_numeric_incomplete">Complete o borre todos los valores numéricos</string>
     <string name="settings_validation_excluded_decks">Los mazos de Anki excluidos no son válidos</string>
@@ -798,13 +794,10 @@
     <string name="attribution_embedded_absent">El diccionario no proporcionó metadatos de atribución incorporados legibles.</string>
     <string name="attribution_derived_terms_title">Términos de Jitendex y datos derivados</string>
     <string name="attribution_derived_terms">Jitendex se comparte bajo CC BY-SA 4.0. Sus datos de JMdict/JMnedict son proporcionados por Electronic Dictionary Research and Development Group bajo la licencia EDRDG. Los ejemplos de Tatoeba tienen licencia CC BY 2.0 FR, el audio de Kanji alive tiene licencia CC BY 4.0 y JmdictFurigana tiene licencia CC BY-SA 4.0. Siga las URL de las fuentes de abajo para consultar los términos y registros de colaboradores completos.</string>
-    <string name="attribution_jisho_title">Aviso de privacidad de red de Jisho</string>
-    <string name="attribution_jisho_disclosure">Jisho está desactivado de forma predeterminada. Si lo activa, los términos de búsqueda de los subtítulos o el contenido de lectura seleccionados se envían a https://jisho.org. Nunca se envían archivos multimedia, oraciones completas, datos de Anki ni identificadores de cuenta.</string>
-    <string name="attribution_jisho_rate_limit">Las solicitudes se separan al menos un segundo. Desactive Jisho para una búsqueda totalmente sin conexión.</string>
     <string name="attribution_license">Licencia: %1$s</string>
     <string name="privacy_title">Privacidad y gestión de datos</string>
     <string name="privacy_local_processing">Los medios, archivos de lectura, datos de Anki, recursos y ajustes se procesan localmente. Sin cuentas, publicidad, análisis ni informes de fallos.</string>
-    <string name="privacy_network_processing">Los recursos se descargan de hosts HTTPS fijados. Jisho es la única salida derivada de contenido y permanece desactivado hasta que lo active. Se bloquean las imágenes remotas de diccionarios. El TTS sin conexión no envía nada.</string>
+    <string name="privacy_network_processing">Los recursos se descargan por HTTPS. Nada derivado de sus subtítulos, medios o contenido de lectura se envía por la red. Se bloquean las imágenes remotas de diccionarios. El TTS sin conexión no envía nada.</string>
     <string name="privacy_retention">Los datos de la aplicación permanecen hasta que se sustituyen, se borran o se desinstala la aplicación. Las notas ya en AnkiDroid se gestionan allí.</string>
     <string name="privacy_open_policy">Abrir la política de privacidad completa</string>
     <string name="source_notices_title">Avisos de fuentes y de terceros</string>

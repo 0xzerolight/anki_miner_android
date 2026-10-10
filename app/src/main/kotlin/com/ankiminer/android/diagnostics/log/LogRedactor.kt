@@ -488,10 +488,11 @@ internal object RedactionRulesFactory {
                 add(
                     PERCENT_RUN to { match ->
                         val decoded = decodePercentRun(match.value)
-                        // Rule 7 is blind to percent-encoding, and urllib3 logs Jisho request URLs
-                        // as ?keyword=%E6%AE%BA%E3%81%99. Task 2 pins those loggers, but a bundle
-                        // also carries logcat, which third-party code writes to freely. Rule 7b's
-                        // scripts get the same treatment under their own kind.
+                        // Rule 7 is blind to percent-encoding, which is how a URL query or a
+                        // content URI carries a term or file name (?q=%E6%AE%BA%E3%81%99). The
+                        // bridge pins its own HTTP loggers, but a bundle also carries logcat, which
+                        // third-party code writes to freely. Rule 7b's scripts get the same
+                        // treatment under their own kind.
                         when {
                             decoded == null -> match.value
                             containsJapanese(decoded) -> tokens.token("jp-enc", decoded)

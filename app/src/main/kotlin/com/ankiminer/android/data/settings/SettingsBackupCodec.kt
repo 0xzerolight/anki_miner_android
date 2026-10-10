@@ -75,6 +75,12 @@ internal object SettingsBackupCodec {
 
     /** The retired toggle older formats carry; see [foldSentenceLengthToggle]. */
     private const val LEGACY_SENTENCE_LENGTH_KEY = "use_sentence_length"
+
+    /**
+     * Keys an older app wrote whose setting no longer exists, skipped without an ignored-keys
+     * notice: the user can do nothing about them. Desktop v3.8.0 removed the Jisho fallback.
+     */
+    private val RETIRED_KEY_NAMES: Set<String> = setOf("jisho_enabled")
     private val SENTENCE_LENGTH_CAP_ZEROS: Map<String, Any> =
         mapOf("max_sentence_duration_seconds" to 0.0, "max_sentence_characters" to 0)
 
@@ -109,7 +115,7 @@ internal object SettingsBackupCodec {
             "deduplicate_sentences",
             "use_i_plus_one",
             "reading_tts_enabled",
-            "jisho_enabled",
+            "auto_update_dictionaries",
             "frequency_keep_unranked",
             "known_words_match_kana_variants",
             "reading_tone_color",
@@ -124,6 +130,8 @@ internal object SettingsBackupCodec {
     private val intKeyNames =
         setOf(
             "screenshot_animated_quality",
+            "screenshot_animated_fps",
+            "screenshot_animated_height",
             "audio_bitrate_kbps",
             "max_sentence_characters",
             "reading_minimum_occurrence",
@@ -154,6 +162,7 @@ internal object SettingsBackupCodec {
             "card_type_marker_field",
             "tags",
             "audio_format",
+            "screenshot_animated_format",
             "subtitle_regex_filter",
             "subtitle_regex_replacement",
             "script_variant",
@@ -551,6 +560,7 @@ internal object SettingsBackupCodec {
                     sentenceLengthToggle = parser.currentToken() == JsonToken.VALUE_TRUE
                     parser.skipChildren()
                 }
+                in RETIRED_KEY_NAMES -> parser.skipChildren()
                 else -> {
                     ignoredKeys += name
                     parser.skipChildren()
