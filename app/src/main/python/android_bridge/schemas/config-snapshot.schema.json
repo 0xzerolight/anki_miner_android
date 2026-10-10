@@ -171,10 +171,12 @@
         },
         "screenshot_animated_format": {
           "enum": ["avif", "webp"],
-          "description": "Resolved by Kotlin from the device MIME table, not chosen by the user"
+          "description": "The user's choice, downgraded to webp by Kotlin where the device MIME table cannot name .avif"
         },
         "screenshot_animated_clip_duration": {"type": "number", "minimum": 0.5, "maximum": 10},
         "screenshot_animated_quality": {"type": "integer", "minimum": 0, "maximum": 100},
+        "screenshot_animated_fps": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "screenshot_animated_height": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
         "screenshot_animated_match_audio": {
           "type": "boolean",
           "description": "Clip spans the padded audio window; overrides screenshot_animated_clip_duration"

@@ -1318,6 +1318,7 @@ object BridgeJsonCodec {
                 "anki_tags", "excluded_decks", "audio_padding", "screenshot_offset", "audio_format", "audio_bitrate",
                 "screenshot_animated", "screenshot_animated_format", "screenshot_animated_clip_duration",
                 "screenshot_animated_quality", "screenshot_animated_match_audio",
+                "screenshot_animated_fps", "screenshot_animated_height",
                 "subtitle_offset", "allowed_pos", "excluded_subtypes", "excluded_wordsets",
                 "dictionary_chain", "expression_audio_chain", "reading_tts_enabled", "pitch_category_format",
                 "max_frequency_rank", "min_frequency_rank", "frequency_keep_unranked", "frequency_chain", "pitch_chain",
@@ -1360,7 +1361,8 @@ object BridgeJsonCodec {
             "subtitle_offset" -> number(value, key)
             "audio_format" -> requireOneOf(text(value, key), setOf("mp3", "opus"), key)
             "pitch_category_format" -> requireOneOf(text(value, key), setOf("jp", "romaji"), key)
-            "audio_bitrate", "reading_min_occurrence" -> if (integral(value, key) < 1) fail(BridgeProtocolCategory.INVALID_VALUE, "$key must be positive")
+            "audio_bitrate", "reading_min_occurrence", "screenshot_animated_fps", "screenshot_animated_height" ->
+                if (integral(value, key) < 1) fail(BridgeProtocolCategory.INVALID_VALUE, "$key must be positive")
             "max_frequency_rank", "min_frequency_rank", "max_sentence_chars" -> nonNegative(value, key)
             "max_parallel_workers" -> if (integral(value, key) !in 1L..20L) fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 1 through 20")
             "screenshot_animated", "screenshot_animated_match_audio" -> bool(value, key)
