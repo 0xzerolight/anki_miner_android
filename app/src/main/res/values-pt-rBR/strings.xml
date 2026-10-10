@@ -429,7 +429,7 @@
     <string name="disclosure_collapsed">Recolhido</string>
     <string name="settings_disclosure_summary">%1$s (%2$d de %3$d)</string>
     <string name="anki_field_mapping_remap">Preencher automaticamente</string>
-    <string name="anki_field_mapping_remap_help">Compara os nomes dos campos deste tipo de nota e preenche todo mapeamento reconhecido. Lapis, Kiku, Senren e Anki Miner Note são reconhecidos e preenchidos por completo.</string>
+    <string name="anki_field_mapping_remap_help">Compara os nomes dos campos deste tipo de nota e preenche todo mapeamento reconhecido. Anki Miner Note é reconhecido e preenchido por completo em qualquer idioma de mineração; Lapis, Kiku e Senren, só quando o idioma de mineração é o japonês.</string>
     <string name="anki_field_fill_done">Campos preenchidos automaticamente: %1$d</string>
     <string name="anki_field_fill_none">Nenhum campo pôde ser preenchido automaticamente</string>
     <string name="wizard_note_type_get_anki_miner_note_help">Ainda não tem um tipo de nota para seus cartões? O Anki Miner Note é gratuito e funciona com qualquer idioma. Baixe o arquivo .apkg e abra-o com o AnkiDroid para importá-lo.</string>

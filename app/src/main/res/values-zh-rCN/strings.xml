@@ -417,7 +417,7 @@
     <string name="disclosure_collapsed">已折叠</string>
     <string name="settings_disclosure_summary">%1$s（%2$d/%3$d）</string>
     <string name="anki_field_mapping_remap">自动填写</string>
-    <string name="anki_field_mapping_remap_help">匹配此笔记类型的字段名，填写所有可识别的映射。可识别 Lapis、Kiku、Senren 和 Anki Miner Note 并完整填写。</string>
+    <string name="anki_field_mapping_remap_help">匹配此笔记类型的字段名，填写所有可识别的映射。任何挖词语言都可识别 Anki Miner Note 并完整填写；Lapis、Kiku 和 Senren 仅在挖词语言为日语时可识别。</string>
     <string name="anki_field_fill_done">已自动填写的字段：%1$d</string>
     <string name="anki_field_fill_none">没有可自动填写的字段</string>
     <string name="wizard_note_type_get_anki_miner_note_help">还没有用于卡片的笔记类型？Anki Miner Note 免费，适用于所有语言。下载其 .apkg 文件，然后用 AnkiDroid 打开即可导入。</string>

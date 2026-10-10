@@ -417,7 +417,7 @@
     <string name="disclosure_collapsed">已收合</string>
     <string name="settings_disclosure_summary">%1$s（%2$d／%3$d）</string>
     <string name="anki_field_mapping_remap">自動填入</string>
-    <string name="anki_field_mapping_remap_help">比對此筆記類型的欄位名稱，填入所有可辨識的對應。可辨識 Lapis、Kiku、Senren 與 Anki Miner Note 並完整填入。</string>
+    <string name="anki_field_mapping_remap_help">比對此筆記類型的欄位名稱，填入所有可辨識的對應。任何採集語言都可辨識 Anki Miner Note 並完整填入；Lapis、Kiku 與 Senren 僅在採集語言為日文時可辨識。</string>
     <string name="anki_field_fill_done">已自動填入的欄位：%1$d</string>
     <string name="anki_field_fill_none">沒有可自動填入的欄位</string>
     <string name="wizard_note_type_get_anki_miner_note_help">還沒有用於卡片的筆記類型？Anki Miner Note 免費，適用於所有語言。下載它的 .apkg 檔案，再用 AnkiDroid 開啟即可匯入。</string>
