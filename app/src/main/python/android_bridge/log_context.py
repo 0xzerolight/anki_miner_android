@@ -65,10 +65,9 @@ def set_first_party_log_level(level: int) -> None:
     Root must stay where ``bootstrap._install_file_logging`` left it. Lifting
     root to DEBUG would lift every third-party logger that has no explicit
     ceiling, and the ceiling covers five named libraries only -- one of them
-    because urllib3 logs a Jisho retry URL whose query string carries the mined
-    term percent-encoded, which the redaction pass (it matches literal CJK)
-    cannot see. A bundle the user is about to send is the worst place to
-    discover that.
+    because urllib3 logs a retry URL whose query string is percent-encoded,
+    which the redaction pass (it matches literal CJK) cannot see. A bundle the
+    user is about to send is the worst place to discover that.
 
     Records still reach the root file handler: propagation walks ancestor
     *handlers* and filters on the handler's own level, and never re-checks an

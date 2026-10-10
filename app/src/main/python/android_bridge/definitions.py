@@ -11,8 +11,7 @@ dictionaries that will actually build the card.  The snapshot is registered by
 the run and dropped when the run ends; a request naming an unknown run is
 rejected rather than silently falling back to on-disk order.
 
-Offline providers only: ``lookup_all_offline`` excludes online providers by
-construction, so a preview never performs network I/O.
+Every provider reads a local index, so a preview never performs network I/O.
 """
 
 from __future__ import annotations

@@ -259,8 +259,8 @@ def test_third_party_noise_is_capped_but_first_party_debug_reaches_the_file(
 
     Also covers the leak the flat WARNING ceiling alone would miss: urllib3's
     connectionpool logs the retry URL, query string included, at WARNING
-    itself (a flaky mobile network hitting Jisho is the common case, not an
-    edge case), so ``urllib3.connectionpool`` needs its own ceiling above
+    itself (a flaky mobile network is the common case, not an edge case), so
+    ``urllib3.connectionpool`` needs its own ceiling above
     WARNING rather than inheriting the plain ``urllib3`` pin.
 
     The first-party trees are raised explicitly here because ``initialize()``
