@@ -478,6 +478,7 @@
     <string name="resource_operation_export_known_words">Xuất từ đã biết</string>
     <string name="resource_operation_revert_mined_words">Hoàn tác các từ đã khai thác</string>
     <string name="resource_operation_dictionary_lookup">Tra từ điển</string>
+    <string name="resource_operation_update">Đang cập nhật %1$s</string>
     <string name="resource_failure_download_too_large">Tệp lưu trữ bản cập nhật lớn hơn mức cho phép đối với loại tài nguyên này.</string>
     <string name="resource_failure_busy">Hãy hoàn tất hoặc hủy lượt khai thác đang hoạt động trước khi thay đổi tài nguyên</string>
     <string name="resource_failure_download_cancelled">Đã hủy thao tác tài nguyên</string>

@@ -964,6 +964,143 @@ class ResourceBridgeCodecTest {
         }
     }
 
+    @Test
+    fun updatesCheckRequestCarriesTheChainsInOrderWithExactKeys() {
+        val raw =
+            ResourceBridgeCodec.encodeUpdatesCheckRequest(
+                ResourceUpdateCheckRequest(
+                    operationId = "resource_0123abcd",
+                    language = "ja",
+                    dictionaryIds = listOf("jmdict", "jitendex"),
+                    frequencyIds = listOf("jpdb"),
+                    pitchIds = emptyList(),
+                ),
+            )
+
+        assertEquals(
+            """{"schemaVersion":1,"type":"resource.updates.check","payload":{"operationId":"resource_0123abcd","language":"ja","dictionaryIds":["jmdict","jitendex"],"frequencyIds":["jpdb"],"pitchIds":[]}}""",
+            raw,
+        )
+    }
+
+    @Test
+    fun updatesCheckRequestRefusesWhatPythonWouldRefuse() {
+        val valid =
+            ResourceUpdateCheckRequest("resource_0123abcd", "ja", listOf("jitendex"), emptyList(), emptyList())
+        listOf(
+            valid.copy(operationId = "Not An Id"),
+            valid.copy(language = "japanese"),
+            valid.copy(dictionaryIds = listOf("../escape")),
+            valid.copy(pitchIds = List(129) { "slot$it" }),
+        ).forEach { request ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ResourceBridgeCodec.encodeUpdatesCheckRequest(request)
+            }
+        }
+    }
+
+    @Test
+    fun updatesCheckedDecodesEveryKindAndTheCounts() {
+        val decoded =
+            ResourceBridgeCodec.decodeUpdatesChecked(
+                updatesChecked(
+                    """{"checked":3,"reached":true,"failedCount":1,"updates":[""" +
+                        updateJson() + "," +
+                        updateJson(kind = "frequency", slotId = "jpdb", currentRevision = "", maxArchiveBytes = 536870912) +
+                        "]}",
+                ),
+            )
+
+        assertEquals(3, decoded.checked)
+        assertTrue(decoded.reached)
+        assertEquals(1, decoded.failedCount)
+        assertEquals(
+            ResourceUpdate(
+                kind = ResourceUpdateKind.DICTIONARY,
+                slotId = "jitendex",
+                currentRevision = "2026.07.09.0",
+                latestRevision = "2026.10.03.0",
+                title = "Jitendex.org [2026-10-03]",
+                downloadUrl = "https://example.org/jitendex.zip",
+                maxArchiveBytes = 1073741824,
+            ),
+            decoded.updates.first(),
+        )
+        assertEquals(ResourceUpdateKind.FREQUENCY, decoded.updates[1].kind)
+        assertEquals("", decoded.updates[1].currentRevision)
+    }
+
+    @Test
+    fun updatesCheckedRefusesAnAnswerOutsideTheBridgeContract() {
+        listOf(
+            """{"checked":1,"reached":true,"failedCount":0,"updates":[${updateJson(downloadUrl = "http://example.org/x.zip")}]}""",
+            """{"checked":1,"reached":true,"failedCount":0,"updates":[${updateJson(kind = "audio")}]}""",
+            """{"checked":1,"reached":true,"failedCount":0,"updates":[${updateJson(slotId = "../x")}]}""",
+            """{"checked":1,"reached":true,"failedCount":0,"updates":[${updateJson(title = " padded ")}]}""",
+            """{"checked":1,"reached":true,"failedCount":0,"updates":[${updateJson(latestRevision = "")}]}""",
+            """{"checked":1,"reached":true,"failedCount":0,"updates":[${updateJson(maxArchiveBytes = 1073741825)}]}""",
+            """{"checked":1,"reached":true,"failedCount":0,"updates":[${updateJson(kind = "pitch", maxArchiveBytes = 1073741824)}]}""",
+            """{"checked":1,"reached":true,"failedCount":2,"updates":[]}""",
+            """{"checked":1,"reached":true,"failedCount":0,"updates":[],"extra":1}""",
+        ).forEach { payload ->
+            val failure =
+                assertThrows(ResourceBridgeException::class.java) {
+                    ResourceBridgeCodec.decodeUpdatesChecked(updatesChecked(payload))
+                }
+            assertEquals(payload, "invalid_resource_response", failure.code)
+        }
+    }
+
+    @Test
+    fun updatesCheckedSurfacesTheBridgeErrorCode() {
+        val failure =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeUpdatesChecked(
+                    """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"resource_operation_cancelled","message":"cancelled"}}""",
+                )
+            }
+
+        assertEquals("resource_operation_cancelled", failure.code)
+    }
+
+    @Test
+    fun updateInstallRequestCarriesExactKeys() {
+        val update =
+            ResourceUpdate(
+                ResourceUpdateKind.PITCH,
+                "kanjium",
+                "1",
+                "2",
+                "Kanjium",
+                "https://example.org/kanjium.zip",
+                536870912,
+            )
+
+        assertEquals(
+            """{"schemaVersion":1,"type":"resource.update.install","payload":{"operationId":"resource_4567cdef","kind":"pitch","slotId":"kanjium","sourcePath":"/data/user/0/app/no_backup/resource-downloads/update-resource_4567cdef.zip","displayName":"Kanjium","language":"ja"}}""",
+            ResourceBridgeCodec.encodeUpdateInstallRequest(
+                "resource_4567cdef",
+                update,
+                "/data/user/0/app/no_backup/resource-downloads/update-resource_4567cdef.zip",
+                "ja",
+            ),
+        )
+    }
+
+    private fun updatesChecked(payload: String): String =
+        """{"schemaVersion":1,"type":"resource.updates.checked","payload":$payload}"""
+
+    private fun updateJson(
+        kind: String = "dictionary",
+        slotId: String = "jitendex",
+        currentRevision: String = "2026.07.09.0",
+        latestRevision: String = "2026.10.03.0",
+        title: String = "Jitendex.org [2026-10-03]",
+        downloadUrl: String = "https://example.org/jitendex.zip",
+        maxArchiveBytes: Long = 1073741824,
+    ): String =
+        """{"kind":"$kind","slotId":"$slotId","currentRevision":"$currentRevision","latestRevision":"$latestRevision","title":"$title","downloadUrl":"$downloadUrl","maxArchiveBytes":$maxArchiveBytes}"""
+
     private fun frequencyArchive(revision: String): File {
         val archive = File(temporary.root, "frequency-${revision.length}.zip")
         ZipOutputStream(archive.outputStream()).use { output ->

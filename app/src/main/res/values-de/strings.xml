@@ -484,6 +484,7 @@
     <string name="resource_operation_export_known_words">Bekannte Wörter exportieren</string>
     <string name="resource_operation_revert_mined_words">Gesammelte Wörter rückgängig machen</string>
     <string name="resource_operation_dictionary_lookup">Wörterbuchsuche</string>
+    <string name="resource_operation_update">%1$s wird aktualisiert</string>
     <string name="resource_failure_download_too_large">Das Update-Archiv ist größer, als diese Art von Ressource erlaubt.</string>
     <string name="resource_failure_busy">Beenden Sie den aktiven Mining-Durchlauf oder brechen Sie ihn ab, bevor Sie Ressourcen ändern.</string>
     <string name="resource_failure_download_cancelled">Ressourcenvorgang wurde abgebrochen</string>
