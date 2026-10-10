@@ -515,7 +515,7 @@ class SettingsComponentsTest {
                     onSetFieldMapping = { _, _ -> },
                     onSelectCardType = {},
                     onSelectCardTypeMarker = {},
-                    onRemapFields = {},
+                    onFillFieldsAutomatically = {},
                     mappingExpanded = true,
                 )
             }
@@ -561,7 +561,7 @@ class SettingsComponentsTest {
                     onSetFieldMapping = { _, _ -> },
                     onSelectCardType = {},
                     onSelectCardTypeMarker = {},
-                    onRemapFields = {},
+                    onFillFieldsAutomatically = {},
                 )
             }
         }

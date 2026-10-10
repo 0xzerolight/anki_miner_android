@@ -405,8 +405,12 @@
     <string name="disclosure_expanded">Expanded</string>
     <string name="disclosure_collapsed">Collapsed</string>
     <string name="settings_disclosure_summary">%1$s (%2$d of %3$d)</string>
-    <string name="anki_field_mapping_remap">Fill mappings from field names</string>
-    <string name="anki_field_mapping_remap_help">Matches this note type\'s field names again and fills every mapping it recognises. Unrecognised names keep the field already chosen.</string>
+    <string name="anki_field_mapping_remap">Fill in automatically</string>
+    <string name="anki_field_mapping_remap_help">Matches this note type\'s field names and fills every mapping it recognises. Lapis, Kiku, Senren and Anki Miner Note are recognised and filled completely.</string>
+    <string name="anki_field_fill_done">Fields filled automatically: %1$d</string>
+    <string name="anki_field_fill_none">No fields could be filled automatically</string>
+    <string name="wizard_note_type_get_anki_miner_note_help">Don\'t have a note type for your cards yet? Anki Miner Note is free and works for every language. Download its .apkg file, then open it with AnkiDroid to import it.</string>
+    <string name="wizard_note_type_get_anki_miner_note">Get Anki Miner Note</string>
     <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>
     <string name="anki_field_none">Not mapped</string>
     <string name="anki_card_type_title">Card type</string>

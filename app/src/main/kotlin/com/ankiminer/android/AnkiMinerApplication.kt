@@ -3,6 +3,8 @@ package com.ankiminer.android
 import android.app.Application
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiProviderRuntime
+import com.ankiminer.android.anki.provider.BridgeNoteTypeFillSource
+import com.ankiminer.android.anki.provider.NoteTypeFillSource
 import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
@@ -296,6 +298,11 @@ class AnkiMinerApplication : Application() {
 
     val languageProfileSource: LanguageProfileSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         BridgeLanguageProfileSource(pyBridge)
+    }
+
+    /** "Fill in automatically"'s note-type presets (`anki.notetype.fill`). */
+    internal val noteTypeFillSource: NoteTypeFillSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        BridgeNoteTypeFillSource(pyBridge)
     }
 
     val subtitleCueLookupService: SubtitleCueLookupService by

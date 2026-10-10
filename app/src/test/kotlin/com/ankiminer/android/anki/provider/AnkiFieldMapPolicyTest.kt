@@ -1,5 +1,7 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.engine.LanguageExtraCardField
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -304,6 +306,30 @@ class AnkiFieldMapPolicyTest {
     }
 
     @Test
+    fun `a profile field also maps a note field spelled like one of its aliases`() {
+        val pos = LanguageExtraCardField("pos", "pos_tag", "PartOfSpeech", rawHtml = false, aliases = listOf("POS"))
+
+        assertEquals(
+            mapOf("pos" to "POS"),
+            AnkiFieldMapPolicy.autoMapProfileFields(listOf("Expression", "POS"), listOf(pos), emptySet()),
+        )
+    }
+
+    @Test
+    fun `the first field in field order wins between a placeholder and an alias`() {
+        val pos = LanguageExtraCardField("pos", "pos_tag", "PartOfSpeech", rawHtml = false, aliases = listOf("POS"))
+
+        assertEquals(
+            mapOf("pos" to "pos"),
+            AnkiFieldMapPolicy.autoMapProfileFields(listOf("Expression", "pos", "Part Of Speech"), listOf(pos), emptySet()),
+        )
+        assertEquals(
+            mapOf("pos" to "Part_Of_Speech"),
+            AnkiFieldMapPolicy.autoMapProfileFields(listOf("Expression", "Part_Of_Speech", "POS"), listOf(pos), emptySet()),
+        )
+    }
+
+    @Test
     fun `a profile field never takes a field another key already holds`() {
         val mapped =
             AnkiFieldMapPolicy.autoMapProfileFields(
@@ -424,5 +450,194 @@ class AnkiFieldMapPolicyTest {
         val result = AnkiFieldMapPolicy.remap(fieldNames = listOf("Front", "Back"), currentFieldMap = mapOf("word" to "Front"))
 
         assertEquals("", result.fieldMap["definition"].orEmpty())
+    }
+
+    @Test
+    fun `remap counts the keys it filled, not the manual choices it kept`() {
+        val result =
+            AnkiFieldMapPolicy.remap(
+                fieldNames = listOf("word", "sentence", "notes", "pitchPositions"),
+                currentFieldMap = linkedMapOf("word" to "word", "source" to "notes"),
+            )
+
+        // word, sentence, pitch_position; "notes" is the user's.
+        assertEquals(3, result.filledCount)
+    }
+
+    @Test
+    fun `a preset overwrites every key it answers, an empty answer included`() {
+        val result =
+            applyLapis(
+                currentFieldMap =
+                    linkedMapOf(
+                        "word" to "Expression",
+                        "sentence_reading" to "Hint",
+                        "pitch_category" to "PitchPosition",
+                    ),
+            )
+
+        assertEquals("Expression", result.mapping.fieldMap["word"])
+        assertEquals("PitchCategories", result.mapping.fieldMap["pitch_category"])
+        assertEquals("PitchPosition", result.mapping.fieldMap["pitch_position"])
+        // Lapis has no sentence-reading field: "" is its answer, so the old choice goes.
+        assertEquals("", result.mapping.fieldMap["sentence_reading"])
+        assertEquals(PitchCategoryFormat.ROMAJI, result.pitchCategoryFormat)
+        assertEquals(LAPIS_MAP.count { (_, field) -> field.isNotEmpty() }, result.mapping.filledCount)
+        assertTrue(
+            AnkiFieldMappingChange("sentence_reading", "Hint", "") in result.mapping.changes,
+        )
+    }
+
+    @Test
+    fun `a preset fills the language's own fields and keeps a valid manual one it did not answer`() {
+        val fields = LAPIS_FIELDS + listOf("PartOfSpeech", "Gender", "Notes")
+        val result =
+            AnkiFieldMapPolicy.applyPreset(
+                preset = LAPIS,
+                presetFields = LAPIS_MAP,
+                extraFields = mapOf("pos" to "PartOfSpeech"),
+                fieldNames = fields,
+                currentFieldMap = mapOf("word" to "Expression", "noun_gender" to "Gender", "noun_plural" to "Gone"),
+                currentCardType = null,
+                currentBoldTargetInSentence = null,
+            )
+
+        assertEquals("PartOfSpeech", result.mapping.fieldMap["pos"])
+        assertEquals("Gender", result.mapping.fieldMap["noun_gender"])
+        assertEquals(null, result.mapping.fieldMap["noun_plural"])
+    }
+
+    @Test
+    fun `a preset keeps the first field and single owner rules`() {
+        // A fork that put its own key first: the word still owns field[0], and nothing else may.
+        val fields = listOf("Key") + LAPIS_FIELDS
+        val result =
+            AnkiFieldMapPolicy.applyPreset(
+                preset = LAPIS,
+                presetFields = LAPIS_MAP + ("source" to "Key"),
+                extraFields = mapOf("pos" to "Sentence"),
+                fieldNames = fields,
+                currentFieldMap = emptyMap(),
+                currentCardType = null,
+                currentBoldTargetInSentence = null,
+            )
+
+        assertEquals("Key", result.mapping.fieldMap["word"])
+        assertEquals("", result.mapping.fieldMap["source"])
+        assertEquals("Sentence", result.mapping.fieldMap["sentence"])
+        assertEquals(null, result.mapping.fieldMap["pos"])
+        assertEquals(null, AnkiFieldMapPolicy.firstConflict(result.mapping.fieldMap))
+    }
+
+    @Test
+    fun `a preset sets the active card type's marker and drops a card type it cannot render`() {
+        val senren =
+            LAPIS.copy(
+                id = "senren",
+                name = "Senren",
+                cardTypeMarkerFields =
+                    mapOf(
+                        CardType.WORD_AND_SENTENCE to "",
+                        CardType.CLICK to "",
+                        CardType.SENTENCE to "sentenceCard",
+                        CardType.AUDIO to "audioCard",
+                    ),
+                supportedCardTypes = setOf(CardType.SENTENCE, CardType.AUDIO),
+            )
+        val fields = listOf("word", "sentence", "sentenceCard", "audioCard")
+        fun apply(cardType: CardType?) =
+            AnkiFieldMapPolicy.applyPreset(
+                preset = senren,
+                presetFields = mapOf("word" to "word", "sentence" to "sentence"),
+                extraFields = emptyMap(),
+                fieldNames = fields,
+                currentFieldMap = emptyMap(),
+                currentCardType = cardType,
+                currentBoldTargetInSentence = null,
+            )
+
+        val sentence = apply(CardType.SENTENCE)
+        assertEquals(CardType.SENTENCE, sentence.cardType)
+        assertEquals("sentenceCard", sentence.cardTypeMarkerField)
+
+        val click = apply(CardType.CLICK)
+        assertEquals(null, click.cardType)
+        assertEquals(null, click.cardTypeMarkerField)
+
+        val none = apply(null)
+        assertEquals(null, none.cardType)
+        assertEquals(null, none.cardTypeMarkerField)
+    }
+
+    @Test
+    fun `a preset turns bold target words on but never off`() {
+        assertEquals(true, applyLapis(preset = LAPIS.copy(boldTargetInSentence = true)).boldTargetInSentence)
+        assertEquals(null, applyLapis(bold = null).boldTargetInSentence)
+        assertEquals(false, applyLapis(bold = false).boldTargetInSentence)
+        assertEquals(true, applyLapis(bold = true).boldTargetInSentence)
+    }
+
+    private fun applyLapis(
+        preset: NoteTypePreset = LAPIS,
+        currentFieldMap: Map<String, String> = emptyMap(),
+        bold: Boolean? = null,
+    ) = AnkiFieldMapPolicy.applyPreset(
+        preset = preset,
+        presetFields = LAPIS_MAP,
+        extraFields = emptyMap(),
+        fieldNames = LAPIS_FIELDS,
+        currentFieldMap = currentFieldMap,
+        currentCardType = null,
+        currentBoldTargetInSentence = bold,
+    )
+
+    private companion object {
+        val LAPIS_FIELDS =
+            listOf(
+                "Expression", "ExpressionFurigana", "ExpressionReading", "ExpressionAudio", "SelectionText",
+                "MainDefinition", "DefinitionPicture", "Sentence", "SentenceFurigana", "SentenceAudio", "Picture",
+                "Glossary", "Hint", "IsWordAndSentenceCard", "IsClickCard", "IsSentenceCard", "IsAudioCard",
+                "PitchPosition", "PitchCategories", "Frequency", "FreqSort", "MiscInfo",
+            )
+
+        val LAPIS_MAP =
+            mapOf(
+                "word" to "Expression",
+                "sentence" to "Sentence",
+                "definition" to "MainDefinition",
+                "glossary" to "Glossary",
+                "picture" to "Picture",
+                "audio" to "SentenceAudio",
+                "expression_audio" to "ExpressionAudio",
+                "expression_furigana" to "ExpressionFurigana",
+                "expression_reading" to "ExpressionReading",
+                "sentence_furigana" to "SentenceFurigana",
+                "sentence_reading" to "",
+                "pitch_position" to "PitchPosition",
+                "pitch_category" to "PitchCategories",
+                "pitch_graph" to "",
+                "pitch_text" to "",
+                "frequency" to "Frequency",
+                "frequency_sort" to "FreqSort",
+                "source" to "MiscInfo",
+                "sentence_translation" to "",
+                "language" to "",
+            )
+
+        val LAPIS =
+            NoteTypePreset(
+                id = "lapis",
+                name = "Lapis",
+                pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
+                cardTypeMarkerFields =
+                    mapOf(
+                        CardType.WORD_AND_SENTENCE to "IsWordAndSentenceCard",
+                        CardType.CLICK to "IsClickCard",
+                        CardType.SENTENCE to "IsSentenceCard",
+                        CardType.AUDIO to "IsAudioCard",
+                    ),
+                supportedCardTypes = CardType.entries.toSet(),
+                boldTargetInSentence = false,
+            )
     }
 }

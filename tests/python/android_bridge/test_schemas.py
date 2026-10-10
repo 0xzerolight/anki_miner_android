@@ -69,6 +69,7 @@ def schemas() -> dict[str, dict[str, Any]]:
         "dictionary": _load_schema("dictionary.schema.json"),
         "subtitle_cues": _load_schema("subtitle-cues.schema.json"),
         "audio_tracks": _load_schema("audio-tracks.schema.json"),
+        "note_type_fill": _load_schema("note-type-fill.schema.json"),
     }
 
 
@@ -283,6 +284,41 @@ def test_subtitle_cues_contract_rejects_reversed_intervals(
     Draft202012Validator(schemas["subtitle_cues"]).validate(payload)
     with pytest.raises(BridgeProtocolError, match="end >= start >= 0"):
         encode_message("subtitle.cues.result", payload)
+
+
+def test_note_type_fill_schema_accepts_valid_and_rejects_invalid_requests_and_results(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    validator = Draft202012Validator(schemas["note_type_fill"])
+    preset = {
+        "id": "senren",
+        "name": "Senren",
+        "pitchCategoryFormat": "romaji",
+        "cardTypeMarkerFields": {
+            "word_and_sentence": "",
+            "click": "",
+            "sentence": "sentenceCard",
+            "audio": "audioCard",
+        },
+        "supportedCardTypes": ["", "sentence", "audio"],
+        "boldTargetInSentence": False,
+    }
+    validator.validate({"fieldNames": ["word", "sentence"], "language": "ja"})
+    validator.validate({"preset": preset, "fields": {"word": "word", "sentence_reading": ""}, "extraFields": {}})
+    validator.validate({"preset": None, "fields": {"word": "Front"}, "extraFields": {"pos": "POS"}})
+
+    for invalid in (
+        {"fieldNames": ["word"]},
+        {"fieldNames": ["word"], "language": "Japanese"},
+        {"fieldNames": ["word", "word"], "language": "ja"},
+        {"preset": {**preset, "supportedCardTypes": ["sentence"]}, "fields": {}, "extraFields": {}},
+        {"preset": {**preset, "url": "https://example.invalid"}, "fields": {}, "extraFields": {}},
+        {"preset": {**preset, "pitchCategoryFormat": "kana"}, "fields": {}, "extraFields": {}},
+        {"preset": None, "fields": {"Word": "Front"}, "extraFields": {}},
+        {"preset": None, "fields": {}},
+    ):
+        with pytest.raises(ValidationError):
+            validator.validate(invalid)
 
 
 def test_audio_tracks_schema_accepts_valid_and_rejects_invalid_requests_and_results(

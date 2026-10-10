@@ -54,6 +54,7 @@ def _dispatch_validated(
         return initialize(files_dir)
 
     supported_after_bootstrap = {
+        "anki.notetype.fill",
         "job.cancel",
         "curation.page.response",
         "curation.response",
@@ -188,6 +189,11 @@ def _dispatch_validated(
         from .languages import language_profiles
 
         return language_profiles(payload)
+
+    if request_type == "anki.notetype.fill":
+        from .note_presets import fill_note_type
+
+        return fill_note_type(payload)
 
     if request_type == "dictionary.define":
         from .definitions import define_word

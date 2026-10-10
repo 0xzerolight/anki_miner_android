@@ -622,6 +622,16 @@
         },
         "rawHtml": {
           "type": "boolean"
+        },
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "$comment": "Other Anki field names that map to this key (CardFieldSpec.aliases). The bridge always sends it; absent reads as none."
         }
       }
     },

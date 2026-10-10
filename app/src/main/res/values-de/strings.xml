@@ -396,8 +396,12 @@
     <string name="disclosure_expanded">Ausgeklappt</string>
     <string name="disclosure_collapsed">Eingeklappt</string>
     <string name="settings_disclosure_summary">%1$s (%2$d von %3$d)</string>
-    <string name="anki_field_mapping_remap">Zuordnungen aus Feldnamen füllen</string>
-    <string name="anki_field_mapping_remap_help">Gleicht die Feldnamen dieses Notiztyps erneut ab und füllt jede erkannte Zuordnung. Nicht erkannte Namen behalten das bereits gewählte Feld.</string>
+    <string name="anki_field_mapping_remap">Automatisch ausfüllen</string>
+    <string name="anki_field_mapping_remap_help">Gleicht die Feldnamen dieses Notiztyps ab und füllt jede erkannte Zuordnung. Lapis, Kiku, Senren und Anki Miner Note werden erkannt und vollständig ausgefüllt.</string>
+    <string name="anki_field_fill_done">Automatisch ausgefüllte Felder: %1$d</string>
+    <string name="anki_field_fill_none">Es konnten keine Felder automatisch ausgefüllt werden</string>
+    <string name="wizard_note_type_get_anki_miner_note_help">Noch keinen Notiztyp für Ihre Karten? Anki Miner Note ist kostenlos und funktioniert mit jeder Sprache. Laden Sie die .apkg-Datei herunter und öffnen Sie sie mit AnkiDroid, um sie zu importieren.</string>
+    <string name="wizard_note_type_get_anki_miner_note">Anki Miner Note herunterladen</string>
     <string name="anki_field_mapping_changes">Zuordnungen für diesen Notiztyp geändert: %1$s</string>
     <string name="anki_field_none">Nicht zugeordnet</string>
     <string name="anki_card_type_title">Kartentyp</string>
