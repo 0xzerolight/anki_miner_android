@@ -691,7 +691,7 @@ def _build_processor(
     from anki_miner.services.stats_service import StatsService
     from anki_miner.services.subtitle_parser import SubtitleParserService
     from anki_miner.services.word_filter import WordFilterService
-    from anki_miner.services.word_list_service import WordListService
+    from anki_miner.services.word_list_service import WordListService, active_whitelist
     from anki_miner.services.wordset_service import WordsetService
 
     definition_service: object | None = None
@@ -756,10 +756,35 @@ def _build_processor(
                 )
                 wordset_service = None
 
+        # Built before the parser, as upstream does: the whitelist is the
+        # parser's rescue probe (R1).
+        word_list_service = None
+        if config.use_blacklist or config.use_whitelist:
+            try:
+                word_list_service = WordListService(
+                    blacklist_path=(config.blacklist_path if config.use_blacklist else None),
+                    whitelist_path=(config.whitelist_path if config.use_whitelist else None),
+                    **_word_list_seams(get_profile(language)),
+                )
+                word_list_service.load()
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
+            except Exception as error:
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load word lists",
+                    error,
+                    service="word_lists",
+                )
+                word_list_service = None
+
         # Desktop's _create_subtitle_parser: the profile factory injects the card
         # front, reading, normaliser and script gate a non-ja language needs; the
         # literal class is the ja factory's bare forward.
         parser_factory = SubtitleParserService if profile is None else profile.create_parser
+        # R1: the run's whitelist rescues tokens the parse gates would drop, under
+        # the same gate as the phase-2 partition (off under bypass).
+        whitelist = active_whitelist(config, word_list_service)
         subtitle_parser = parser_factory(
             config,
             term_lookup=(definition_service.offline_terms_exist if has_indexed_dictionary else None),
@@ -777,6 +802,7 @@ def _build_processor(
             # ja run is unchanged; passed as desktop passes it so a language that
             # has one resolves its card fronts.
             form_lookup=(definition_service.offline_term_rows if has_indexed_dictionary else None),
+            force_include=whitelist.is_whitelisted if whitelist is not None else None,
         )
         word_filter = WordFilterService(
             config,
@@ -888,26 +914,6 @@ def _build_processor(
                 service="known_words",
             )
             known_word_db = None
-
-        word_list_service = None
-        if config.use_blacklist or config.use_whitelist:
-            try:
-                word_list_service = WordListService(
-                    blacklist_path=(config.blacklist_path if config.use_blacklist else None),
-                    whitelist_path=(config.whitelist_path if config.use_whitelist else None),
-                    **_word_list_seams(get_profile(language)),
-                )
-                word_list_service.load()
-            except MemoryError:
-                raise  # never an optional-source miss; see the module note
-            except Exception as error:
-                _show_optional_failure(
-                    adapters.presenter,
-                    "Couldn't load word lists",
-                    error,
-                    service="word_lists",
-                )
-                word_list_service = None
 
         stats_service = StatsService(config.stats_db_path, **language_kwarg(language))
         if not stats_service.load():

@@ -202,6 +202,150 @@ def test_a_japanese_word_list_entry_is_normalised_like_subtitle_text(
     assert service._script_check is None
 
 
+@pytest.mark.parametrize(
+    ("settings", "bypass", "rescues"),
+    [
+        ({"use_whitelist": True}, False, True),
+        # A bypass run (desktop's Deck Builder) already includes everything.
+        ({"use_whitelist": True}, True, False),
+        # A loaded blacklist alone builds the service, but never the rescue.
+        ({"use_whitelist": False, "use_blacklist": True}, False, False),
+    ],
+)
+def test_the_parser_rescues_through_the_runs_whitelist_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    settings: dict[str, object],
+    bypass: bool,
+    rescues: bool,
+) -> None:
+    """Desktop R1: the parser's ``force_include`` is the active whitelist's own probe."""
+    _runtime_lane()
+    from dataclasses import replace
+
+    import anki_miner.services.subtitle_parser as subtitle_parser
+
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: object())
+    word_list = tmp_path / "words.txt"
+    word_list.write_text("太郎\n", encoding="utf-8")
+    config = _japanese_config(tmp_path, whitelist_path=str(word_list), blacklist_path=str(word_list), **settings)
+    captured = _compose(monkeypatch, replace(config, bypass_optional_filters=bypass))
+
+    service = captured["word_list_service"]
+    assert service is not None
+    expected = service.is_whitelisted if rescues else None
+    assert captured["subtitle_parser"]._force_include == expected
+
+
+def test_the_parser_has_no_rescue_when_the_word_lists_fail_to_load(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _runtime_lane()
+    import anki_miner.services.subtitle_parser as subtitle_parser
+
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: object())
+    config = _japanese_config(tmp_path, use_whitelist=True, whitelist_path=str(tmp_path / "missing.txt"))
+    captured = _compose(monkeypatch, config)
+
+    assert captured["word_list_service"] is None
+    assert captured["subtitle_parser"]._force_include is None
+
+
+class _DefinedEverywhere:
+    """An offline dictionary that defines every term, so phase 2's integrity gate passes."""
+
+    def __init__(self, config: object, **_kwargs: object) -> None:
+        del config
+
+    def has_usable_offline_provider(self) -> bool:
+        return True
+
+    def has_offline_definitions(self, terms: list[str]) -> dict[str, bool]:
+        return dict.fromkeys(terms, True)
+
+    def offline_deinflection_terms_exist(self, terms: list[str]) -> set[str]:
+        del terms
+        return set()
+
+    def offline_term_identities(self, pairs: list[tuple[str, str]]) -> dict[object, object]:
+        del pairs
+        return {}
+
+    def clear_run_cache(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+def _tagger_token(surface: str, pos1: str, pos2: str) -> object:
+    """A fugashi-shaped token for the real Japanese parser under a stub tagger."""
+    from unittest.mock import MagicMock
+
+    token = MagicMock()
+    token.surface = surface
+    token.feature.pos1 = pos1
+    token.feature.pos2 = pos2
+    token.feature.lemma = surface
+    token.feature.kana = surface
+    token.feature.orthBase = surface
+    token.feature.lForm = None
+    token.feature.kanaBase = None
+    token.feature.cForm = None
+    return token
+
+
+def test_a_whitelisted_hiragana_word_reaches_curation_past_the_script_filter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """R1 end to end through the bridge's own composition.
+
+    A pure-hiragana adjective fails the Japanese kana gate at parse, and with no
+    indexed dictionary nothing recovers it. The whitelist rescues it there, and
+    phase 2 force-includes it past "exclude hiragana-only words".
+    """
+    _runtime_lane()
+    from dataclasses import replace
+
+    import anki_miner.services.definition_service as definition_service
+    import anki_miner.services.subtitle_parser as subtitle_parser
+    from anki_miner.presenters import NullPresenter
+
+    tokens = [_tagger_token("すごい", "形容詞", "一般"), _tagger_token("ね", "助詞", "終助詞")]
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: lambda _text: list(tokens))
+    monkeypatch.setattr(definition_service, "DefinitionService", _DefinedEverywhere)
+    whitelist = tmp_path / "whitelist.txt"
+    whitelist.write_text("すごい\n", encoding="utf-8")
+    subtitle = tmp_path / "episode.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nすごいね\n", encoding="utf-8")
+    config = _japanese_config(
+        tmp_path,
+        use_whitelist=True,
+        whitelist_path=str(whitelist),
+        exclude_hiragana_only_words=True,
+    )
+    # No indexed chain entry: kana recovery (its attestation probe) stays off, so
+    # only the rescue can keep the word.
+    config = replace(config, dictionary_chain=(), include_known_words=True)
+    adapters = SimpleNamespace(presenter=NullPresenter(), cancel_event=threading.Event())
+    anki = SimpleNamespace(verify_card_target=lambda: None)
+    processor = mining._build_processor(config, adapters, anki)
+    curated: list[str] = []
+
+    def curate(words: list[object]) -> None:
+        curated.extend(word.mined_form for word in words)
+        return None  # cancel: phases 3-5 never run
+
+    try:
+        processor.process_episode(tmp_path / "episode.mkv", subtitle, curation_callback=curate)
+    finally:
+        processor.close()
+
+    assert curated == ["すごい"]
+
+
 def test_japanese_composition_keeps_the_known_words_file_and_language(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
