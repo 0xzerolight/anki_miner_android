@@ -311,3 +311,60 @@ def test_checked_in_schema_matches_codec_version() -> None:
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
     assert schema["properties"]["schemaVersion"]["const"] == BRIDGE_SCHEMA_VERSION
+
+
+def test_not_mined_report_crosses_in_reason_order_with_known_outranking() -> None:
+    """The real engine report, folded over two items, as the wire's ordered groups.
+
+    Built with ``merged`` so a front sits under two reasons: known outranks the
+    other (犬), a mined front is never listed (鳥), a reason left with no form is
+    dropped, and forms sort by code point (a non-BMP form included).
+    """
+    from anki_miner.models.processing import NotMinedReason, NotMinedReport, ProcessingResult
+
+    first = NotMinedReport.from_drops(
+        {
+            "犬": NotMinedReason.KNOWN,
+            "猫": NotMinedReason.NO_DEFINITION,
+            "𠮟る": NotMinedReason.NO_DEFINITION,
+            "鳥": NotMinedReason.ANKI_FAILED,
+            "魚": NotMinedReason.I_PLUS_ONE,
+        }
+    )
+    second = NotMinedReport.from_drops(
+        {"犬": NotMinedReason.SENTENCE_LENGTH, "魚": NotMinedReason.SENTENCE_LENGTH},
+        mined=frozenset({"鳥"}),
+    )
+    result = ProcessingResult(
+        total_words_found=6,
+        new_words_found=5,
+        cards_created=1,
+        mined_forms_language="ja",
+        not_mined=first.merged(second),
+    )
+
+    wire = protocol.processing_result_to_json(result)
+
+    assert wire["notMined"] == [
+        {"reason": "known", "forms": ["犬"]},
+        {"reason": "no_definition", "forms": sorted(["猫", "𠮟る"])},
+        {"reason": "i_plus_one", "forms": ["魚"]},
+        {"reason": "sentence_length", "forms": ["魚"]},
+    ]
+    assert wire["minedFormsLanguage"] == "ja"
+    json.loads(encode_message("mining.result", {"result": wire}))
+
+
+def test_a_result_without_a_report_crosses_null_and_an_empty_report_crosses_empty() -> None:
+    from anki_miner.models.processing import NotMinedReport, ProcessingResult
+
+    unstamped = protocol.processing_result_to_json(ProcessingResult(1, 0, 0))
+    empty = protocol.processing_result_to_json(ProcessingResult(1, 0, 0, not_mined=NotMinedReport()))
+
+    assert unstamped["notMined"] is None
+    assert unstamped["minedFormsLanguage"] == ""
+    assert empty["notMined"] == []
+
+
+def test_only_the_whitelist_coverage_stays_off_the_result_wire() -> None:
+    assert frozenset({"whitelist_coverage"}) == protocol._UNWIRED_PROCESSING_RESULT_FIELDS

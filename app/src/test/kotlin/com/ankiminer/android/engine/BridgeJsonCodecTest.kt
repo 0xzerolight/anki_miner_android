@@ -11,6 +11,9 @@ import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.NotMinedGroup
+import com.ankiminer.android.mining.NotMinedReason
+import com.ankiminer.android.mining.ProcessingResult
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
 import java.io.ByteArrayOutputStream
@@ -1022,6 +1025,113 @@ class BridgeJsonCodecTest {
         val terminal = BridgeJsonCodec.decode(fixture.message) as BridgeMessage.Terminal
         assertEquals(fixture.message, terminal.rawEnvelope)
     }
+
+    @Test
+    fun `terminal result carries the not-mined report and the run's language`() {
+        val fixture = fixtures("contracts/mining_protocol_v1.json", "valid").first { it.name == "successful terminal" }
+        val result = checkNotNull((BridgeJsonCodec.decode(fixture.message) as BridgeMessage.Terminal).result)
+
+        assertEquals(
+            listOf(
+                NotMinedGroup(NotMinedReason.KNOWN, listOf("犬")),
+                NotMinedGroup(NotMinedReason.NO_DEFINITION, listOf("𠮟る")),
+            ),
+            result.notMined,
+        )
+        assertEquals("ja", result.minedFormsLanguage)
+    }
+
+    @Test
+    fun `a ten thousand form not-mined report with non-BMP forms decodes intact`() {
+        val reasons = listOf(NotMinedReason.KNOWN, NotMinedReason.NO_DEFINITION, NotMinedReason.I_PLUS_ONE, NotMinedReason.ANKI_FAILED)
+        val groups =
+            reasons.mapIndexed { group, reason ->
+                NotMinedGroup(reason, (0 until 2_500).map { index -> "𠮟${group}語$index😀" }.sorted())
+            }
+        val notMined =
+            groups.joinToString(prefix = "[", postfix = "]") { group ->
+                """{"reason":"${group.reason.wire}","forms":${group.forms.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }}}"""
+            }
+
+        val result = decodeResult(notMined = notMined, language = "\"de\"")
+
+        assertEquals(groups, result.notMined)
+        assertEquals(10_000, result.notMined.orEmpty().sumOf { it.forms.size })
+        assertTrue("𠮟3語2499😀" in result.notMined.orEmpty().last().forms)
+        assertEquals("de", result.minedFormsLanguage)
+    }
+
+    @Test
+    fun `an unstamped result decodes a null report and a blank language`() {
+        val result = decodeResult(notMined = "null", language = "\"\"")
+
+        assertNull(result.notMined)
+        assertEquals("", result.minedFormsLanguage)
+        assertEquals(emptyList<NotMinedGroup>(), decodeResult(notMined = "[]", language = "\"\"").notMined)
+    }
+
+    @Test
+    fun `processing result decoder rejects a malformed not-mined report or language`() {
+        mapOf(
+            """[{"reason":"typo","forms":["猫"]}]""" to "\"ja\"",
+            """[{"reason":"known","forms":["猫"]},{"reason":"known","forms":["犬"]}]""" to "\"ja\"",
+            """[{"reason":"known","forms":[]}]""" to "\"ja\"",
+            """[{"reason":"known","forms":["猫"],"extra":1}]""" to "\"ja\"",
+            """[{"reason":"known"}]""" to "\"ja\"",
+            """{"known":["猫"]}""" to "\"ja\"",
+            "null" to "\"JA\"",
+            "null" to "\"japanese\"",
+            "null" to "\"j\"",
+            "null" to "null",
+        ).forEach { (notMined, language) ->
+            assertThrows("$notMined / $language", BridgeProtocolException::class.java) {
+                decodeResult(notMined = notMined, language = language)
+            }
+        }
+        // The pre-v3.8 result shape, without either key.
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(terminalJson(resultFields = "")) }
+    }
+
+    @Test
+    fun `not-mined reasons are the bridge schema's in declaration order`() {
+        // test_schemas pins the same list to the vendored engine's NotMinedReason.
+        val schema =
+            checkNotNull(javaClass.getResourceAsStream("/schemas/mining.schema.json")) {
+                "schemas/mining.schema.json missing from the test classpath"
+            }
+        val wires = mutableListOf<String>()
+        JsonFactory().createParser(schema).use { parser ->
+            // The first "enum" after the notMinedGroup key is its reason list.
+            while (parser.nextToken() != null && parser.currentName() != "notMinedGroup") Unit
+            while (parser.nextToken() != null && !(parser.currentToken() == JsonToken.FIELD_NAME && parser.currentName() == "enum")) Unit
+            check(parser.nextToken() == JsonToken.START_ARRAY)
+            while (parser.nextToken() == JsonToken.VALUE_STRING) wires += parser.text
+        }
+
+        assertEquals(wires, NotMinedReason.entries.map { it.wire })
+        assertEquals(
+            setOf(NotMinedReason.NO_DEFINITION, NotMinedReason.MEDIA_FAILED, NotMinedReason.ANKI_FAILED),
+            NotMinedReason.entries.filter { it.failure }.toSet(),
+        )
+    }
+
+    private fun decodeResult(
+        notMined: String,
+        language: String,
+    ): ProcessingResult =
+        checkNotNull(
+            (
+                BridgeJsonCodec.decode(
+                    terminalJson(""","minedFormsLanguage":$language,"notMined":$notMined"""),
+                ) as BridgeMessage.Terminal
+            ).result,
+        )
+
+    private fun terminalJson(resultFields: String): String =
+        """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"run_${"a".repeat(32)}","outcome":"success","result":""" +
+            """{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,""" +
+            """"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"","minedForms":[],""" +
+            """"ankiWriteState":"no_note_write","failureIsTransient":false$resultFields},"error":null}}"""
 
     @Test
     fun `terminal error carries an optional fault id without making it mandatory`() {

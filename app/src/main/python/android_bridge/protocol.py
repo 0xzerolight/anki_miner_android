@@ -196,23 +196,50 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
 # feeds desktop's whitelist coverage report, which Android does not have: it holds
 # frozensets, which have no JSON form here, and Kotlin decodes a result against an
 # exact key set, so emitting it would fail every run a whitelist is on for.
-# ``not_mined`` (an Enum-keyed mapping of frozensets) and ``mined_forms_language``
-# arrived with desktop v3.8.0 on every result; they stay off the wire until the
-# not-mined report and Undo-by-run-language land (catch-up task B1).
-_UNWIRED_PROCESSING_RESULT_FIELDS = frozenset({"whitelist_coverage", "not_mined", "mined_forms_language"})
+_UNWIRED_PROCESSING_RESULT_FIELDS = frozenset({"whitelist_coverage"})
+
+
+def _not_mined_to_json(report: Any) -> list[dict[str, Any]] | None:
+    """An engine ``NotMinedReport`` as the wire's groups, or None when the result has none.
+
+    One group per reason that names a form, in the reason Enum's declaration
+    (pipeline) order, forms sorted. ``report.forms`` applies the engine's rule:
+    a mined front is never listed and known outranks every other reason. The
+    raw ``reasons`` mapping (Enum keys, frozenset values) never reaches
+    ``to_json_value``. Structural like the rest of this module: the Enum is the
+    report's own key type, so no engine import is needed.
+    """
+
+    if report is None:
+        return None
+    reason_types = {type(reason) for reason in report.reasons}
+    if len(reason_types) > 1 or not all(issubclass(kind, Enum) for kind in reason_types):
+        raise BridgeProtocolError("unsupported_value", "Not-mined reasons must be members of one Enum")
+    groups: list[dict[str, Any]] = []
+    for reason_type in reason_types:
+        for reason in reason_type:
+            forms = report.forms(reason)
+            if forms:
+                groups.append({"reason": to_json_value(reason), "forms": to_json_value(sorted(forms))})
+    return groups
 
 
 def processing_result_to_json(result: Any) -> Any:
     """``to_json_value`` for an engine ``ProcessingResult``, minus the unwired fields.
 
     Every other field still crosses by reflection, so a field a re-pin adds keeps
-    failing the schema tests instead of vanishing here.
+    failing the schema tests instead of vanishing here. ``not_mined`` crosses as
+    :func:`_not_mined_to_json` groups.
     """
 
     if not dataclasses.is_dataclass(result) or isinstance(result, type):
         return to_json_value(result)
     return {
-        _camel_case(field.name): to_json_value(getattr(result, field.name))
+        _camel_case(field.name): (
+            _not_mined_to_json(getattr(result, field.name))
+            if field.name == "not_mined"
+            else to_json_value(getattr(result, field.name))
+        )
         for field in dataclasses.fields(result)
         if field.name not in _UNWIRED_PROCESSING_RESULT_FIELDS
     }
