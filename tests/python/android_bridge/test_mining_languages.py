@@ -168,8 +168,38 @@ def test_hebrew_word_lists_read_with_the_profile_ladder_and_fold(
 
     assert service._encodings == profile.import_encodings
     assert service._dedup_fold is profile.dedup_fold
+    assert service._normalize is profile.normalize
     assert service._script_check is not None
     assert service.is_whitelisted("ספר")
+
+
+def _japanese_config(tmp_path: Path, **settings: object) -> object:
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    return map_config_settings({"anki_note_type": "Lapis", **settings}, paths).engine_config
+
+
+def test_a_japanese_word_list_entry_is_normalised_like_subtitle_text(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Desktop ``create_services`` hands every language its normaliser: ｺｰﾋｰ must meet コーヒー.
+
+    The parser folds width before a card front exists, so an NFC-only entry never
+    matched the rescue, the whitelist partition or the blacklist. Japanese keeps
+    the UTF-8 read (``import_decode_ladder``), never its cp932/euc_jp ladder.
+    """
+    _runtime_lane()
+    import anki_miner.services.subtitle_parser as subtitle_parser
+
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: object())
+    whitelist = tmp_path / "whitelist.txt"
+    whitelist.write_text("ｺｰﾋｰ\n", encoding="utf-8")
+    config = _japanese_config(tmp_path, use_whitelist=True, whitelist_path=str(whitelist))
+    service = _compose(monkeypatch, config)["word_list_service"]
+
+    assert service.is_whitelisted("コーヒー")
+    assert service._encodings == ("utf-8-sig",)
+    assert service._script_check is None
 
 
 def test_japanese_composition_keeps_the_known_words_file_and_language(

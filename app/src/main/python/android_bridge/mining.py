@@ -636,13 +636,21 @@ def _word_filter_seams(profile: object, config: object) -> dict[str, object]:
 
 
 def _word_list_seams(profile: object) -> dict[str, object]:
-    """The word lists' fold and decode ladder for a non-ja profile (``import_decode_ladder``)."""
+    """``service_factory.create_services``' WordListService seams, for every language.
+
+    The fold, and the normaliser the parser applies before a card front exists,
+    so a ｺｰﾋｰ entry meets the コーヒー front. The ladder is
+    ``import_decode_ladder``'s: Japanese keeps the UTF-8 default (``None``),
+    since EUC-JP bytes decode as cp932 without raising; gated on the profile
+    object, as desktop gates it.
+    """
 
     from anki_miner.utils.subtitle_encoding import script_check_kwarg
 
-    ladder = profile.import_encodings
+    ladder = None if profile is get_profile(JAPANESE) else profile.import_encodings
     return {
         "dedup_fold": profile.dedup_fold,
+        "normalize": profile.normalize,
         "encodings": ladder,
         **script_check_kwarg(ladder, profile.script),
     }
@@ -887,7 +895,7 @@ def _build_processor(
                 word_list_service = WordListService(
                     blacklist_path=(config.blacklist_path if config.use_blacklist else None),
                     whitelist_path=(config.whitelist_path if config.use_whitelist else None),
-                    **({} if profile is None else _word_list_seams(profile)),
+                    **_word_list_seams(get_profile(language)),
                 )
                 word_list_service.load()
             except MemoryError:
