@@ -15,6 +15,8 @@ import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CURATION_PAGE_MAX_CANDIDATES
+import com.ankiminer.android.mining.NotMinedGroup
+import com.ankiminer.android.mining.NotMinedReason
 import com.ankiminer.android.mining.ProcessingResult
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonFactoryBuilder
@@ -487,8 +489,10 @@ object BridgeJsonCodec {
                 "videoFile",
                 "subtitleFile",
                 "minedForms",
+                "minedFormsLanguage",
                 "ankiWriteState",
                 "failureIsTransient",
+                "notMined",
             ),
             "processing result",
         )
@@ -499,6 +503,10 @@ object BridgeJsonCodec {
         if (comprehension !in 0.0..100.0) fail(BridgeProtocolCategory.INVALID_VALUE, "comprehensionPercentage is outside 0 through 100")
         val cardIds = array(payload.getValue("cardIds"), "cardIds").map { positive(it, "cardId") }
         if (cardIds.toSet().size != cardIds.size) fail(BridgeProtocolCategory.INVALID_VALUE, "cardIds must be unique")
+        val minedFormsLanguage = text(payload.getValue("minedFormsLanguage"), "minedFormsLanguage")
+        if (minedFormsLanguage.isNotEmpty() && !languageCodePattern.matches(minedFormsLanguage)) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "minedFormsLanguage is not a language code")
+        }
         return ProcessingResult(
             totalWords,
             newWords,
@@ -513,7 +521,29 @@ object BridgeJsonCodec {
             AnkiWriteState.fromWire(text(payload.getValue("ankiWriteState"), "ankiWriteState"))
                 ?: fail(BridgeProtocolCategory.INVALID_VALUE, "ankiWriteState is invalid"),
             bool(payload.getValue("failureIsTransient"), "failureIsTransient"),
+            notMined = readNotMined(payload.getValue("notMined")),
+            minedFormsLanguage = minedFormsLanguage,
         )
+    }
+
+    /** The engine's not-mined report: one group per reason, each reason once, never an empty group. */
+    private fun readNotMined(value: BridgeJsonValue): List<NotMinedGroup>? {
+        if (value is BridgeJsonValue.Null) return null
+        val groups =
+            array(value, "notMined").map { item ->
+                val group = objectValue(item, "notMined group")
+                requireExact(group, setOf("reason", "forms"), "notMined group")
+                val reason =
+                    NotMinedReason.fromWire(text(group.getValue("reason"), "notMined reason"))
+                        ?: fail(BridgeProtocolCategory.INVALID_VALUE, "notMined reason is unknown")
+                val forms = stringArray(group.getValue("forms"), "notMined forms")
+                if (forms.isEmpty()) fail(BridgeProtocolCategory.INVALID_VALUE, "notMined group has no forms")
+                NotMinedGroup(reason, forms)
+            }
+        if (groups.distinctBy { it.reason }.size != groups.size) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "notMined lists a reason twice")
+        }
+        return groups
     }
 
     private fun readTerminal(

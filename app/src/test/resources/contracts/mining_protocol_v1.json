@@ -225,8 +225,23 @@
               "猫",
               "食べる"
             ],
+            "minedFormsLanguage": "ja",
             "ankiWriteState": "note_write_confirmed",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": [
+              {
+                "reason": "known",
+                "forms": [
+                  "犬"
+                ]
+              },
+              {
+                "reason": "no_definition",
+                "forms": [
+                  "𠮟る"
+                ]
+              }
+            ]
           },
           "error": null
         }
@@ -257,8 +272,10 @@
             "minedForms": [
               "猫"
             ],
+            "minedFormsLanguage": "",
             "ankiWriteState": "note_write_confirmed",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": []
           },
           "error": null
         }
@@ -305,8 +322,17 @@
             "minedForms": [
               "猫"
             ],
+            "minedFormsLanguage": "",
             "ankiWriteState": "note_write_confirmed",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": [
+              {
+                "reason": "anki_failed",
+                "forms": [
+                  "食べる"
+                ]
+              }
+            ]
           },
           "error": {
             "code": "processing_failed",
@@ -356,8 +382,10 @@
               "猫",
               "食べる"
             ],
+            "minedFormsLanguage": "ja",
             "ankiWriteState": "note_write_confirmed",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": []
           },
           "error": {
             "code": "cleanup_failed",
@@ -1403,8 +1431,10 @@
             "videoFile": "",
             "subtitleFile": "",
             "minedForms": [],
+            "minedFormsLanguage": "",
             "ankiWriteState": "no_note_write",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": null
           },
           "error": null
         }
@@ -1431,8 +1461,10 @@
             "videoFile": "",
             "subtitleFile": "",
             "minedForms": [],
+            "minedFormsLanguage": "",
             "ankiWriteState": "no_note_write",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": null
           },
           "error": null
         }
@@ -1473,8 +1505,10 @@
             "videoFile": "",
             "subtitleFile": "",
             "minedForms": [],
+            "minedFormsLanguage": "",
             "ankiWriteState": "no_note_write",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": null
           },
           "error": {
             "code": "processing_failed",
@@ -1502,8 +1536,10 @@
             "videoFile": "",
             "subtitleFile": "",
             "minedForms": [],
+            "minedFormsLanguage": "",
             "ankiWriteState": "no_note_write",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": null
           },
           "error": {
             "code": "internal_error",
@@ -1548,8 +1584,10 @@
             "subtitleFile": "",
             "minedForms": [],
             "unknown": true,
+            "minedFormsLanguage": "",
             "ankiWriteState": "no_note_write",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": null
           },
           "error": null
         }
@@ -1574,8 +1612,10 @@
             "videoFile": "",
             "subtitleFile": "",
             "minedForms": [],
+            "minedFormsLanguage": "",
             "ankiWriteState": "no_note_write",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": null
           },
           "error": null
         }
@@ -1600,8 +1640,10 @@
             "videoFile": "",
             "subtitleFile": "",
             "minedForms": [],
+            "minedFormsLanguage": "",
             "ankiWriteState": "no_note_write",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": null
           },
           "error": null
         }
@@ -1630,8 +1672,137 @@
             "minedForms": [
               "猫"
             ],
+            "minedFormsLanguage": "",
             "ankiWriteState": "note_write_confirmed",
-            "failureIsTransient": false
+            "failureIsTransient": false,
+            "notMined": null
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "not mined reason is an engine reason",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 8,
+            "newWordsFound": 3,
+            "cardsCreated": 2,
+            "errors": [],
+            "elapsedTime": 1.25,
+            "comprehensionPercentage": 62.5,
+            "cardIds": [
+              101,
+              102
+            ],
+            "videoFile": "/proc/self/fd/41",
+            "subtitleFile": "/cache/subtitle.srt",
+            "minedForms": [
+              "猫",
+              "食べる"
+            ],
+            "minedFormsLanguage": "ja",
+            "ankiWriteState": "note_write_confirmed",
+            "failureIsTransient": false,
+            "notMined": [
+              {
+                "reason": "typo",
+                "forms": [
+                  "猫"
+                ]
+              }
+            ]
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "not mined group names at least one form",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 8,
+            "newWordsFound": 3,
+            "cardsCreated": 2,
+            "errors": [],
+            "elapsedTime": 1.25,
+            "comprehensionPercentage": 62.5,
+            "cardIds": [
+              101,
+              102
+            ],
+            "videoFile": "/proc/self/fd/41",
+            "subtitleFile": "/cache/subtitle.srt",
+            "minedForms": [
+              "猫",
+              "食べる"
+            ],
+            "minedFormsLanguage": "ja",
+            "ankiWriteState": "note_write_confirmed",
+            "failureIsTransient": false,
+            "notMined": [
+              {
+                "reason": "known",
+                "forms": []
+              }
+            ]
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "mined forms language is a language code",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 8,
+            "newWordsFound": 3,
+            "cardsCreated": 2,
+            "errors": [],
+            "elapsedTime": 1.25,
+            "comprehensionPercentage": 62.5,
+            "cardIds": [
+              101,
+              102
+            ],
+            "videoFile": "/proc/self/fd/41",
+            "subtitleFile": "/cache/subtitle.srt",
+            "minedForms": [
+              "猫",
+              "食べる"
+            ],
+            "minedFormsLanguage": "JA",
+            "ankiWriteState": "note_write_confirmed",
+            "failureIsTransient": false,
+            "notMined": [
+              {
+                "reason": "known",
+                "forms": [
+                  "犬"
+                ]
+              },
+              {
+                "reason": "no_definition",
+                "forms": [
+                  "𠮟る"
+                ]
+              }
+            ]
           },
           "error": null
         }

@@ -715,13 +715,14 @@ def test_whitelist_coverage_never_crosses_the_result_wire(
     assert "whitelistCoverage" not in event["payload"]["result"]
 
 
-def test_not_mined_report_and_its_language_stay_off_the_result_wire(
+def test_not_mined_report_and_its_language_cross_the_result_wire(
     schemas: dict[str, dict[str, Any]],
 ) -> None:
-    """Every result carries both since v3.8.0; B1 wires them, until then neither crosses.
+    """Every result carries both since v3.8.0: the terminal and the presenter event validate.
 
-    ``not_mined`` maps an Enum to frozensets, which has no JSON form here, and
-    Kotlin decodes a result against an exact key set.
+    ``not_mined`` maps an Enum to frozensets, which has no JSON form of its own;
+    the bridge sends its ordered groups instead, and Kotlin decodes a result
+    against an exact key set.
     """
     from android_bridge import mining
     from anki_miner.models.processing import NotMinedReason, NotMinedReport, ProcessingResult
@@ -741,8 +742,59 @@ def test_not_mined_report_and_its_language_stay_off_the_result_wire(
     _outcome, raw_terminal = mining._result_terminal("run_" + "a" * 32, result)
     terminal = json.loads(raw_terminal)
     Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas)).validate(terminal)
-    assert {"notMined", "minedFormsLanguage"}.isdisjoint(terminal["payload"]["result"])
+    assert terminal["payload"]["result"]["notMined"] == [{"reason": "known", "forms": ["犬"]}]
+    assert terminal["payload"]["result"]["minedFormsLanguage"] == "ja"
     assert terminal["payload"]["result"]["minedForms"] == ["猫"]
+
+    raw_events: list[str] = []
+
+    class Callbacks:
+        def onPresenterEvent(self, raw: str) -> None:
+            raw_events.append(raw)
+
+    registry = JobRegistry()
+    adapters = CallbackAdapters(Callbacks(), registry, registry.begin())
+    adapters.presenter.show_processing_result(result)
+
+    event = json.loads(raw_events[0])
+    Draft202012Validator(schemas["engine_events"], registry=_cross_schema_registry(schemas)).validate(event)
+    assert event["payload"]["result"]["notMined"] == [{"reason": "known", "forms": ["犬"]}]
+
+
+def test_not_mined_reason_enum_is_the_engines_in_declaration_order(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    """Kotlin pins its ``NotMinedReason`` to this enum; the engine is the authority for both."""
+    from anki_miner.models.processing import NotMinedReason
+
+    group = schemas["mining"]["$defs"]["notMinedGroup"]
+    assert group["properties"]["reason"]["enum"] == [reason.value for reason in NotMinedReason]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("notMined", [{"reason": "typo", "forms": ["猫"]}]),
+        ("notMined", [{"reason": "known", "forms": []}]),
+        ("notMined", [{"reason": "known", "forms": ["猫"], "extra": True}]),
+        ("minedFormsLanguage", "JA"),
+        ("minedFormsLanguage", "japanese"),
+    ],
+)
+def test_processing_result_schema_rejects_a_malformed_report_or_language(
+    schemas: dict[str, dict[str, Any]],
+    field: str,
+    value: object,
+) -> None:
+    from android_bridge import mining
+    from anki_miner.models.processing import ProcessingResult
+
+    _outcome, raw_terminal = mining._result_terminal("run_" + "a" * 32, ProcessingResult(1, 0, 0))
+    terminal = json.loads(raw_terminal)
+    validator = Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas))
+    validator.validate(terminal)
+    terminal["payload"]["result"][field] = value
+    assert list(validator.iter_errors(terminal))
 
 
 def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:

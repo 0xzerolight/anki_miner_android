@@ -19,9 +19,12 @@ internal fun interface MiningRunUndoBackend {
     ): Int
 }
 
-/** Takes the run's mined forms back out of the known-words list. */
+/** Takes the run's mined forms back out of the known-words list of [language] (blank: the active one). */
 internal fun interface MinedWordsReverter {
-    suspend fun removeMinedWords(words: List<String>): Boolean
+    suspend fun removeMinedWords(
+        words: List<String>,
+        language: String,
+    ): Boolean
 }
 
 internal data class UndoneRunReceipt(
@@ -44,10 +47,12 @@ internal interface MiningRunUndoManager {
 
     val undoActive: StateFlow<Boolean>
 
+    /** [minedFormsLanguage] is the run's mining language, so a language switch since cannot redirect the revert. */
     suspend fun undoRun(
         runId: String,
         noteIds: List<Long>,
         minedForms: List<String>,
+        minedFormsLanguage: String,
     ): UndoRunOutcome
 }
 
@@ -88,6 +93,7 @@ internal class ProcessMiningRunUndoManager(
         runId: String,
         noteIds: List<Long>,
         minedForms: List<String>,
+        minedFormsLanguage: String,
     ): UndoRunOutcome {
         mutableUndoneRuns.value[runId]?.takeIf { it.knownWordsReverted }?.let { recorded ->
             AppLog.i(
@@ -139,7 +145,7 @@ internal class ProcessMiningRunUndoManager(
                             return UndoRunOutcome.DeleteFailed
                         }
                     }
-            val reverted = reverter.removeMinedWords(minedForms)
+            val reverted = reverter.removeMinedWords(minedForms, minedFormsLanguage)
             val receipt = UndoneRunReceipt(runId, deletedNotes = deleted, knownWordsReverted = reverted)
             recordReceipt(receipt)
             AppLog.i(

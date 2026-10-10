@@ -22,6 +22,7 @@ internal class FakeMiningRunUndoManager(
         val runId: String,
         val noteIds: List<Long>,
         val minedForms: List<String>,
+        val minedFormsLanguage: String,
     )
 
     private val mutableUndoneRuns = MutableStateFlow(initialUndoneRuns)
@@ -37,8 +38,9 @@ internal class FakeMiningRunUndoManager(
         runId: String,
         noteIds: List<Long>,
         minedForms: List<String>,
+        minedFormsLanguage: String,
     ): UndoRunOutcome {
-        mutableCalls += UndoCall(runId, noteIds, minedForms)
+        mutableCalls += UndoCall(runId, noteIds, minedForms, minedFormsLanguage)
         mutableUndoActive.value = true
         val outcome = outcomeForRun(runId)
         if (outcome is UndoRunOutcome.Undone) {

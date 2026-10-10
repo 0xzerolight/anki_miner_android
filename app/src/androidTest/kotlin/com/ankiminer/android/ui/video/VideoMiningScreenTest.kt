@@ -2339,7 +2339,7 @@ class VideoMiningScreenTest {
                     onConfirmUndo = {
                         state = state.copy(undoConfirmationNoteCount = null)
                         runBlocking {
-                            fakeUndo.undoRun(runId, runResult.cardIds, runResult.minedForms)
+                            fakeUndo.undoRun(runId, runResult.cardIds, runResult.minedForms, runResult.minedFormsLanguage)
                         }
                     },
                     onDismissUndoConfirmation = {

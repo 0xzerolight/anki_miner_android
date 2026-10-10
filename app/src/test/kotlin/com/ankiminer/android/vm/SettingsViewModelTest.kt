@@ -1845,7 +1845,7 @@ class SettingsViewModelTest {
 
         override suspend fun resetKnownWords(scope: KnownWordsResetScope) = Unit
 
-        override suspend fun removeMinedWords(words: List<String>) = false
+        override suspend fun removeMinedWords(words: List<String>, language: String) = false
 
         override suspend fun exportKnownWords(uri: String) = Unit
 

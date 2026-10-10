@@ -14,6 +14,7 @@ class MiningReceiptStoreTest {
             deckName = "Anki Miner",
             noteIds = listOf(10, 11),
             minedForms = listOf("猫", "犬"),
+            minedFormsLanguage = "de",
         )
 
     @Test
@@ -22,6 +23,18 @@ class MiningReceiptStoreTest {
         MiningReceiptStore(handle, "videoMining.receipt").save(receipt)
 
         assertEquals(receipt, MiningReceiptStore(handle, "videoMining.receipt").restore())
+    }
+
+    @Test
+    fun aReceiptSavedBeforeItsLanguageWasKeptRestoresABlankLanguage() {
+        val handle = SavedStateHandle()
+        MiningReceiptStore(handle, "videoMining.receipt").save(receipt)
+        handle.remove<String>("videoMining.receipt.minedFormsLanguage")
+
+        assertEquals(
+            receipt.copy(minedFormsLanguage = ""),
+            MiningReceiptStore(handle, "videoMining.receipt").restore(),
+        )
     }
 
     @Test

@@ -703,6 +703,9 @@ class BridgeMiningRepositoryTest {
 
         val success = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Success
         assertEquals(RUN_ID, success.runId)
+        // The terminal's not-mined report and run language reach the finished state intact.
+        assertEquals(listOf(NotMinedGroup(NotMinedReason.KNOWN, listOf("犬"))), success.result.notMined)
+        assertEquals("ja", success.result.minedFormsLanguage)
         assertEquals(1, harness.inputOwner.closeCount.get())
         assertEquals(1, harness.foreground.lease.closeCount.get())
         assertEquals(listOf(RUN_ID), harness.anki.fallbackRuns)
@@ -2814,7 +2817,7 @@ class BridgeMiningRepositoryTest {
         val NO_ACTIVE_JOB =
             """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"no_active_job","message":"There is no active Python mining job","requestType":"job.cancel"}}"""
         val SUCCESS_TERMINAL =
-            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"episode.mkv","subtitleFile":"episode.srt","minedForms":[],"ankiWriteState":"no_note_write","failureIsTransient":false},"error":null}}"""
+            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"episode.mkv","subtitleFile":"episode.srt","minedForms":[],"minedFormsLanguage":"ja","ankiWriteState":"no_note_write","failureIsTransient":false,"notMined":[{"reason":"known","forms":["犬"]}]},"error":null}}"""
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
         const val TERMINAL_FAULT_ID = "f0123abcd"

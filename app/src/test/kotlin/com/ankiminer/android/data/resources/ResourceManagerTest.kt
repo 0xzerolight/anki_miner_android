@@ -985,7 +985,7 @@ class ResourceManagerTest {
             val harness = Harness(rootName = "manager-mined-chunk", initialUserCount = 2)
             val words = (0 until 256).map { "w$it" } + listOf("w0", "w255", "extra")
 
-            val result = harness.manager.removeMinedWords(words)
+            val result = harness.manager.removeMinedWords(words, "ja")
 
             assertTrue(result)
             val requests = harness.bridge.requestsOfType("resource.minedwords.remove")
@@ -1008,7 +1008,7 @@ class ResourceManagerTest {
             val harness = Harness(rootName = "manager-mined-busy", runtimeWorkCoordinator = coordinator)
             val lease = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
 
-            val result = harness.manager.removeMinedWords(listOf("word"))
+            val result = harness.manager.removeMinedWords(listOf("word"), "ja")
 
             assertFalse(result)
             assertTrue(harness.bridge.requestsOfType("resource.minedwords.remove").isEmpty())
@@ -1021,7 +1021,7 @@ class ResourceManagerTest {
         runTest {
             val harness = Harness(rootName = "manager-mined-not-ready", autoRecover = false)
 
-            val result = harness.manager.removeMinedWords(listOf("word"))
+            val result = harness.manager.removeMinedWords(listOf("word"), "ja")
 
             assertFalse(result)
             assertTrue(harness.bridge.requestsOfType("resource.minedwords.remove").isEmpty())
@@ -1037,7 +1037,7 @@ class ResourceManagerTest {
                     failMinedWordsRemoveOnce = true,
                 )
 
-            val result = harness.manager.removeMinedWords(listOf("w0", "w1"))
+            val result = harness.manager.removeMinedWords(listOf("w0", "w1"), "ja")
 
             assertFalse(result)
             assertNull(harness.manager.state.value.failure?.knownWordsOperation)

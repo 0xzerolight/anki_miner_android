@@ -2711,7 +2711,7 @@ class BridgeReadingMiningRepositoryTest {
         val NO_ACTIVE_JOB =
             """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"no_active_job","message":"There is no active Python mining job","requestType":"job.cancel"}}"""
         val SUCCESS_TERMINAL =
-            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"Novel.txt","minedForms":[],"ankiWriteState":"no_note_write","failureIsTransient":false},"error":null}}"""
+            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"Novel.txt","minedForms":[],"minedFormsLanguage":"ja","ankiWriteState":"no_note_write","failureIsTransient":false,"notMined":[{"reason":"known","forms":["犬"]}]},"error":null}}"""
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
         const val TERMINAL_FAULT_ID = "f0123abcd"

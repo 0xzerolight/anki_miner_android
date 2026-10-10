@@ -11,6 +11,8 @@ import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.NotMinedGroup
+import com.ankiminer.android.mining.NotMinedReason
 import com.ankiminer.android.mining.ProcessingResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -632,6 +634,77 @@ class SharedMiningContractsTest {
         val restored = draft.toCurationSessionState(previousPageSelectedCount = 0).draftFor(request)!!
 
         assertEquals(window, restored.clipOverrides["candidate-1"])
+    }
+
+    @Test
+    fun theNotMinedSectionCapsEachLineAndCountsEveryWordOnce() {
+        val known = (1..250).map { "known-%03d".format(it) }
+        val section =
+            NotMinedSection(
+                listOf(
+                    NotMinedGroup(NotMinedReason.KNOWN, known),
+                    // A word can sit under two reasons once items fold; the header counts it once.
+                    NotMinedGroup(NotMinedReason.I_PLUS_ONE, listOf("猫")),
+                    NotMinedGroup(NotMinedReason.SENTENCE_LENGTH, listOf("猫", "犬")),
+                ),
+            )
+
+        assertEquals(252, section.wordCount)
+        val lines = section.lines("")
+        assertEquals(listOf(NotMinedReason.KNOWN, NotMinedReason.I_PLUS_ONE, NotMinedReason.SENTENCE_LENGTH), lines.map { it.reason })
+        assertEquals(NotMinedLine(NotMinedReason.KNOWN, 250, known.take(MAX_RESULT_SUMMARY_ITEMS), 150), lines[0])
+        assertEquals(NotMinedLine(NotMinedReason.SENTENCE_LENGTH, 2, listOf("猫", "犬"), 0), lines[2])
+    }
+
+    @Test
+    fun theNotMinedSearchFindsAFormPastTheCapAndDropsGroupsWithoutAMatch() {
+        val known = (1..10_000).map { "word-%05d".format(it) }
+        val section =
+            NotMinedSection(
+                listOf(
+                    NotMinedGroup(NotMinedReason.KNOWN, known),
+                    NotMinedGroup(NotMinedReason.NO_DEFINITION, listOf("𠮟る")),
+                ),
+            )
+
+        assertEquals(
+            listOf(NotMinedLine(NotMinedReason.KNOWN, 1, listOf("word-09999"), 0)),
+            section.lines("  WORD-09999 "),
+        )
+        // Matches are capped like the full list: the line counts them all and lists the first 100.
+        val many = section.lines("word-09").single()
+        assertEquals(1_000, many.count)
+        assertEquals(known.filter { "word-09" in it }.take(MAX_RESULT_SUMMARY_ITEMS), many.forms)
+        assertEquals(900, many.hiddenCount)
+        assertEquals(listOf(NotMinedLine(NotMinedReason.NO_DEFINITION, 1, listOf("𠮟る"), 0)), section.lines("𠮟"))
+        assertEquals(emptyList<NotMinedLine>(), section.lines("missing"))
+    }
+
+    @Test
+    fun theNotMinedSearchMatchesCanonicallyEquivalentSpellings() {
+        // が precomposed in the report, typed decomposed (か + U+3099): NFC makes them one.
+        val section = NotMinedSection(listOf(NotMinedGroup(NotMinedReason.KNOWN, listOf("ながい", "Café"))))
+
+        assertEquals(listOf("ながい"), section.lines("\u304b\u3099").single().forms)
+        assertEquals(listOf("Café"), section.lines("CAFE\u0301").single().forms)
+    }
+
+    @Test
+    fun everyNotMinedReasonHasItsOwnLabel() {
+        val labels = NotMinedReason.entries.map { it.label() }
+
+        assertEquals(NotMinedReason.entries.size, labels.toSet().size)
+    }
+
+    @Test
+    fun notMinedDiagnosticsNameEachReasonWithItsCount() {
+        assertEquals(
+            listOf("not_mined_known=2", "not_mined_anki_failed=1"),
+            listOf(
+                NotMinedGroup(NotMinedReason.KNOWN, listOf("猫", "犬")),
+                NotMinedGroup(NotMinedReason.ANKI_FAILED, listOf("鳥")),
+            ).notMinedDiagnostics(),
+        )
     }
 
     /** A default sentence the engine merged one cue forward, an alternative merged one back, and one unmerged. */
