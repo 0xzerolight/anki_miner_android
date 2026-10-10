@@ -11,6 +11,7 @@ import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceDocumentWriter
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppliedSettingsBackup
+import com.ankiminer.android.data.settings.AnimatedScreenshotFormat
 import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
@@ -220,6 +221,9 @@ internal data class SettingsDraft(
     val animatedScreenshotDuration: String,
     val animatedScreenshotQuality: String,
     val animatedScreenshotMatchAudio: Boolean,
+    val animatedScreenshotFps: Int?,
+    val animatedScreenshotHeight: Int?,
+    val animatedScreenshotFormat: AnimatedScreenshotFormat?,
     val subtitleOffset: String,
     val bitrate: String,
     val maxDuration: String,
@@ -258,6 +262,7 @@ internal data class SettingsDraft(
     val audioPacks: List<ResourceChainSelection>,
     val enabledWordsets: List<String>,
     val readingTts: Boolean,
+    val autoUpdateDictionaries: Boolean,
 ) {
     val validation: Map<SettingsFieldKey, LocalizedStringResource>
         get() =
@@ -396,6 +401,11 @@ internal data class SettingsDraft(
                 AppSettingsDraftParser.optionalInt(animatedScreenshotQuality)
                     ?.takeUnless { it == EngineDefaults.ANIMATED_SCREENSHOT_QUALITY },
             animatedScreenshotMatchAudio = animatedScreenshotMatchAudio,
+            animatedScreenshotFps =
+                animatedScreenshotFps?.takeUnless { it == EngineDefaults.ANIMATED_SCREENSHOT_FPS },
+            animatedScreenshotHeight =
+                animatedScreenshotHeight?.takeUnless { it == EngineDefaults.ANIMATED_SCREENSHOT_HEIGHT },
+            animatedScreenshotFormat = animatedScreenshotFormat,
             subtitleOffsetSeconds =
                 AppSettingsDraftParser.optionalDouble(subtitleOffset)
                     ?.takeUnless { it == EngineDefaults.SUBTITLE_OFFSET_SECONDS },
@@ -450,6 +460,7 @@ internal data class SettingsDraft(
             audioPacks = audioPacks,
             enabledWordsets = enabledWordsets,
             readingTtsEnabled = readingTts,
+            autoUpdateDictionaries = autoUpdateDictionaries,
         )
 
     /**
@@ -617,6 +628,9 @@ internal data class SettingsDraft(
                         EngineDefaults.ANIMATED_SCREENSHOT_QUALITY,
                     ),
                 animatedScreenshotMatchAudio = settings.animatedScreenshotMatchAudio,
+                animatedScreenshotFps = settings.animatedScreenshotFps,
+                animatedScreenshotHeight = settings.animatedScreenshotHeight,
+                animatedScreenshotFormat = settings.animatedScreenshotFormat,
                 subtitleOffset =
                     inheritedText(
                         settings.subtitleOffsetSeconds,
@@ -675,6 +689,7 @@ internal data class SettingsDraft(
                 audioPacks = settings.audioPacks,
                 enabledWordsets = settings.enabledWordsets,
                 readingTts = settings.readingTtsEnabled,
+                autoUpdateDictionaries = settings.autoUpdateDictionaries,
             ).withInventory(resources, settings.language)
     }
 }
@@ -714,6 +729,20 @@ private fun SettingsDraft.rebaseChangesSince(
                 baseline.animatedScreenshotQuality,
                 animatedScreenshotQuality,
                 persisted.animatedScreenshotQuality,
+            ),
+        animatedScreenshotFps =
+            changedValue(baseline.animatedScreenshotFps, animatedScreenshotFps, persisted.animatedScreenshotFps),
+        animatedScreenshotHeight =
+            changedValue(
+                baseline.animatedScreenshotHeight,
+                animatedScreenshotHeight,
+                persisted.animatedScreenshotHeight,
+            ),
+        animatedScreenshotFormat =
+            changedValue(
+                baseline.animatedScreenshotFormat,
+                animatedScreenshotFormat,
+                persisted.animatedScreenshotFormat,
             ),
         subtitleOffset =
             changedValue(baseline.subtitleOffset, subtitleOffset, persisted.subtitleOffset),
@@ -814,6 +843,12 @@ private fun SettingsDraft.rebaseChangesSince(
                 persisted.enabledWordsets,
             ),
         readingTts = changedValue(baseline.readingTts, readingTts, persisted.readingTts),
+        autoUpdateDictionaries =
+            changedValue(
+                baseline.autoUpdateDictionaries,
+                autoUpdateDictionaries,
+                persisted.autoUpdateDictionaries,
+            ),
     )
 
 private fun <T> changedValue(

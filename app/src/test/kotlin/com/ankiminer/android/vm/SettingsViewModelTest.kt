@@ -17,6 +17,7 @@ import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.AnimatedScreenshotFormat
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
@@ -266,6 +267,46 @@ class SettingsViewModelTest {
 
             assertEquals(1, repository.writeCount)
             assertEquals(toggled, repository.current.dynamicColorEnabled)
+        }
+
+    @Test
+    fun theV38SettingsPersistFromTheDraftAndDesktopDefaultsStayUnset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+            val draft = viewModel.draftState.value.draft
+            assertTrue(draft.autoUpdateDictionaries)
+            assertNull(draft.animatedScreenshotFps)
+            assertNull(draft.animatedScreenshotFormat)
+
+            viewModel.updateDraft(
+                draft.copy(
+                    autoUpdateDictionaries = false,
+                    animatedScreenshotFps = 12,
+                    animatedScreenshotHeight = 480,
+                    animatedScreenshotFormat = AnimatedScreenshotFormat.WEBP,
+                ),
+            )
+            runCurrent()
+
+            assertFalse(repository.current.autoUpdateDictionaries)
+            assertEquals(12, repository.current.animatedScreenshotFps)
+            assertEquals(480, repository.current.animatedScreenshotHeight)
+            assertEquals(AnimatedScreenshotFormat.WEBP, repository.current.animatedScreenshotFormat)
+
+            // Desktop's Balanced size is the engine default, so choosing it stores nothing and a
+            // re-pinned default keeps flowing through.
+            viewModel.updateDraft(
+                viewModel.draftState.value.draft.copy(
+                    animatedScreenshotFps = EngineDefaults.ANIMATED_SCREENSHOT_FPS,
+                    animatedScreenshotHeight = EngineDefaults.ANIMATED_SCREENSHOT_HEIGHT,
+                ),
+            )
+            runCurrent()
+
+            assertNull(repository.current.animatedScreenshotFps)
+            assertNull(repository.current.animatedScreenshotHeight)
         }
 
     @Test

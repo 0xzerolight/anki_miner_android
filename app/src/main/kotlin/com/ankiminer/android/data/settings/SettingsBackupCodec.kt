@@ -115,6 +115,7 @@ internal object SettingsBackupCodec {
             "deduplicate_sentences",
             "use_i_plus_one",
             "reading_tts_enabled",
+            "auto_update_dictionaries",
             "frequency_keep_unranked",
             "known_words_match_kana_variants",
             "reading_tone_color",
@@ -129,6 +130,8 @@ internal object SettingsBackupCodec {
     private val intKeyNames =
         setOf(
             "screenshot_animated_quality",
+            "screenshot_animated_fps",
+            "screenshot_animated_height",
             "audio_bitrate_kbps",
             "max_sentence_characters",
             "reading_minimum_occurrence",
@@ -159,6 +162,7 @@ internal object SettingsBackupCodec {
             "card_type_marker_field",
             "tags",
             "audio_format",
+            "screenshot_animated_format",
             "subtitle_regex_filter",
             "subtitle_regex_replacement",
             "script_variant",

@@ -35,6 +35,10 @@ internal object EngineDefaults {
     const val ANIMATED_SCREENSHOT_DURATION_SECONDS: Double = 2.0
     const val ANIMATED_SCREENSHOT_QUALITY: Int = 30
 
+    /** Desktop's Balanced size: the engine default an unset frame rate and height inherit. */
+    const val ANIMATED_SCREENSHOT_FPS: Int = 20
+    const val ANIMATED_SCREENSHOT_HEIGHT: Int = 720
+
     // Subtitle text handling.
     const val SUBTITLE_REGEX_FILTER: String = ""
     const val SUBTITLE_REGEX_REPLACEMENT: String = ""

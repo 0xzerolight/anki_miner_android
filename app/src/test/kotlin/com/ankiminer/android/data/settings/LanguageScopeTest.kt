@@ -446,6 +446,9 @@ class LanguageScopeTest {
                 "animatedScreenshotDurationSeconds" to listOf(null, 3.0),
                 "animatedScreenshotQuality" to listOf(null, 50),
                 "animatedScreenshotMatchAudio" to listOf(true, false),
+                "animatedScreenshotFps" to listOf(null, 12),
+                "animatedScreenshotHeight" to listOf(null, 480),
+                "animatedScreenshotFormat" to listOf(null, AnimatedScreenshotFormat.WEBP),
                 "subtitleRegexFilter" to listOf(null, "x+"),
                 "subtitleRegexReplacement" to listOf(null, "y"),
                 "useSubtitleRegexFilter" to BOOLEANS,
@@ -481,6 +484,7 @@ class LanguageScopeTest {
                     listOf(emptyList<ResourceChainSelection>(), listOf(selection("pack-b"), selection("pack-a", false))),
                 "enabledWordsets" to listOf(emptyList<String>(), listOf("place-names")),
                 "readingTtsEnabled" to listOf(true, false),
+                "autoUpdateDictionaries" to listOf(false, true),
                 "language" to listOf("he"),
                 "languageStash" to listOf(mapOf("he" to mapOf<String, Any?>("deck_name" to "Hebrew"))),
             )

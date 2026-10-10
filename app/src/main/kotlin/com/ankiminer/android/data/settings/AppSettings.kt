@@ -15,6 +15,11 @@ enum class AudioFormat(val wireValue: String) {
     OPUS("opus"),
 }
 
+enum class AnimatedScreenshotFormat(val wireValue: String) {
+    AVIF("avif"),
+    WEBP("webp"),
+}
+
 /**
  * JP Mining Note card modes. The engine stamps `"x"` into the field mapped for the active mode, and
  * the note type's own templates render that as the card type.
@@ -101,10 +106,6 @@ data class AppSettings(
     /**
      * Animated screenshots: the card's Picture field gets a short looping clip instead of a single
      * frame. Off by default — it is materially slower to mine and the media is far larger.
-     *
-     * The output format is not a setting: the engine downgrades AVIF to WebP when the AV1 encoder is
-     * missing, and [EngineSettingsSnapshotMapper] downgrades it again when the device's MIME table
-     * cannot name a `.avif` file.
      */
     val animatedScreenshotsEnabled: Boolean = false,
     val animatedScreenshotDurationSeconds: Double? = null,
@@ -116,6 +117,18 @@ data class AppSettings(
      * the same answer desktop's media panel gives.
      */
     val animatedScreenshotMatchAudio: Boolean = false,
+    /**
+     * Desktop's animated Size, set as a pair with [animatedScreenshotQuality]. Null inherits
+     * [EngineDefaults.ANIMATED_SCREENSHOT_FPS] and [EngineDefaults.ANIMATED_SCREENSHOT_HEIGHT].
+     */
+    val animatedScreenshotFps: Int? = null,
+    val animatedScreenshotHeight: Int? = null,
+    /**
+     * Null keeps the choice made before this was a setting: AVIF wherever the device can name it.
+     * The engine downgrades AVIF to WebP when the AV1 encoder is missing, and
+     * [EngineSettingsSnapshotMapper] does too when the device's MIME table cannot name a `.avif`.
+     */
+    val animatedScreenshotFormat: AnimatedScreenshotFormat? = null,
     /** Python `re` pattern removed from subtitle text before mining. See [SubtitleRegexCheck]. */
     val subtitleRegexFilter: String? = null,
     /** Inserted in place of each match. Python backreferences (`\1`), not `$1`. */
@@ -176,6 +189,12 @@ data class AppSettings(
     /** Bundled proper-noun rejection sets enabled for mining. Wire name stays excluded_wordsets. */
     val enabledWordsets: List<String> = DEFAULT_ENABLED_WORDSETS,
     val readingTtsEnabled: Boolean = false,
+    /**
+     * Desktop `auto_update_dictionaries`: a weekly check of each installed dictionary, frequency
+     * and pitch source's publisher for a newer revision. Portable and global, and never on the
+     * engine snapshot: Android runs the check itself.
+     */
+    val autoUpdateDictionaries: Boolean = true,
     /** The mining language's registry code; the settings in [LanguageScope.SETTINGS] are its own. */
     val language: String = LanguageScope.JAPANESE,
     /**
@@ -198,6 +217,9 @@ data class AppSettings(
             animatedScreenshotDurationSeconds = null,
             animatedScreenshotQuality = null,
             animatedScreenshotMatchAudio = false,
+            animatedScreenshotFps = null,
+            animatedScreenshotHeight = null,
+            animatedScreenshotFormat = null,
             subtitleRegexFilter = null,
             subtitleRegexReplacement = null,
             useSubtitleRegexFilter = null,
@@ -403,6 +425,10 @@ object AppSettingsValidator {
             nonNegative("Screenshot offset", it.screenshotOffsetSeconds)
             finite("Subtitle offset", it.subtitleOffsetSeconds)
             positive("Audio bitrate", it.audioBitrateKbps)
+            // Desktop's Size presets are the only values the UI offers; this guards what a backup or
+            // a corrupt store could carry, so it holds whether or not the feature is on.
+            positive("Animated screenshot frame rate", it.animatedScreenshotFps)
+            positive("Animated screenshot height", it.animatedScreenshotHeight)
             nonNegative("Maximum sentence duration", it.maxSentenceDurationSeconds)
             nonNegative("Maximum sentence characters", it.maxSentenceCharacters)
             positive("Reading minimum occurrence", it.readingMinimumOccurrence)
@@ -905,11 +931,11 @@ internal object EngineSettingsSnapshotMapper {
             }
         values["expression_audio_chain"] = BridgeJsonValue.ArrayValue(expressionAudioChain + deviceVoice)
         // Emitted unconditionally so the key set does not depend on user settings; the tuning is
-        // emitted only when the feature is on, because the bridge pins fps/height and would reject
-        // a stray value anyway.
+        // emitted only when the feature is on, since nothing reads it otherwise.
         values["screenshot_animated"] = bool(settings.animatedScreenshotsEnabled)
         if (settings.animatedScreenshotsEnabled) {
-            values["screenshot_animated_format"] = text(if (avifNameable) "avif" else "webp")
+            val avif = avifNameable && settings.animatedScreenshotFormat != AnimatedScreenshotFormat.WEBP
+            values["screenshot_animated_format"] = text(if (avif) "avif" else "webp")
             values["screenshot_animated_match_audio"] = bool(settings.animatedScreenshotMatchAudio)
             // Match-audio computes the clip window from the subtitle and the audio padding, so the
             // engine never reads the configured length. Omit it rather than emit a value this run
@@ -922,6 +948,9 @@ internal object EngineSettingsSnapshotMapper {
             settings.animatedScreenshotQuality?.let {
                 values["screenshot_animated_quality"] = integer(it)
             }
+            // Unset leaves the bridge's base config at the desktop default.
+            settings.animatedScreenshotFps?.let { values["screenshot_animated_fps"] = integer(it) }
+            settings.animatedScreenshotHeight?.let { values["screenshot_animated_height"] = integer(it) }
         }
         return MiningConfigSnapshot(
             settings = values,

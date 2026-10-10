@@ -721,6 +721,66 @@ class AppSettingsTest {
     }
 
     @Test
+    fun theUsersAnimatedFormatIsDowngradedOnlyWhereAvifCannotBeNamed() {
+        fun formatFor(
+            chosen: AnimatedScreenshotFormat?,
+            avifNameable: Boolean,
+        ) = EngineSettingsSnapshotMapper.map(
+            AppSettings(animatedScreenshotsEnabled = true, animatedScreenshotFormat = chosen),
+            emptyList(),
+            avifNameable = avifNameable,
+        ).settings["screenshot_animated_format"]
+
+        assertEquals(BridgeJsonValue.Text("avif"), formatFor(AnimatedScreenshotFormat.AVIF, avifNameable = true))
+        assertEquals(BridgeJsonValue.Text("webp"), formatFor(AnimatedScreenshotFormat.AVIF, avifNameable = false))
+        assertEquals(BridgeJsonValue.Text("webp"), formatFor(AnimatedScreenshotFormat.WEBP, avifNameable = true))
+        assertEquals(BridgeJsonValue.Text("webp"), formatFor(AnimatedScreenshotFormat.WEBP, avifNameable = false))
+        // Unset keeps the pre-setting behaviour: AVIF wherever the device can name it.
+        assertEquals(BridgeJsonValue.Text("avif"), formatFor(null, avifNameable = true))
+    }
+
+    @Test
+    fun animatedSizeIsEmittedOnlyWhenSetAndNeverReachesTheSnapshotWhileOff() {
+        val sized =
+            AppSettings(
+                animatedScreenshotsEnabled = true,
+                animatedScreenshotFps = 12,
+                animatedScreenshotHeight = 480,
+            )
+
+        val on = EngineSettingsSnapshotMapper.map(sized, emptyList()).settings
+        val unset = EngineSettingsSnapshotMapper.map(AppSettings(animatedScreenshotsEnabled = true), emptyList()).settings
+        val off = EngineSettingsSnapshotMapper.map(sized.copy(animatedScreenshotsEnabled = false), emptyList()).settings
+
+        assertEquals(BridgeJsonValue.Integer(12L), on["screenshot_animated_fps"])
+        assertEquals(BridgeJsonValue.Integer(480L), on["screenshot_animated_height"])
+        // Unset leaves the bridge's base config at desktop's 20 fps, 720 px.
+        assertFalse("screenshot_animated_fps" in unset)
+        assertFalse("screenshot_animated_height" in unset)
+        assertFalse("screenshot_animated_fps" in off)
+        assertFalse("screenshot_animated_height" in off)
+    }
+
+    @Test
+    fun dictionaryUpdatesNeverReachTheEngineSnapshot() {
+        val settings =
+            EngineSettingsSnapshotMapper.map(AppSettings(autoUpdateDictionaries = false), emptyList()).settings
+
+        assertFalse("auto_update_dictionaries" in settings)
+    }
+
+    @Test
+    fun aNonPositiveAnimatedSizeIsRefused() {
+        listOf(
+            AppSettings(animatedScreenshotFps = 0),
+            AppSettings(animatedScreenshotHeight = 0),
+            AppSettings(animatedScreenshotFps = -12),
+        ).forEach { invalid ->
+            assertThrows(InvalidAppSettingException::class.java) { AppSettingsValidator.validate(invalid) }
+        }
+    }
+
+    @Test
     fun animatedScreenshotTuningIsOmittedWhenTheFeatureIsOff() {
         val settings = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList()).settings
 

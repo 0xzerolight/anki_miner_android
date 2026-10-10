@@ -28,6 +28,9 @@ class SettingsBackupCodecTest {
             animatedScreenshotsEnabled = true,
             animatedScreenshotDurationSeconds = 2.0,
             animatedScreenshotQuality = 60,
+            animatedScreenshotFps = 24,
+            animatedScreenshotHeight = 1080,
+            animatedScreenshotFormat = AnimatedScreenshotFormat.WEBP,
             subtitleRegexFilter = "\\(.*?\\)",
             subtitleRegexReplacement = "",
             useSubtitleRegexFilter = true,
@@ -57,6 +60,7 @@ class SettingsBackupCodecTest {
             audioPacks = listOf(ResourceChainSelection("nhk16", enabled = true)),
             enabledWordsets = listOf("surnames"),
             readingTtsEnabled = true,
+            autoUpdateDictionaries = false,
         )
 
     @Test
@@ -405,6 +409,42 @@ class SettingsBackupCodecTest {
             assertEquals(stored, emptyList<String>(), applied.rejectedKeys)
             assertEquals(stored, "Mining", applied.settings.deckName)
         }
+    }
+
+    @Test
+    fun `a v5 backup from before the v3_8 settings leaves them at their defaults`() {
+        // No fps, height or format: the animated size reads Balanced (desktop's 20 fps, 720 px)
+        // and the format keeps the device's own choice; dictionary updates stay on.
+        val json =
+            """{"ankiMinerAndroidSettings":5,"appVersion":"1.1.0","schemaVersion":3,""" +
+                """"settings":{"screenshot_animated_enabled":true,"screenshot_animated_quality":30,""" +
+                """"mining_language":"ja","dictionary_sources_v1":null,"frequency_sources_v1":null,""" +
+                """"pitch_sources_v1":null,"audio_packs_v1":null},""" +
+                """"resourceChains":{"dictionary_sources_v1":[],"frequency_sources_v1":[],""" +
+                """"pitch_sources_v1":[],"audio_packs_v1":[]}}"""
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(AppSettings(), ResourceManagerState()) }
+
+        assertEquals(emptyList<String>(), applied.ignoredKeys)
+        assertEquals(emptyList<String>(), applied.rejectedKeys)
+        assertTrue(applied.settings.animatedScreenshotsEnabled)
+        assertEquals(null, applied.settings.animatedScreenshotFps)
+        assertEquals(null, applied.settings.animatedScreenshotHeight)
+        assertEquals(null, applied.settings.animatedScreenshotFormat)
+        assertTrue(applied.settings.autoUpdateDictionaries)
+    }
+
+    @Test
+    fun `a non-positive animated size in a backup is rejected, not applied`() {
+        val json =
+            """{"ankiMinerAndroidSettings":2,"appVersion":"9.9.9","schemaVersion":3,""" +
+                """"settings":{"screenshot_animated_fps":0,"screenshot_animated_height":480}}"""
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(AppSettings()) }
+
+        assertEquals(listOf("screenshot_animated_fps"), applied.rejectedKeys)
+        assertEquals(null, applied.settings.animatedScreenshotFps)
+        assertEquals(480, applied.settings.animatedScreenshotHeight)
     }
 
     @Test
