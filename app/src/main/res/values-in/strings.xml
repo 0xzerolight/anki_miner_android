@@ -417,7 +417,7 @@
     <string name="disclosure_collapsed">Diciutkan</string>
     <string name="settings_disclosure_summary">%1$s (%2$d dari %3$d)</string>
     <string name="anki_field_mapping_remap">Isi otomatis</string>
-    <string name="anki_field_mapping_remap_help">Mencocokkan nama bidang tipe catatan ini dan mengisi setiap pemetaan yang dikenali. Lapis, Kiku, Senren, dan Anki Miner Note dikenali dan diisi sepenuhnya.</string>
+    <string name="anki_field_mapping_remap_help">Mencocokkan nama bidang tipe catatan ini dan mengisi setiap pemetaan yang dikenali. Anki Miner Note dikenali dan diisi sepenuhnya di bahasa mining apa pun; Lapis, Kiku, dan Senren hanya jika bahasa mining adalah bahasa Jepang.</string>
     <string name="anki_field_fill_done">Bidang yang terisi otomatis: %1$d</string>
     <string name="anki_field_fill_none">Tidak ada bidang yang dapat diisi otomatis</string>
     <string name="wizard_note_type_get_anki_miner_note_help">Belum punya tipe catatan untuk kartu Anda? Anki Miner Note gratis dan bisa dipakai untuk semua bahasa. Unduh berkas .apkg-nya, lalu buka dengan AnkiDroid untuk mengimpornya.</string>

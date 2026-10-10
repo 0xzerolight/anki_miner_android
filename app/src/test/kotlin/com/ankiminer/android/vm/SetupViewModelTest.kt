@@ -925,6 +925,42 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `a settings note type pick drops a pending fill so its late answer cannot clobber the pick`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(
+                        noteType = "Old",
+                        fieldMap = linkedMapOf("word" to "Old Front", "source" to "Old Source"),
+                    ),
+                )
+            val setup =
+                FakeAnkiSetupManager(
+                    listOf(model("Old", "Old Front", "Old Source"), model("New", "Expression", "Sentence")),
+                )
+            val pending = CompletableDeferred<Result<NoteTypeFill>>()
+            val viewModel = viewModel(repository, setup, noteTypeFillSource = { _, _ -> pending.await() })
+            advanceUntilIdle()
+
+            viewModel.fillFieldsAutomatically()
+            advanceUntilIdle()
+            viewModel.selectNoteType("New")
+            advanceUntilIdle()
+            pending.complete(Result.success(lapisFill().copy(preset = null)))
+            advanceUntilIdle()
+
+            assertEquals("New", repository.current.noteType)
+            assertEquals("Expression", repository.current.fieldMap["word"])
+            assertEquals(1, repository.writeCount)
+            assertEquals(
+                listOf("word", "source"),
+                viewModel.uiState.value.fieldMapChanges.map { it.logicalKey },
+            )
+            // A count of 0 is what shows "No fields could be filled automatically".
+            assertNull(viewModel.uiState.value.fieldFillCount)
+        }
+
+    @Test
     fun `the wizard's note type pick takes a recognised preset while a settings pick stays keyword only`() =
         runTest(mainDispatcherRule.dispatcher) {
             var asked = 0

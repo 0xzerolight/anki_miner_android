@@ -368,12 +368,12 @@ internal class SetupViewModel(
         val state = currentState()
         if (state.busy || state.noteType == name) return
         val fields = state.availableNoteTypes.firstOrNull { it.name == name }?.fieldNames ?: return
+        // The latest pick wins: a fill still waiting on the bridge is dropped, never applied after it.
+        fillJob?.cancel()
         if (!fillAutomatically) {
             persistNoteTypeSelection(name, fields, state, preset = null)
             return
         }
-        // The latest pick wins: one still waiting on the bridge is dropped, never applied after it.
-        fillJob?.cancel()
         fillJob =
             viewModelScope.launch {
                 persistNoteTypeSelection(name, fields, state, recognisedPreset(fields, state.language))

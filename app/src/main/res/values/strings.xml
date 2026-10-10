@@ -432,7 +432,7 @@
     <string name="disclosure_collapsed">Collapsed</string>
     <string name="settings_disclosure_summary">%1$s (%2$d of %3$d)</string>
     <string name="anki_field_mapping_remap">Fill in automatically</string>
-    <string name="anki_field_mapping_remap_help">Matches this note type\'s field names and fills every mapping it recognises. Lapis, Kiku, Senren and Anki Miner Note are recognised and filled completely.</string>
+    <string name="anki_field_mapping_remap_help">Matches this note type\'s field names and fills every mapping it recognises. Anki Miner Note is recognised and filled completely in any mining language; Lapis, Kiku and Senren only when the mining language is Japanese.</string>
     <string name="anki_field_fill_done">Fields filled automatically: %1$d</string>
     <string name="anki_field_fill_none">No fields could be filled automatically</string>
     <string name="wizard_note_type_get_anki_miner_note_help">Don\'t have a note type for your cards yet? Anki Miner Note is free and works for every language. Download its .apkg file, then open it with AnkiDroid to import it.</string>

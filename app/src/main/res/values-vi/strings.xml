@@ -417,7 +417,7 @@
     <string name="disclosure_collapsed">Đã thu gọn</string>
     <string name="settings_disclosure_summary">%1$s (%2$d trên %3$d)</string>
     <string name="anki_field_mapping_remap">Tự động điền</string>
-    <string name="anki_field_mapping_remap_help">Đối chiếu tên trường của loại ghi chú này và điền mọi ánh xạ nhận ra được. Lapis, Kiku, Senren và Anki Miner Note được nhận ra và điền đầy đủ.</string>
+    <string name="anki_field_mapping_remap_help">Đối chiếu tên trường của loại ghi chú này và điền mọi ánh xạ nhận ra được. Anki Miner Note được nhận ra và điền đầy đủ với mọi ngôn ngữ khai thác; Lapis, Kiku và Senren chỉ khi ngôn ngữ khai thác là tiếng Nhật.</string>
     <string name="anki_field_fill_done">Các trường được tự động điền: %1$d</string>
     <string name="anki_field_fill_none">Không trường nào được tự động điền</string>
     <string name="wizard_note_type_get_anki_miner_note_help">Chưa có loại ghi chú cho thẻ của bạn? Anki Miner Note miễn phí và dùng được cho mọi ngôn ngữ. Hãy tải tệp .apkg về, rồi mở bằng AnkiDroid để nhập.</string>
