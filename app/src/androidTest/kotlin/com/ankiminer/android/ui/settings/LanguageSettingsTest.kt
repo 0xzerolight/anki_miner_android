@@ -134,30 +134,14 @@ class LanguageSettingsTest {
         }
     }
 
+    /** Desktop lists each language by its native name alone; search still finds the English one. */
     @Test
-    fun theToneColourToggleIsHiddenForJapaneseAndShownForATonalLanguage() {
-        val tonal = profile("zh", "中文", "Chinese", capabilities = setOf("tone_color"))
-        var state by mutableStateOf(LanguageSettingsState(activeCode = "ja", profiles = listOf(japanese, tonal)))
-        composeRule.setContent {
-            val recorder = remember { SettingsCardIndexRecorder() }
-            AnkiMinerTheme {
-                LazyColumn(Modifier.testTag(SettingsCategoryTestTags.LIST)) {
-                    languageSettings(
-                        state,
-                        SettingsDraft.from(AppSettings(), ResourceManagerState()),
-                        recorder,
-                        {},
-                        LanguageSettingsActions(),
-                    )
-                }
-            }
-        }
-        composeRule.onNodeWithTag(LanguageSettingsTestTags.TONE_COLOR).assertDoesNotExist()
+    fun languagesAreListedByTheirNativeNameAlone() {
+        setLanguageTab(LanguageSettingsState(profiles = listOf(japanese, hebrew)))
 
-        composeRule.runOnIdle { state = state.copy(activeCode = "zh") }
-
-        scrollTo(LanguageSettingsTestTags.TONE_COLOR)
-        composeRule.onNodeWithTag(LanguageSettingsTestTags.TONE_COLOR).assertIsDisplayed()
+        scrollTo(LanguageSettingsTestTags.option("he"))
+        composeRule.onNodeWithText("עברית").assertIsDisplayed()
+        composeRule.onNodeWithText("Hebrew").assertDoesNotExist()
     }
 
     @Test

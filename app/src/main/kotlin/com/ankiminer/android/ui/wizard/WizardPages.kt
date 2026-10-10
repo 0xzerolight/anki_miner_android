@@ -23,6 +23,7 @@ import com.ankiminer.android.ui.settings.AnkiDroidConnectActions
 import com.ankiminer.android.ui.settings.AnkiOperationCard
 import com.ankiminer.android.ui.settings.InlineFailureContainer
 import com.ankiminer.android.ui.settings.LanguageSettingsState
+import com.ankiminer.android.ui.settings.bidiIsolated
 import com.ankiminer.android.ui.settings.RecommendedResourcesCard
 import com.ankiminer.android.ui.settings.SettingsDropdown
 import com.ankiminer.android.ui.settings.SystemStatusCard
@@ -47,7 +48,7 @@ internal fun WizardLanguagePage(
     onSkip: () -> Unit,
     skipEnabled: Boolean,
 ) {
-    val choices = wizardLanguageChoices(language.profiles, currentUiLocale(), state.language)
+    val choices = wizardLanguageChoices(language.profiles, state.language)
     val switchAllowed =
         LanguageSettingsState(
             activeCode = state.language,
@@ -60,7 +61,8 @@ internal fun WizardLanguagePage(
         choices.associate { choice ->
             choice.code to
                 if (choice.needsDownload) {
-                    stringResource(R.string.wizard_language_option_download, choice.label)
+                    // Isolated: an Arabic name would otherwise turn the whole line right to left.
+                    stringResource(R.string.wizard_language_option_download, bidiIsolated(choice.label))
                 } else {
                     choice.label
                 }
@@ -82,7 +84,7 @@ internal fun WizardLanguagePage(
         Text(
             stringResource(
                 R.string.wizard_language_download_note,
-                choice.label,
+                bidiIsolated(choice.label),
                 Formatter.formatShortFileSize(LocalContext.current, language.downloadBytes(choice.code)),
             ),
         )

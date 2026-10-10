@@ -51,14 +51,17 @@ import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.InstalledWordList
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
+import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceProgressUnit
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.vm.PendingResourceDelete
+import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -337,7 +340,7 @@ class SettingsComponentsTest {
     fun busyAnkiCardTypeOptionsAreDisabled() {
         setBusyAnkiTarget()
 
-        dropdown("Card type", "Not mapped").performClick()
+        dropdown("Default card type", "Not mapped").performClick()
 
         composeRule.onNodeWithText("Word and sentence").assertIsNotEnabled()
     }
@@ -350,6 +353,8 @@ class SettingsComponentsTest {
             markerField = "Marker",
         )
 
+        // A chosen marker sits behind desktop's "Customize marker field names" disclosure.
+        composeRule.onNodeWithText("Customise marker field names").performClick()
         dropdown("Marker field", "Marker").performClick()
 
         composeRule.onNodeWithText("Reading").assertIsNotEnabled()
@@ -522,6 +527,46 @@ class SettingsComponentsTest {
         }
 
         composeRule.onNodeWithText("Definition").assertExists()
+    }
+
+    /** Desktop moved "Colour the reading by tone" beside the reading rows it colours. */
+    @Test
+    fun theToneColourToggleFollowsTheReadingRowsOnlyForATonalLanguage() {
+        var tonal by mutableStateOf(false)
+        composeRule.setContent {
+            AnkiMinerTheme {
+                AnkiTargetCard(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            anki = AnkiProviderReadiness.Ready(apiSpecVersion = 7, versionCode = 1L),
+                            availableNoteTypes = listOf(ModelSummary(id = 1L, name = "Basic", fieldNames = listOf("Front", "Back"))),
+                            noteType = "Basic",
+                            fieldMap = mapOf("word" to "Front"),
+                        ),
+                    onSelectNoteType = {},
+                    onSetFieldMapping = { _, _ -> },
+                    onSelectCardType = {},
+                    onSelectCardTypeMarker = {},
+                    onFillFieldsAutomatically = {},
+                    mappingExpanded = true,
+                    fieldRowExtras = { key ->
+                        AnkiFieldRowSettings(
+                            key = key,
+                            draft = SettingsDraft.from(AppSettings(), ResourceManagerState()),
+                            onDraftChange = {},
+                            showsToneColor = tonal,
+                            showsPitch = false,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.TONE_COLOR).assertDoesNotExist()
+        composeRule.runOnIdle { tonal = true }
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.TONE_COLOR).assertExists()
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.PITCH_FORMAT).assertDoesNotExist()
     }
 
     private fun setBusyAnkiTarget(

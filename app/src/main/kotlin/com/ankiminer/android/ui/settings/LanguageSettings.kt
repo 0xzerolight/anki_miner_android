@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -42,14 +43,12 @@ import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.vm.SettingsDraft
-import java.text.Collator
 import java.util.Locale
 
 internal object LanguageSettingsTestTags {
     const val PICKER = "language-picker"
     const val CHOOSE_NOTE_TYPE = "language-choose-note-type"
     const val SCRIPT_VARIANT = "language-script-variant"
-    const val TONE_COLOR = "language-tone-color"
     const val SWITCH_BLOCKED = "language-switch-blocked"
 
     fun option(code: String) = "language-option-$code"
@@ -62,7 +61,6 @@ internal object LanguageSettingsTestTags {
 /** Card keys of the Language tab, in emission order. */
 internal const val MINING_LANGUAGE_KEY = "mining-language"
 internal const val LANGUAGE_VARIANT_KEY = "language-variant"
-internal const val LANGUAGE_TONE_COLOR_KEY = "language-tone-color"
 
 /** Everything the Language tab and the language-dependent cards on other tabs read. */
 internal data class LanguageSettingsState(
@@ -99,6 +97,13 @@ internal data class LanguageSettingsState(
     val showsNameWordsets: Boolean
         get() = hasCapability(NAME_WORDSETS_CAPABILITY)
 
+    /**
+     * Korean's hangul-only and hanja-containing filters (desktop `hangul_filters`). They write the
+     * same two booleans as the kana filters, so a language never shows both.
+     */
+    val showsHangulFilters: Boolean
+        get() = activeProfile?.let { HANGUL_FILTERS_CAPABILITY in it.capabilities } == true
+
     /** Before the profiles load only Japanese is known to have its capabilities. */
     private fun hasCapability(capability: String): Boolean =
         activeProfile?.let { capability in it.capabilities } ?: (activeCode == LanguageScope.JAPANESE)
@@ -115,6 +120,7 @@ internal data class LanguageSettingsState(
         const val TONE_COLOR_CAPABILITY = "tone_color"
         const val KANA_FILTERS_CAPABILITY = "kana_filters"
         const val NAME_WORDSETS_CAPABILITY = "name_wordsets"
+        const val HANGUL_FILTERS_CAPABILITY = "hangul_filters"
     }
 }
 
@@ -155,22 +161,17 @@ internal fun languageDisplayName(
 }
 
 /**
- * The picker's order: by the name the user reads, in their own collation.
+ * The picker's order: desktop's, by native name ([nativeLanguageOrder]), the same in every
+ * interface language.
  *
  * Before `language.profiles` answers, or when it failed, only [activeCode] is known: it is listed
  * alone, under its locale names, and stays selected.
  */
 internal fun orderedLanguageChoices(
     profiles: List<LanguageProfileInfo>,
-    uiLocale: Locale,
     activeCode: String,
-): List<LanguageProfileInfo> {
-    if (profiles.isEmpty()) return listOf(activeLanguageOnly(activeCode))
-    val collator = Collator.getInstance(uiLocale)
-    return profiles.sortedWith { left, right ->
-        collator.compare(languageDisplayName(left, uiLocale), languageDisplayName(right, uiLocale))
-    }
-}
+): List<LanguageProfileInfo> =
+    if (profiles.isEmpty()) listOf(activeLanguageOnly(activeCode)) else nativeLanguageOrder(profiles)
 
 private fun activeLanguageOnly(code: String): LanguageProfileInfo {
     val locale = Locale.forLanguageTag(code)
@@ -319,10 +320,10 @@ internal fun currentUiLocale(): Locale =
     LocalConfiguration.current.locales[0]
 
 /**
- * The Language tab: the mining-language picker, then the language's own variant and tone-colour
- * settings when its profile has them. Mirrors desktop's Mining Language panel: a language that
- * needs its data offers "Download and switch" instead of a switch; one this build cannot mine says
- * why and offers nothing.
+ * The Language tab: the mining-language picker, then the language's own variant setting when its
+ * profile has one. Mirrors desktop's Mining Language panel: a language that needs its data offers
+ * "Download and switch" instead of a switch; one this build cannot mine says why and offers
+ * nothing. Tone colouring moved to the Anki tab's field map, beside the readings it colours.
  *
  * Internal rather than private so the instrumented tests compose the real cards.
  */
@@ -384,17 +385,6 @@ internal fun LazyListScope.languageSettings(
             }
         }
     }
-    if (language.showsToneColor) {
-        settingsCard(SettingsCategory.LANGUAGE, recorder, LANGUAGE_TONE_COLOR_KEY) {
-            Column(Modifier.testTag(LanguageSettingsTestTags.TONE_COLOR)) {
-                NullableToggle(
-                    stringResource(R.string.settings_reading_tone_color),
-                    draft.readingToneColor,
-                    false,
-                ) { onDraftChange(draft.copy(readingToneColor = it)) }
-            }
-        }
-    }
 }
 
 private val REGIONAL_VARIANTS = setOf("br", "pt")
@@ -414,8 +404,7 @@ private fun MiningLanguagePicker(
     language: LanguageSettingsState,
     actions: LanguageSettingsActions,
 ) {
-    val uiLocale = currentUiLocale()
-    val profiles = orderedLanguageChoices(language.profiles, uiLocale, language.activeCode)
+    val profiles = orderedLanguageChoices(language.profiles, language.activeCode)
     Column(
         modifier =
             Modifier
@@ -425,7 +414,7 @@ private fun MiningLanguagePicker(
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
     ) {
         profiles.forEach { profile ->
-            LanguageOption(profile, language, uiLocale, actions)
+            LanguageOption(profile, language, actions)
         }
     }
 }
@@ -434,7 +423,6 @@ private fun MiningLanguagePicker(
 private fun LanguageOption(
     profile: LanguageProfileInfo,
     language: LanguageSettingsState,
-    uiLocale: Locale,
     actions: LanguageSettingsActions,
 ) {
     val code = profile.code
@@ -458,21 +446,14 @@ private fun LanguageOption(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             RadioButton(selected = selected, onClick = null, enabled = selected || selectable)
-            Column(Modifier.weight(1f)) {
-                Text(languageDisplayName(profile, uiLocale))
-                // The native name is the one a learner of the language looks for; it is laid out in
-                // its own direction (עברית, العربية) rather than the interface's.
-                if (profile.displayName != languageDisplayName(profile, uiLocale)) {
-                    Text(
-                        profile.displayName,
-                        style =
-                            MaterialTheme.typography.bodySmall.copy(
-                                textDirection = TextDirection.Content,
-                            ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            // The native name alone, as desktop lists it (日本語, not "日本語 — Japanese"), laid out
+            // in its own direction (עברית, العربية) rather than the interface's. Search still finds
+            // the list by the English name.
+            Text(
+                profile.displayName,
+                modifier = Modifier.weight(1f),
+                style = LocalTextStyle.current.copy(textDirection = TextDirection.Content),
+            )
         }
         if (reason != null) {
             Text(

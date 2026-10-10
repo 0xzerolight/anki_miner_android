@@ -86,6 +86,7 @@ import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsCategoryLayout
 import com.ankiminer.android.ui.settings.SettingsPanelExpansion
 import com.ankiminer.android.ui.settings.SettingsScreenCallbacks
+import com.ankiminer.android.ui.settings.SettingsDropdown
 import com.ankiminer.android.ui.settings.SettingsSection
 import com.ankiminer.android.ui.settings.dictionaryPanelRows
 import com.ankiminer.android.ui.settings.dictionaryRowStrings
@@ -889,19 +890,12 @@ private fun SettingsFilteringFixture() {
             desktopDefault = false,
             onChange = {},
         )
-        NullableToggle(
-            label = stringResource(R.string.settings_deduplicate),
-            // Android defaults this off against the desktop engine's true, so the screenshot lane
-            // shows the override styling a fresh install actually gets.
-            value = false,
-            desktopDefault = true,
-            onChange = {},
-        )
-        NullableToggle(
-            label = stringResource(R.string.settings_i_plus_one),
-            value = false,
-            desktopDefault = false,
-            onChange = {},
+        // The longest of desktop's sentence rules, which is what the 200% font-scale capture is for.
+        SettingsDropdown(
+            label = stringResource(R.string.settings_sentence_rule),
+            options = listOf("i_plus_one" to stringResource(R.string.settings_sentence_rule_i_plus_one)),
+            selected = "i_plus_one",
+            onSelect = {},
         )
         NumericField(
             value = "12",

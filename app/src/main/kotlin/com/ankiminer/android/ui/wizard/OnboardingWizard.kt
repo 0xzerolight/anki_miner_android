@@ -57,7 +57,6 @@ import com.ankiminer.android.ui.settings.ResourceOperationCard
 import com.ankiminer.android.ui.settings.ResourceReplaceDialog
 import com.ankiminer.android.ui.settings.SetupTaskId
 import com.ankiminer.android.ui.settings.SetupTaskRole
-import com.ankiminer.android.ui.settings.languageDisplayName
 import com.ankiminer.android.ui.settings.orderedLanguageChoices
 import com.ankiminer.android.ui.settings.setupTaskStatus
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -67,7 +66,6 @@ import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.WizardCompletionStatus
-import java.util.Locale
 
 internal const val WIZARD_STEP_HEADING_TEST_TAG = "wizard_step_heading"
 
@@ -205,22 +203,20 @@ internal data class WizardLanguageChoice(
 )
 
 /**
- * The languages this build can mine, or can unlock with one download, in the Settings picker's
- * order with the active one first. One this build cannot mine at all is not offered.
+ * The languages this build can mine, or can unlock with one download, by native name in the
+ * Settings picker's order, as desktop's wizard lists them. One this build cannot mine at all is not
+ * offered.
  */
 internal fun wizardLanguageChoices(
     profiles: List<LanguageProfileInfo>,
-    uiLocale: Locale,
     activeCode: String,
 ): List<WizardLanguageChoice> =
-    orderedLanguageChoices(profiles, uiLocale, activeCode)
+    orderedLanguageChoices(profiles, activeCode)
         .filter { it.unavailableReason != LanguageUnavailableReason.UNSUPPORTED }
-        .sortedByDescending { it.code == activeCode }
         .map { profile ->
-            val localized = languageDisplayName(profile, uiLocale)
             WizardLanguageChoice(
                 code = profile.code,
-                label = if (profile.displayName == localized) localized else "${profile.displayName} — $localized",
+                label = profile.displayName,
                 needsDownload = profile.unavailableReason == LanguageUnavailableReason.DATA_REQUIRED,
             )
         }

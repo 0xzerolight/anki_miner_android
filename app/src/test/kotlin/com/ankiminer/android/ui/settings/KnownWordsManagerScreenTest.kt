@@ -1,5 +1,8 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.intl.LocaleList
+import androidx.compose.ui.text.style.TextDirection
 import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
@@ -10,6 +13,8 @@ import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.settings.LanguageProfileFixtures
+import com.ankiminer.android.ui.mining.MiningContentStyle
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -124,6 +129,16 @@ class KnownWordsManagerScreenTest {
         val full = (1..4).map { "word$it" }.toSet()
 
         assertEquals(full - "word2", toggleKnownWordSelection(full, "word2", limit = 4))
+    }
+
+    @Test
+    fun aHebrewKnownWordIsLaidOutRightToLeft() {
+        val hebrew = MiningContentStyle.forLanguage("he", LanguageProfileFixtures.all)
+        val japanese = MiningContentStyle.forLanguage("ja", LanguageProfileFixtures.all)
+
+        assertEquals(TextDirection.Rtl, knownWordTextStyle(TextStyle.Default, hebrew).textDirection)
+        assertEquals(LocaleList("he"), knownWordTextStyle(TextStyle.Default, hebrew).localeList)
+        assertEquals(TextDirection.Unspecified, knownWordTextStyle(TextStyle.Default, japanese).textDirection)
     }
 
     private fun page(

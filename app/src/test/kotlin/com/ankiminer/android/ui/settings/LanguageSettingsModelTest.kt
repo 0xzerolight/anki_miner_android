@@ -75,16 +75,17 @@ class LanguageSettingsModelTest {
     }
 
     @Test
-    fun `languages are listed by the interface language's names`() {
-        val english = orderedLanguageChoices(profiles, Locale.ENGLISH, "he").map { it.code }
-        assertEquals(listOf("ar", "he", "ja"), english)
+    fun `languages are listed by their own names, whatever the interface language`() {
+        // Desktop's order: Hebrew before Arabic before Han, not the interface language's A to Z.
+        assertEquals(listOf("he", "ar", "ja"), orderedLanguageChoices(profiles, "he").map { it.code })
+        // The interface language's name stays for sentences that name the language.
         assertEquals("Hebrew", languageDisplayName(LanguageProfileFixtures.hebrew, Locale.ENGLISH))
         assertEquals("Hebräisch", languageDisplayName(LanguageProfileFixtures.hebrew, Locale.GERMAN))
     }
 
     @Test
     fun `with no profiles the active language alone is listed by its names`() {
-        val only = orderedLanguageChoices(emptyList(), Locale.ENGLISH, "he").single()
+        val only = orderedLanguageChoices(emptyList(), "he").single()
 
         assertEquals("he", only.code)
         assertEquals("Hebrew", languageDisplayName(only, Locale.ENGLISH))
@@ -110,7 +111,7 @@ class LanguageSettingsModelTest {
 
         assertFalse("resources.pitch_chain" in ids)
         assertTrue("language.mining_language" in ids)
-        assertFalse("language.reading_tone_color" in ids)
+        assertFalse("anki.reading_tone_color" in ids)
     }
 
     @Test
@@ -120,8 +121,7 @@ class LanguageSettingsModelTest {
         val kanaRows =
             setOf(
                 "word_filters.kana_variants",
-                "word_filters.exclude_hiragana",
-                "word_filters.exclude_katakana",
+                "word_filters.script_type",
                 "word_filters.wordsets",
             )
 
