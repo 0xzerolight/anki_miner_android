@@ -25,7 +25,15 @@ The app only contacts the network for these purposes, and only over HTTPS:
   any optional dictionary/frequency/pitch resources you choose are downloaded
   once from their public hosts (for example PyPI and the resource's own site) and
   stored in the app's private storage. Those hosts receive ordinary connection
-  data. Downloads are size- and hash-verified.
+  data. Catalogue downloads are size- and hash-verified.
+- **Dictionary updates:** once a week unless switched off under Settings →
+  Resources → Dictionaries, and whenever you tap Update Now, the app fetches each
+  installed dictionary, frequency list and pitch-accent source's own
+  `index.json` from its publisher over HTTPS. When a newer version is out, it
+  downloads the archive from the publisher's HTTPS `downloadUrl`; the weekly
+  run waits for an unmetered network before it downloads. These archives are
+  not hash-pinned: they get the same trust and the same checks as a file you
+  import yourself. The publishers' hosts receive ordinary connection data.
 
 It does not request access to your device's media library or contacts, and it
 uses the Storage Access Framework so you pick individual files yourself.
