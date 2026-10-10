@@ -59,6 +59,9 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
@@ -67,10 +70,13 @@ import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningProgressUnit
+import com.ankiminer.android.mining.NotMinedGroup
+import com.ankiminer.android.mining.NotMinedReason
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.CompactOutlinedTextField
 import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
@@ -82,6 +88,11 @@ import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import kotlinx.coroutines.launch
 
 internal const val MINING_FAILURE_TEST_TAG = "mining_failure"
+internal const val NOT_MINED_TEST_TAG = "mining_result_not_mined"
+internal const val NOT_MINED_SEARCH_TEST_TAG = "mining_result_not_mined_search"
+
+/** Stands in for the forms while the line template is formatted, so they can be styled apart. */
+private const val NOT_MINED_FORMS_SLOT = "\uFFFC"
 
 /**
  * Referential animation target. Same-phase state changes update live content without making the
@@ -817,7 +828,7 @@ internal fun MiningUndoConfirmationDialog(
     )
 }
 
-/** Counts as plain lines; mined forms and note ids stay in Copy diagnostics only. */
+/** Counts as plain lines and the not-mined report; mined forms and note ids stay in Copy diagnostics only. */
 @Composable
 private fun ResultDetails(result: ProcessingResult) {
     val skipped = (result.newWordsFound - result.cardsCreated).coerceAtLeast(0)
@@ -835,6 +846,7 @@ private fun ResultDetails(result: ProcessingResult) {
             result.errors.boundedResultItems(MAX_RESULT_ERROR_LINES).items.forEach { issue ->
                 appendLine("issue=$issue")
             }
+            result.notMined.orEmpty().notMinedDiagnostics().forEach(::appendLine)
         }.trim()
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -852,9 +864,101 @@ private fun ResultDetails(result: ProcessingResult) {
             R.string.result_metric_elapsed,
             stringResource(R.string.result_metric_elapsed_value, result.elapsedTime),
         )
+        result.notMined?.takeIf { it.isNotEmpty() }?.let { NotMinedReportSection(it) }
         CopyDiagnosticsButton(diagnostics = diagnostics)
     }
 }
+
+/**
+ * Why the run's other words made no card, one line per reason in pipeline order (desktop's
+ * Activity Log "Not mined" block). Failures (no dictionary entry, media, AnkiDroid) read in the
+ * error colour; the user's own settings stay quiet.
+ */
+@Composable
+private fun NotMinedReportSection(groups: List<NotMinedGroup>) {
+    val section = remember(groups) { NotMinedSection(groups) }
+    var query by rememberSaveable(groups) { mutableStateOf("") }
+    val lines = remember(section, query) { section.lines(query) }
+    // The forms are mined text; the reason around them stays in the interface language.
+    val formsStyle = MaterialTheme.typography.bodyMedium.minedText().toSpanStyle()
+    Column(
+        modifier = Modifier.fillMaxWidth().testTag(NOT_MINED_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+    ) {
+        Text(
+            text = pluralStringResource(R.plurals.result_not_mined_header, section.wordCount, section.wordCount),
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.titleSmall,
+        )
+        CompactOutlinedTextField(
+            value = query,
+            onValueChange = { query = it.boundedSaveableQuery() },
+            modifier = Modifier.fillMaxWidth().testTag(NOT_MINED_SEARCH_TEST_TAG),
+            singleLine = true,
+            placeholder = { Text(stringResource(R.string.result_not_mined_search)) },
+        )
+        if (lines.isEmpty()) {
+            Text(
+                text = stringResource(R.string.result_not_mined_no_match),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        lines.forEach { line -> NotMinedLineText(line, formsStyle) }
+    }
+}
+
+@Composable
+private fun NotMinedLineText(
+    line: NotMinedLine,
+    formsStyle: SpanStyle,
+) {
+    val label = stringResource(line.reason.label())
+    val template = stringResource(R.string.result_not_mined_line, label, line.count, NOT_MINED_FORMS_SLOT)
+    val more = if (line.hiddenCount > 0) stringResource(R.string.result_more_items, line.hiddenCount) else null
+    val slot = template.indexOf(NOT_MINED_FORMS_SLOT)
+    val text =
+        buildAnnotatedString {
+            append(template.substring(0, slot))
+            withStyle(formsStyle) { append(line.forms.joinToString()) }
+            if (more != null) {
+                append(", ")
+                append(more)
+            }
+            append(template.substring(slot + NOT_MINED_FORMS_SLOT.length))
+        }
+    Text(
+        text = text,
+        modifier = Modifier.fillMaxWidth().testTag("${NOT_MINED_TEST_TAG}_${line.reason.wire}"),
+        color = if (line.reason.failure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+/** The reason's line label: desktop's wording with Android's Settings page names. */
+@StringRes
+internal fun NotMinedReason.label(): Int =
+    when (this) {
+        NotMinedReason.WORD_TYPE -> R.string.result_not_mined_reason_word_type
+        NotMinedReason.SOUND_EFFECT -> R.string.result_not_mined_reason_sound_effect
+        NotMinedReason.KANA_ONLY -> R.string.result_not_mined_reason_kana_only
+        NotMinedReason.SCRIPT -> R.string.result_not_mined_reason_script
+        NotMinedReason.KNOWN -> R.string.result_not_mined_reason_known
+        NotMinedReason.NO_DEFINITION -> R.string.result_not_mined_reason_no_definition
+        NotMinedReason.UNRANKED -> R.string.result_not_mined_reason_unranked
+        NotMinedReason.FREQUENCY -> R.string.result_not_mined_reason_frequency
+        NotMinedReason.BLACKLIST -> R.string.result_not_mined_reason_blacklist
+        NotMinedReason.SCRIPT_FILTER -> R.string.result_not_mined_reason_script_filter
+        NotMinedReason.NAME_LIST -> R.string.result_not_mined_reason_name_list
+        NotMinedReason.OCCURRENCE -> R.string.result_not_mined_reason_occurrence
+        NotMinedReason.ONE_PER_SENTENCE -> R.string.result_not_mined_reason_one_per_sentence
+        NotMinedReason.I_PLUS_ONE -> R.string.result_not_mined_reason_i_plus_one
+        NotMinedReason.SENTENCE_LENGTH -> R.string.result_not_mined_reason_sentence_length
+        NotMinedReason.SAME_CARD -> R.string.result_not_mined_reason_same_card
+        NotMinedReason.MEDIA_FAILED -> R.string.result_not_mined_reason_media_failed
+        NotMinedReason.ANKI_DUPLICATE -> R.string.result_not_mined_reason_anki_duplicate
+        NotMinedReason.ANKI_FAILED -> R.string.result_not_mined_reason_anki_failed
+    }
 
 @Composable
 private fun DetailLine(
