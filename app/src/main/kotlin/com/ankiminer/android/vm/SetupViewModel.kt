@@ -372,8 +372,12 @@ internal class SetupViewModel(
             persistNoteTypeSelection(name, fields, state, preset = null)
             return
         }
-        if (fillJob?.isActive == true) return
-        fillJob = viewModelScope.launch { persistNoteTypeSelection(name, fields, state, recognisedPreset(fields, state.language)) }
+        // The latest pick wins: one still waiting on the bridge is dropped, never applied after it.
+        fillJob?.cancel()
+        fillJob =
+            viewModelScope.launch {
+                persistNoteTypeSelection(name, fields, state, recognisedPreset(fields, state.language))
+            }
     }
 
     private fun persistNoteTypeSelection(
@@ -489,7 +493,8 @@ internal class SetupViewModel(
         return source
             .fill(fieldNames, language)
             .onFailure { failure ->
-                AppLog.w(LogComponent.ANKI, "note_type_fill", failure, "outcome" to "keyword_fallback")
+                // The keyword pass still runs; the log keeps why no preset was offered.
+                AppLog.w(LogComponent.ANKI, "note_type_fill", failure, "outcome" to "fail")
             }.getOrNull()
             ?.takeIf { it.preset != null }
     }
