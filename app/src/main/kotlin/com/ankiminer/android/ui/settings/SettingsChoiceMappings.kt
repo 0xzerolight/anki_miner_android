@@ -1,6 +1,8 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.ui.state.ToggleableState
+import com.ankiminer.android.R
 import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.data.settings.EngineDefaults
@@ -42,6 +44,31 @@ internal fun SettingsDraft.scriptType(inherited: LanguageDefaults): ScriptType =
 
 internal fun SettingsDraft.withScriptType(type: ScriptType): SettingsDraft =
     copy(hiragana = type.excludeHiragana, katakana = type.excludeKatakana)
+
+/**
+ * Korean's two script filter rows (desktop `hangul_filters`). They write the kana booleans, as the
+ * ko profile's `filter_options` bind them: hangul-only is the hiragana flag, hanja-containing the
+ * katakana one.
+ */
+internal enum class HangulFilter(
+    @StringRes val label: Int,
+    @StringRes val help: Int,
+) {
+    HANGUL_ONLY(R.string.settings_exclude_hangul_only, R.string.settings_exclude_hangul_only_help),
+    HANJA_CONTAINING(R.string.settings_exclude_hanja, R.string.settings_exclude_hanja_help),
+    ;
+
+    /** The row's own override; null shows [default]. */
+    fun value(draft: SettingsDraft): Boolean? = if (this == HANGUL_ONLY) draft.hiragana else draft.katakana
+
+    fun default(inherited: LanguageDefaults): Boolean =
+        if (this == HANGUL_ONLY) inherited.excludeHiraganaOnly else inherited.excludeKatakanaOnly
+
+    fun write(
+        draft: SettingsDraft,
+        value: Boolean?,
+    ): SettingsDraft = if (this == HANGUL_ONLY) draft.copy(hiragana = value) else draft.copy(katakana = value)
+}
 
 /**
  * Desktop's Sentence Rule combo (`_SENTENCE_RULE_VALUES`). i+1 already overrides dedup in the

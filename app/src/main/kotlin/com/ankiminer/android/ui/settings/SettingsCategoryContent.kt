@@ -1595,20 +1595,14 @@ internal fun LazyListScope.wordFilterOptions(
                 ScriptTypeChoice(draft, onDraftChange, inherited)
             }
             if (showsHangulFilters) {
-                // Korean's two script filters bind to the kana booleans, as its profile declares:
-                // hangul-only writes the hiragana one, hanja-containing the katakana one.
-                NullableToggle(
-                    stringResource(R.string.settings_exclude_hangul_only),
-                    draft.hiragana,
-                    inherited.excludeHiraganaOnly,
-                ) { onDraftChange(draft.copy(hiragana = it)) }
-                SupportingText(stringResource(R.string.settings_exclude_hangul_only_help))
-                NullableToggle(
-                    stringResource(R.string.settings_exclude_hanja),
-                    draft.katakana,
-                    inherited.excludeKatakanaOnly,
-                ) { onDraftChange(draft.copy(katakana = it)) }
-                SupportingText(stringResource(R.string.settings_exclude_hanja_help))
+                HangulFilter.entries.forEach { filter ->
+                    NullableToggle(
+                        stringResource(filter.label),
+                        filter.value(draft),
+                        filter.default(inherited),
+                    ) { onDraftChange(filter.write(draft, it)) }
+                    SupportingText(stringResource(filter.help))
+                }
             }
             NumericField(
                 draft.readingOccurrence,
