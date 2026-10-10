@@ -24,8 +24,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
@@ -67,6 +70,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Settings the shell paints with. `null` means "not read yet" and holds the launch placeholder; a
@@ -168,6 +172,7 @@ class MainActivity : ComponentActivity() {
             BuildConfig.VERSION_NAME,
             app.languageProfileSource,
             runtimeWorkState = app.runtimeWorkState,
+            dictionaryUpdateActions = app.dictionaryUpdateCoordinator,
         )
     }
     private val readingViewModelFactory by lazy {
@@ -189,6 +194,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         (application as AnkiMinerApplication).startMiningCompletionNotices()
+        // The weekly dictionary update starts only while this activity is resumed: an install
+        // promotes itself to a foreground service, which a background process start may not do.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                (application as AnkiMinerApplication).dictionaryUpdateCoordinator.whileVisible()
+            }
+        }
         notificationRunId.value =
             savedInstanceState?.getString(PENDING_NOTIFICATION_RUN_ID)
                 ?: consumeOpenedRunId(intent)

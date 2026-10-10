@@ -169,6 +169,14 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "dictionary-sources",
             R.string.resource_panel_dictionaries_heading,
         ),
+        // The Updates block sits in the dictionary panel's footer, as desktop's sits on its page.
+        entry(
+            "resources.dictionary_updates",
+            SettingsCategory.RESOURCES,
+            "dictionary-sources",
+            R.string.dictionary_updates_automatic,
+            R.string.dictionary_updates_help,
+        ),
         entry(
             "resources.pitch_chain",
             SettingsCategory.RESOURCES,

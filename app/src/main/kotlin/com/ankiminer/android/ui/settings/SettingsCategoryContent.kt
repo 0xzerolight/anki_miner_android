@@ -37,6 +37,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
+import com.ankiminer.android.data.resources.DictionaryUpdateUiState
 import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.ResourceFailure
@@ -113,6 +114,9 @@ internal data class SettingsScreenCallbacks(
     val miningLanguage: String = LanguageScope.JAPANESE,
     /** What the active language's unset scoped settings resolve to; their rows show these values. */
     val languageDefaults: LanguageDefaults = LanguageDefaults.JAPANESE,
+    /** The Updates block under the dictionary panel. */
+    val dictionaryUpdates: DictionaryUpdateUiState = DictionaryUpdateUiState(),
+    val onUpdateDictionariesNow: () -> Unit = {},
 )
 
 internal enum class KnownWordsFailureTarget {
@@ -745,6 +749,14 @@ private fun LazyListScope.dictionarySourcesCard(
                             )
                         }
                     OtherLanguageSlotsNote(otherLanguageSlots)
+                    DictionaryUpdatesSection(
+                        automatic = draft.autoUpdateDictionaries,
+                        onAutomaticChange = {
+                            callbacks.onDraftChange(draft.copy(autoUpdateDictionaries = it))
+                        },
+                        state = callbacks.dictionaryUpdates,
+                        onUpdateNow = callbacks.onUpdateDictionariesNow,
+                    )
                 },
             )
         }

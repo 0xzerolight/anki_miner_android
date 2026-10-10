@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.resources.DictionaryUpdateActions
+import com.ankiminer.android.data.resources.DictionaryUpdateUiState
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceDocumentWriter
@@ -1178,6 +1180,8 @@ internal class SettingsViewModel(
     private val languageProfileSource: LanguageProfileSource? = null,
     /** What holds the runtime; the mining language may not switch under it. */
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
+    /** The dictionary-update coordinator: the Updates block's result line and Update Now. */
+    private val dictionaryUpdateActions: DictionaryUpdateActions? = null,
 ) : ViewModel() {
     private val settings: StateFlow<AppSettings?> =
         repository.settings
@@ -1196,6 +1200,15 @@ internal class SettingsViewModel(
     private val mutableBackupState =
         MutableStateFlow<SettingsBackupState>(SettingsBackupState.Idle)
     val backupState: StateFlow<SettingsBackupState> = mutableBackupState.asStateFlow()
+
+    /** The Updates block under the dictionary panel. */
+    val dictionaryUpdates: StateFlow<DictionaryUpdateUiState> =
+        dictionaryUpdateActions?.state ?: MutableStateFlow(DictionaryUpdateUiState())
+
+    /** Update Now: checks right away, joining a run already going, on any network. */
+    fun updateDictionariesNow() {
+        dictionaryUpdateActions?.updateNow()
+    }
 
     /** The inventory as the active language's settings see it: only slots stamped for it. */
     val resourceState: StateFlow<ResourceManagerState> =
@@ -1742,6 +1755,7 @@ internal class SettingsViewModel(
         private val appVersion: String = "",
         private val languageProfileSource: LanguageProfileSource? = null,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
+        private val dictionaryUpdateActions: DictionaryUpdateActions? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -1754,6 +1768,7 @@ internal class SettingsViewModel(
                 appVersion = appVersion,
                 languageProfileSource = languageProfileSource,
                 runtimeWorkState = runtimeWorkState,
+                dictionaryUpdateActions = dictionaryUpdateActions,
             ) as T
         }
     }
