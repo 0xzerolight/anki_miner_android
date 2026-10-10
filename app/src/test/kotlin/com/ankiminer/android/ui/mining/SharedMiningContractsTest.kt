@@ -636,7 +636,6 @@ class SharedMiningContractsTest {
         assertEquals(window, restored.clipOverrides["candidate-1"])
     }
 
-    /** A default sentence the engine merged one cue forward, an alternative merged one back, and one unmerged. */
     @Test
     fun theNotMinedSectionCapsEachLineAndCountsEveryWordOnce() {
         val known = (1..250).map { "known-%03d".format(it) }
@@ -672,8 +671,11 @@ class SharedMiningContractsTest {
             listOf(NotMinedLine(NotMinedReason.KNOWN, 1, listOf("word-09999"), 0)),
             section.lines("  WORD-09999 "),
         )
-        // Uncapped while searching: every match is listed.
-        assertEquals(1_000, section.lines("word-09").single().forms.size)
+        // Matches are capped like the full list: the line counts them all and lists the first 100.
+        val many = section.lines("word-09").single()
+        assertEquals(1_000, many.count)
+        assertEquals(known.filter { "word-09" in it }.take(MAX_RESULT_SUMMARY_ITEMS), many.forms)
+        assertEquals(900, many.hiddenCount)
         assertEquals(listOf(NotMinedLine(NotMinedReason.NO_DEFINITION, 1, listOf("𠮟る"), 0)), section.lines("𠮟"))
         assertEquals(emptyList<NotMinedLine>(), section.lines("missing"))
     }
@@ -705,6 +707,7 @@ class SharedMiningContractsTest {
         )
     }
 
+    /** A default sentence the engine merged one cue forward, an alternative merged one back, and one unmerged. */
     private fun mergedCandidate(): CurationCandidate {
         val base = candidate("candidate-1", "猫", frequency = 1, occurrences = 3)
         val default =

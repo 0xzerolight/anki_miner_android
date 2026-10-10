@@ -497,8 +497,10 @@ internal data class NotMinedLine(
 
 /**
  * The finished run's "Not mined" section. Desktop names every word and leaves the lookup to its
- * log's search box; here a line lists at most [MAX_RESULT_SUMMARY_ITEMS] forms, and the search
- * (canonical-equivalent, case-insensitive substring, like the curation search) reaches the rest.
+ * log's search box; here a line lists at most [MAX_RESULT_SUMMARY_ITEMS] forms, searching or not,
+ * so one keystroke in a large report never lays out thousands of words. The search
+ * (canonical-equivalent, case-insensitive substring, like the curation search) runs over every
+ * form, so it reaches a word past the unfiltered cap.
  */
 internal class NotMinedSection(private val groups: List<NotMinedGroup>) {
     /** Every word the report names, once: a word can sit under two reasons after items fold. */
@@ -508,19 +510,20 @@ internal class NotMinedSection(private val groups: List<NotMinedGroup>) {
         groups.map { group -> group.forms.map { it.normalizedCurationSearchText() } }
     }
 
-    /** Every group, capped, for a blank [query]; otherwise each group's matching forms, uncapped. */
+    /** Every group for a blank [query], otherwise each group's matching forms; either way capped. */
     fun lines(query: String): List<NotMinedLine> {
         val needle = query.trim().normalizedCurationSearchText()
-        if (needle.isEmpty()) {
-            return groups.map { group ->
-                val bounded = group.forms.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
-                NotMinedLine(group.reason, group.forms.size, bounded.items, bounded.remainingCount)
-            }
-        }
         return groups.mapIndexedNotNull { groupIndex, group ->
-            val searchable = searchableForms[groupIndex]
-            val matches = group.forms.filterIndexed { formIndex, _ -> searchable[formIndex].contains(needle) }
-            if (matches.isEmpty()) null else NotMinedLine(group.reason, matches.size, matches, hiddenCount = 0)
+            val forms =
+                if (needle.isEmpty()) {
+                    group.forms
+                } else {
+                    val searchable = searchableForms[groupIndex]
+                    group.forms.filterIndexed { formIndex, _ -> searchable[formIndex].contains(needle) }
+                }
+            if (forms.isEmpty()) return@mapIndexedNotNull null
+            val bounded = forms.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
+            NotMinedLine(group.reason, forms.size, bounded.items, bounded.remainingCount)
         }
     }
 }
