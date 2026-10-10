@@ -22,19 +22,22 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Finish (N) on multi-page curation.** It mines the words picked so far and skips the remaining pages.
 - **A Paste button for Reading -> Text.**
 - **The words a run did not mine, and why (run result -> Details).** They are grouped by reason, such as already known or no dictionary entry, and, where a setting decides it, the setting to change. A search finds one word.
-- **"Fill in automatically" recognises Lapis, Kiku, Senren and Anki Miner Note (Settings -> Cards & Anki, setup wizard).** The button, formerly "Fill mappings from field names", fills every field and the pitch category labels, plus the card type marker when a card type is chosen; Lapis, Kiku and Senren only when mining Japanese. The wizard also links Anki Miner Note for anyone without a note type.
+- **"Fill in automatically" recognises Lapis, Kiku, Senren and Anki Miner Note (Settings -> Cards & Anki, setup wizard).** The button, formerly "Fill mappings from field names", fills every field and the pitch category format, plus the card type marker when a card type is chosen; Lapis, Kiku and Senren only when mining Japanese. The wizard also links Anki Miner Note for anyone without a note type.
 - **A Language row in the field map (Settings -> Cards & Anki).** It writes the card's language code, such as ja, and a note field named Language or Lang is picked for it automatically.
+- **Dictionary updates (Settings -> Resources -> Dictionaries).** Dictionaries, frequency lists and pitch-accent sources whose publisher posts updates, such as Jitendex, JMdict and Wiktionary, are downloaded again from that publisher over HTTPS, without a hash check, and keep their order, on/off state and attribution. It is on for everyone, including after an upgrade, and runs about once a week while Anki Miner is open; automatic downloads wait for Wi-Fi or another unmetered network, Update Now does not. Turn off "Update automatically once a week" there to stop it. The app gains the network-state permission, granted at install, to tell Wi-Fi from mobile data.
+- **"Exclude hangul-only words" and "Exclude words containing hanja" for Korean (Settings -> Word filters).**
+- **Animated screenshot format and size (Settings -> Media).** Format picks AVIF or WebP, and Size (Small, Balanced, High) replaces the quality field; Clip length's lowest step is "Same as sentence audio".
 
 ### Changed
 
-- **Settings follow desktop's layout.** "Anki" is now "Cards & Anki", and its excluded decks moved to "Word filters", formerly "Filtering". A new Sentences tab holds the subtitle text cleanup, moved from Media, and deduplication, the i+1 filter, the sentence length caps and target bolding, moved from Filtering. The Resources audio panel is now "Word audio".
+- **Settings follow desktop's layout.** "Anki" is now "Cards & Anki", and its excluded decks moved to "Word filters", formerly "Filtering". A new Sentences tab holds the subtitle text cleanup, moved from Media, and the sentence length caps and target bolding, moved from Filtering; deduplication and the i+1 filter are one "Sentence rule" choice there. Subtitle cleanup is one "Remove speaker names, sound effects and music notes" box, with the pattern and its presets, now including Dialogue dash, under "Edit the pattern (advanced)". Media splits into Sentence audio, which gains Text-to-speech from Word audio, and Screenshot. Word filters has one "Script type" choice and one box for skipping names of people, places and companies. "Colour the reading by tone" and "Pitch category format" sit in the Cards & Anki field map beside the rows they format, and the marker field is under "Customise marker field names". The Resources audio panel is now "Word audio".
 - **The mining engine is updated to desktop Anki Miner 3.8.0.** The entries that follow are what it changes in mining and on the cards.
 - **Whitelisted words are mined even where the part-of-speech or script rules skip them, such as names, interjections and hiragana-only words.** A word outside the mining language's script still is not.
 - **Whitelist and blacklist entries match half-width and variant spellings, so ｺｰﾋｰ on a list matches コーヒー.** Other languages match their own variant forms the same way.
 - **The i+1 filter judges a sentence by each word's card front, not its dictionary lemma.** A line holding only 取る is no longer taken as 撮る's sentence.
 - **Occurrence counts follow the card front, so 賭ける no longer counts 掛ける's lines (Reading tab).**
 - **With i+1 on, the default sentence offered when curation opens no longer merges in a line holding a second unknown word.** A sentence you pick still merges.
-- **The sentence length caps and Deduplicate sentences are checked again on a merged sentence (Settings -> Sentences).** With "Mine full sentences across subtitle lines" on, a short fragment could become a card far over the cap.
+- **The sentence length caps and the One card per sentence rule are checked again on a merged sentence (Settings -> Sentences).** With "Mine full sentences across subtitle lines" on, a short fragment could become a card far over the cap.
 - **Words that differ only in capitals, such as German Essen and essen, give one card per run.**
 - **Subtitle cleanup removes a sound caption wrapped over two lines whole, turns an ASS hard space into a space and collapses runs of no-break spaces.** Sentences outside Japanese keep French-style no-break spaces.
 - **In Arabic, Greek, Persian, Hebrew, Russian, Thai, Ukrainian and Cantonese, the English line of a bilingual subtitle no longer ends up in the sentence.**
@@ -54,7 +57,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Chinese and Cantonese words with two readings, such as 行, get the audio-pack recording for their reading (Settings -> Resources -> Word audio).** Re-importing an audio pack replaces its cached audio.
 - **Dictionary import accepts a Yomitan index that gives its format as version (Settings -> Resources).** A frequency list import keeps a word's largest count when its rows repeat.
 - **A note field named POS is now picked for the PartOfSpeech row, as on desktop (Settings -> Cards & Anki).**
-- **"Maximum sentence characters" and "Pitch category labels" are kept per mining language (Settings -> Sentences, Settings -> Resources).** Languages you had already used keep the value you had before the update; a language you open for the first time starts from its default.
+- **"Maximum sentence characters" and "Pitch category format" are kept per mining language (Settings -> Sentences, Settings -> Cards & Anki).** Languages you had already used keep the value you had before the update; a language you open for the first time starts from its default.
+- **Mining languages are listed by their own names, such as 日本語 and עברית, Latin script first (Settings -> Language, setup wizard).** Searching settings for the English name still finds the list.
 - **Cards from the Video and Audio tabs are added in the same order on every run, following the subtitles.** They used to follow whichever clip finished extracting first, so the order changed from run to run.
 - **The dictionary-name line in definitions takes the note type's styling (Senren, Lapis) on new cards.** Anki Miner's grey label used to override it.
 - **Known-words import reads UTF-16 files, such as Excel's Unicode Text export (Settings -> Word filters).** They used to be refused as unreadable.
@@ -140,6 +144,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Third-party notices show licence texts as written, section numbers included.**
 - **A Reading run that runs out of memory while the device voice speaks sentences stops instead of making cards without audio.**
 - **Undo after switching the mining language takes the run's words out of the known words of the language the run mined.** It used to use the language now selected.
+- **Hebrew, Arabic and Persian words read right to left in Manage known words (Settings -> Word filters).**
 
 ## [1.1.0] - 2026-09-08
 
