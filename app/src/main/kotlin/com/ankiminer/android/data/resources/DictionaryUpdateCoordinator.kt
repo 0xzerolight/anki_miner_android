@@ -225,11 +225,6 @@ internal class DictionaryUpdateCoordinator(
             }
         }
         if (stillValid(found.updates, language).isEmpty()) return DictionaryUpdateResult.ChangedDuringCheck
-        if (!watched && !unmeteredNetwork()) {
-            // Jitendex is about 38 MB: an automatic run never spends mobile data on it.
-            AppLog.i(LogComponent.RESOURCES, "update.install", "outcome" to "skip", "code" to "metered")
-            return null
-        }
         return install(found.updates, language)
     }
 
@@ -256,6 +251,12 @@ internal class DictionaryUpdateCoordinator(
         for (update in updates) {
             // Each install takes minutes; the language or chain may move between two of them.
             if (stillValid(listOf(update), language).isEmpty()) continue
+            if (!watched && !unmeteredNetwork()) {
+                // Jitendex is about 38 MB: an automatic run never spends mobile data on it, and
+                // Wi-Fi can drop during the previous install. No stamp, so the next due run resumes.
+                AppLog.i(LogComponent.RESOURCES, "update.install", "outcome" to "skip", "code" to "metered")
+                return null
+            }
             val code = resources.installResourceUpdate(update, language)
             AppLog.i(
                 LogComponent.RESOURCES,

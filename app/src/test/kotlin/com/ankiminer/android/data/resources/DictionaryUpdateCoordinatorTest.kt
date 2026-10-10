@@ -156,6 +156,25 @@ class DictionaryUpdateCoordinatorTest {
         }
 
     @Test
+    fun `an automatic run checks for an unmetered network before each download`() =
+        runTest {
+            val fixture = Fixture(this)
+            fixture.resources.checkAnswer = { found(JITENDEX, JMDICT) }
+            // Wi-Fi drops while Jitendex installs: JMdict must not start on mobile data.
+            fixture.resources.installAnswer = {
+                fixture.unmetered = false
+                null
+            }
+
+            fixture.coordinator.runAutomaticIfDue()
+
+            assertEquals(listOf(JITENDEX to "ja"), fixture.resources.installs)
+            // The run stopped short, so the week is not over: the next due run installs the rest.
+            assertNull(fixture.stamp.checkedAt)
+            assertNull(fixture.coordinator.state.value.result)
+        }
+
+    @Test
     fun `Update Now after the latch runs again and ignores the unmetered rule`() =
         runTest {
             val fixture = Fixture(this, unmetered = false)
@@ -324,7 +343,7 @@ class DictionaryUpdateCoordinatorTest {
         stampedAt: Long? = null,
         readiness: ResourceStartupReadiness = ResourceStartupReadiness.READY,
         runtimeKind: RuntimeWorkCoordinator.Kind? = null,
-        unmetered: Boolean = true,
+        var unmetered: Boolean = true,
     ) {
         val settings = SessionSettingsRepository(settings)
         val stamp = FakeStamp(stampedAt)
@@ -336,7 +355,7 @@ class DictionaryUpdateCoordinatorTest {
                 settings = this.settings,
                 stamp = stamp,
                 runtimeWork = MutableStateFlow(runtimeKind),
-                unmeteredNetwork = { unmetered },
+                unmeteredNetwork = { this.unmetered },
                 now = { NOW },
                 dispatcher = StandardTestDispatcher(scope.testScheduler),
                 newOperationId = { "resource_update${++operations}" },
