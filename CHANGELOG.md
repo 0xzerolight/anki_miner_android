@@ -21,11 +21,39 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **A notice when a run finishes or stops while Anki Miner is in the background.** Tapping it opens the run's tab.
 - **Finish (N) on multi-page curation.** It mines the words picked so far and skips the remaining pages.
 - **A Paste button for Reading -> Text.**
+- **The words a run did not mine, and why (run result -> Details).** They are grouped by reason, such as already known or no dictionary entry, each with what would get the word mined, and a search finds one word.
+- **"Fill in automatically" recognises Lapis, Kiku, Senren and Anki Miner Note (Settings -> Cards & Anki, setup wizard).** The button, formerly "Fill mappings from field names", fills every field, the pitch category labels and the card type marker; Lapis, Kiku and Senren only when mining Japanese. The wizard also links Anki Miner Note for anyone without a note type.
+- **A Language row in the field map (Settings -> Cards & Anki).** It writes the card's language code, such as ja, and a note field named Language or Lang is picked for it automatically.
 
 ### Changed
 
 - **Settings follow desktop's layout.** "Anki" is now "Cards & Anki", and its excluded decks moved to "Word filters", formerly "Filtering". A new Sentences tab holds the subtitle text cleanup, moved from Media, and deduplication, the i+1 filter, the sentence length caps and target bolding, moved from Filtering. The Resources audio panel is now "Word audio".
-- **The Japanese mining engine is updated to current desktop Anki Miner.** Mined words, readings and definitions are unchanged on the test corpus.
+- **The mining engine is updated to desktop Anki Miner 3.8.0.** The entries that follow are what it changes in mining and on the cards.
+- **Whitelisted words are mined even where the part-of-speech or script rules skip them, such as names, interjections and hiragana-only words.** A word outside the mining language's script still is not.
+- **Whitelist and blacklist entries match half-width and variant spellings, so ｺｰﾋｰ on a list matches コーヒー.** Other languages match their own variant forms the same way.
+- **The i+1 filter judges a sentence by each word's card front, not its dictionary lemma.** A line holding only 取る is no longer taken as 撮る's sentence, and in Reading 賭ける no longer counts 掛ける's lines.
+- **With i+1 on, the default sentence offered when curation opens no longer merges in a line holding a second unknown word.** A sentence you pick still merges.
+- **The sentence length caps and Deduplicate sentences are checked again on a merged sentence (Settings -> Sentences).** With "Mine full sentences across subtitle lines" on, a short fragment could become a card far over the cap.
+- **Words that differ only in capitals, such as German Essen and essen, give one card per run.**
+- **Subtitle cleanup removes a sound caption wrapped over two lines whole, turns an ASS hard space into a space and collapses runs of no-break spaces.** Sentences outside Japanese keep French-style no-break spaces.
+- **In Arabic, Greek, Persian, Hebrew, Russian, Thai, Ukrainian and Cantonese, the English line of a bilingual subtitle no longer ends up in the sentence.**
+- **SAMI and WebVTT files whose first characters do not show the format are read by their extension instead of failing.**
+- **Inflected Japanese verbs take their reading and furigana from the line, so 言っ is carded as 言う with いう.**
+- **The Pitch position field gets a numeric downstep, such as 2, from pitch dictionaries that give H and L patterns.**
+- **Words after a Korean contracted verb are now mined.**
+- **An all-Hanja Korean word is carded under its hangul headword, such as 학교 for 學校, with the Hanja in its own field.** It counts as known under that hangul form.
+- **German plural-only nouns are labelled die (Pl.).**
+- **Indonesian cards keep each affix on one line in the Affixes field.**
+- **Long Hebrew runs no longer leave the odd word without its dictionary form.**
+- **A Turkish word that starts with an apostrophe no longer fails the run.**
+- **A note type's styling can override Chinese and Cantonese tone colours and the definitions' muted and accent colours.** Wiktionary tags in definitions show as chips, and JMdict definitions on Lapis cards get their separators right.
+- **.mokuro volumes in languages other than Japanese mine their text (Reading tab).** They used to give only the Japanese sound effects.
+- **A headerless ruby novel in .txt keeps its opening paragraphs (Reading tab).** A mostly UTF-8 Japanese .txt with one bad byte no longer turns into garbled text.
+- **In Arabic, Persian, Hebrew and Thai, a stray ASCII quote no longer joins two sentences into one (Reading tab).**
+- **Chinese and Cantonese words with two readings, such as 行, get the audio-pack recording for their reading (Settings -> Resources -> Word audio).** Re-importing an audio pack replaces its cached audio.
+- **Dictionary import accepts a Yomitan index that gives its format as version (Settings -> Resources).** A frequency list import keeps a word's largest count when its rows repeat.
+- **A note field named POS is now picked for the PartOfSpeech row, as on desktop (Settings -> Cards & Anki).**
+- **"Maximum sentence characters" and "Pitch category labels" are kept per mining language (Settings -> Sentences, Settings -> Resources).** Each language starts from the value you had before the update.
 - **Cards from the Video and Audio tabs are added in the same order on every run, following the subtitles.** They used to follow whichever clip finished extracting first, so the order changed from run to run.
 - **The dictionary-name line in definitions takes the note type's styling (Senren, Lapis) on new cards.** Anki Miner's grey label used to override it.
 - **Known-words import reads UTF-16 files, such as Excel's Unicode Text export (Settings -> Word filters).** They used to be refused as unreadable.
@@ -39,7 +67,6 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Curation shows each sentence's translation when a translation subtitle is picked.**
 - **Curation definitions open on the sense that matches the word's part of speech, as on desktop.**
 - **Importing a dictionary whose own data names another language says so (Settings -> Resources).** It is still imported.
-- **Jisho is offered only while mining Japanese.** A settings backup cannot turn it on for another language.
 - **Japanese words, sentences and definitions in curation and Reading use Japanese character shapes.** On a phone set to another language some kanji used to show their Chinese forms.
 - **The APK is about twice the size, roughly 110 MB.** The new languages' tokenizers ship in the app; their models and dictionaries still download only for the language you pick.
 - **The setup wizard has desktop's four pages: Language, Downloads, AnkiDroid and Ready.** One tap on Downloads fetches UniDic and the dictionaries, the AnkiDroid page connects and picks the deck and note type, and Back is the arrow at the top.
@@ -59,6 +86,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 ### Removed
 
 - **The "Limit sentence length" switch.** The two caps under Settings -> Sentences apply on their own, and 0 means no limit. Caps the switch kept off are reset to 0 on upgrade and when an older settings backup is imported, so what gets mined does not change.
+- **The Jisho online definition lookup, as on desktop 3.8.0.** Definitions come only from installed dictionaries, so no word you look up leaves the device. A saved Jisho setting is dropped on upgrade, and backups that carry it still import.
 
 ### Fixed
 
@@ -110,6 +138,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **The diagnostics bundle no longer names the dictionary images on your cards (Settings -> Diagnostics).**
 - **Third-party notices show licence texts as written, section numbers included.**
 - **A Reading run that runs out of memory while the device voice speaks sentences stops instead of making cards without audio.**
+- **Undo after switching the mining language takes the run's words out of the known words of the language the run mined.** It used to use the language now selected.
 
 ## [1.1.0] - 2026-09-08
 
