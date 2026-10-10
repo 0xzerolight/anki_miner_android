@@ -986,12 +986,16 @@ class _SentencePreview:
         index = find_cue_index(self._entries, word.start_time, word.sentence, tolerance=1e-3)
         return index if index is not None and self._entries[index][2] == word.sentence else None
 
-    def __call__(self, word: Any) -> SentencePreview:
+    def __call__(self, word: Any, *, default: bool) -> SentencePreview:
         from anki_miner.services.word_filter import merge_cue_window
 
         expansion: tuple[int, int] = word.line_expansion
         index: int | None = None
-        if expansion == (0, 0) and self._config.merge_incomplete_cues:
+        # The default sentence carries the engine's own stamp verbatim, refusals
+        # included: under i+1 an unmerged fragment is the engine keeping its i+1
+        # sentence, and re-deriving would open the curator on an i+2 one. Only a
+        # variant, which the stamp never reached, re-derives the merge.
+        if not default and expansion == (0, 0) and self._config.merge_incomplete_cues:
             from anki_miner.languages.registry import config_language, get_profile
             from anki_miner.services.cue_merge import auto_line_expansion, merge_budget_seconds
 

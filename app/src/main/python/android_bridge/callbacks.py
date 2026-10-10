@@ -15,7 +15,7 @@ from .jobs import (
     JobRegistry,
     KnownWordsTarget,
     SentencePageContext,
-    SentencePreview,
+    SentencePreviewer,
 )
 from .protocol import (
     BridgeProtocolError,
@@ -479,7 +479,7 @@ class CallbackAdapters:
         self.presenter = AndroidPresenter(callbacks, handle.run_id)
         self.anki = AndroidAnkiCallbacks(callbacks, handle.run_id)
         self.sentence_context: Callable[[object], SentencePageContext | None] | None = None
-        self.sentence_preview: Callable[[object], SentencePreview] | None = None
+        self.sentence_preview: SentencePreviewer | None = None
         # Set once the run's config is mapped: the language's own known-words file.
         self.known_words_target: KnownWordsTarget | None = None
 

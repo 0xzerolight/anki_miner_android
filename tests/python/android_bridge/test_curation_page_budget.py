@@ -49,7 +49,7 @@ def _word(index: int) -> Word:
 def _start_curation(
     registry: JobRegistry,
     words: list[Word],
-    sentence_preview: Callable[[object], jobs.SentencePreview] | None = None,
+    sentence_preview: jobs.SentencePreviewer | None = None,
 ) -> tuple[str, queue.Queue[tuple[str, dict[str, object]]], list[object], threading.Thread]:
     handle = registry.begin()
     emitted: queue.Queue[tuple[str, dict[str, object]]] = queue.Queue()
@@ -173,7 +173,7 @@ def test_cancel_while_candidates_are_built_is_prompt_and_emits_nothing() -> None
     release = threading.Event()
     previewed: list[object] = []
 
-    def slow_preview(word: object) -> jobs.SentencePreview:
+    def slow_preview(word: object, *, default: bool) -> jobs.SentencePreview:
         previewed.append(word)
         if len(previewed) == 1:
             entered.set()
@@ -302,7 +302,7 @@ def test_a_word_on_2000_lines_curates_with_its_default_and_earliest_variants(
     assert 100 < len(sent) < len(variants)
     candidate_size = _json_size(candidate)
     assert candidate_size <= jobs._CANDIDATE_MAX_UTF8_BYTES
-    unsent = jobs._sentence_payload(UNSENT_SENTENCE_ID, variants[len(sent)])
+    unsent = jobs._sentence_payload(UNSENT_SENTENCE_ID, variants[len(sent)], default=False)
     assert candidate_size + 1 + _json_size(unsent) > jobs._CANDIDATE_MAX_UTF8_BYTES
     # Only what was sent can be selected.
     gate = registry._active.curation  # type: ignore[union-attr]
@@ -344,7 +344,7 @@ def test_the_budget_counts_each_sentences_preview_bytes() -> None:
     run_id, emitted, returned, thread = _start_curation(
         registry,
         [word],
-        sentence_preview=lambda _word: jobs.SentencePreview((1, 0), translation),
+        sentence_preview=lambda _word, *, default: jobs.SentencePreview((1, 0), translation),
     )
 
     _, request = emitted.get(timeout=5)

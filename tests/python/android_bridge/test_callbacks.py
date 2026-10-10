@@ -248,7 +248,7 @@ def test_curate_forwards_sentence_preview_to_await_curation(
     adapters = CallbackAdapters(RecordingCallbacks(), registry, handle)
     assert adapters.sentence_preview is None
 
-    def preview(word: object) -> SentencePreview:
+    def preview(word: object, *, default: bool) -> SentencePreview:
         return SentencePreview(line_expansion=(0, 1), translation="")
 
     adapters.sentence_preview = preview
