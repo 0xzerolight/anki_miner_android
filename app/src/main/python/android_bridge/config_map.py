@@ -79,8 +79,6 @@ _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
     "audio_padding": (0.0, None),
     "screenshot_offset": (0.0, None),
     "subtitle_offset": (None, None),
-    # Desktop explicitly warns not to reduce this delay.
-    "jisho_delay": (0.5, None),
     "max_sentence_duration_seconds": (0.0, None),
     # Desktop's own GUI range (media_settings_panel.py).  The engine caps the
     # clip at the word's own duration regardless.
@@ -425,25 +423,19 @@ def _enabled(field_name: str, item: Mapping[str, object]) -> bool:
 
 def _dictionary_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
     result: list[object] = []
-    identities: set[tuple[str, str | None]] = set()
+    identities: set[str] = set()
     for raw in _chain_items("dictionary_chain", value):
         item = _entry_mapping("dictionary_chain", raw, frozenset({"kind", "dict_id", "enabled"}))
-        kind = item.get("kind")
-        if kind == "indexed":
-            dict_id: str | None = _resource_id("dictionary_chain.dict_id", item.get("dict_id"))
-        elif kind == "jisho":
-            if item.get("dict_id") is not None:
-                raise _invalid("dictionary_chain.dict_id", "jisho entries must use null")
-            dict_id = None
-        else:
-            raise _invalid("dictionary_chain.kind", "expected 'indexed' or 'jisho'")
-        identity = (kind, dict_id)
-        if identity in identities:
+        # Desktop v3.8.0 removed the online Jisho provider; every entry is an indexed dictionary.
+        if item.get("kind") != "indexed":
+            raise _invalid("dictionary_chain.kind", "expected 'indexed'")
+        dict_id = _resource_id("dictionary_chain.dict_id", item.get("dict_id"))
+        if dict_id in identities:
             raise _invalid("dictionary_chain", "duplicate provider")
-        identities.add(identity)
+        identities.add(dict_id)
         result.append(
             constructor(
-                kind=kind,
+                kind="indexed",
                 dict_id=dict_id,
                 enabled=_enabled("dictionary_chain.enabled", item),
             )
@@ -696,13 +688,7 @@ def map_config_settings(
         elif field_name in _MAPPING_FIELDS:
             updates[field_name] = _anki_mapping_overlay(field_name, value, getattr(base, field_name))
         elif field_name == "dictionary_chain":
-            chain = _dictionary_chain(value, ChainEntry)
-            # Jisho is a Japanese dictionary, and the declared network egress is Japanese
-            # lookups: the engine would send any language's terms to jisho.org, so a Jisho
-            # entry under another language is refused rather than dropped.
-            if language != JAPANESE and any(getattr(entry, "kind", None) == "jisho" for entry in chain):
-                raise _invalid("dictionary_chain.kind", "jisho is offered only for Japanese")
-            updates[field_name] = chain
+            updates[field_name] = _dictionary_chain(value, ChainEntry)
         elif field_name == "frequency_chain":
             updates[field_name] = _frequency_chain(value, FreqEntry)
         elif field_name == "pitch_chain":

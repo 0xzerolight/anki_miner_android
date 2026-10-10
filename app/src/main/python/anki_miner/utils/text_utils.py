@@ -4,7 +4,7 @@ import html
 import re
 import unicodedata
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from anki_miner.utils.furigana_distribute import distribute_furigana
 from anki_miner.utils.ja_normalize import (
@@ -13,14 +13,18 @@ from anki_miner.utils.ja_normalize import (
     standardize_kanji_variants,
 )
 
+if TYPE_CHECKING:
+    # Type-only: anki_miner.languages imports this module.
+    from anki_miner.languages.profile import ReadingSupport
+
 
 def strip_subtitle_markup(text: str) -> str:
     """Strip subtitle formatting markup without any language normalization.
 
     Removes the four tag families that :func:`clean_subtitle_text` handles:
     ASS/SSA override blocks (``{\\...}``), the ``\\N``/``\\n`` line-break markers
-    (each replaced by a space), WebVTT cue-timestamp tags (``<00:00:01.500>``),
-    and HTML tags (``<tag ...>``). It deliberately does
+    and the ``\\h`` hard space (each replaced by a space), WebVTT cue-timestamp
+    tags (``<00:00:01.500>``), and HTML tags (``<tag ...>``). It deliberately does
     NOT run the MeCab-oriented Japanese normalization (halfwidth→fullwidth kana,
     NFKD folding, kanji-variant mapping) nor collapse whitespace, so the returned
     string is safe to display verbatim to the user (e.g. condensed subtitles).
@@ -34,8 +38,8 @@ def strip_subtitle_markup(text: str) -> str:
     # Remove backslash-led ASS/SSA override tags like {\pos(x,y)}, {\fad(100,200)}, etc.
     text = re.sub(r"\{\\[^}]*\}", "", text)
 
-    # Remove line break tags
-    text = re.sub(r"\\[nN]", " ", text)
+    # Line break tags and the ASS hard space (libass renders \h as a space)
+    text = re.sub(r"\\[nNh]", " ", text)
 
     # WebVTT inline cue timestamps: <hh:mm:ss.ttt> / <mm:ss.ttt>, hours unbounded.
     # yt-dlp writes one per word on auto-captions. The HTML rule below cannot
@@ -67,9 +71,11 @@ def clean_subtitle_text(
     composition, CJK-compat and radical NFKD folding) and the minimal kanji-variant map
     (𠮟 → 叱). Physical lines stay separate through normalization and are
     annotation-stripped (:func:`strip_inline_annotations`) before whitespace is
-    flattened. The returned string *is* the text MeCab tokenizes and the stored
-    card sentence, so token offsets, dedup keys, and script-type filters all see
-    one normalized form.
+    flattened. The returned string *is* the stored card sentence; for Japanese
+    it is also the exact text MeCab tokenizes, so token offsets, dedup keys, and
+    script-type filters all see one normalized form. Other languages keep their
+    no-break spaces here and the parser tokenizes the line with them folded
+    (:func:`collapse_whitespace`).
 
     ``normalize`` replaces the two Japanese steps — ``normalize_for_tokenization``
     and ``standardize_kanji_variants`` — with the mining language's own
@@ -105,7 +111,43 @@ def clean_subtitle_text(
     text = strip_inline_annotations(text)
     if has_target_script is not None:
         text = _drop_other_script_lines(text, has_target_script)
-    return " ".join(text.split())
+    return collapse_whitespace(text, keep_no_break=normalize is not None)
+
+
+#: U+00A0 and U+202F, the no-break spaces a non-Japanese stored line keeps.
+_NO_BREAK_SPACES = frozenset("\u00a0\u202f")
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+_NO_BREAK_SPACE_FOLD = str.maketrans(dict.fromkeys(_NO_BREAK_SPACES, " "))
+
+
+def _collapse_run_keeping_no_break(match: re.Match[str]) -> str:
+    """A whitespace run becomes one character: its first no-break space, else a plain space."""
+    return next((char for char in match.group() if char in _NO_BREAK_SPACES), " ")
+
+
+def collapse_whitespace(text: str, *, keep_no_break: bool) -> str:
+    """Flatten whitespace runs to one space and trim the ends.
+
+    ``keep_no_break=False`` is the Japanese collapse, byte-identical to
+    ``" ".join(text.split())``. Every other language keeps U+00A0 and U+202F
+    inside the line: French puts one before ``: ; ? !`` and ``»`` so the card
+    never starts a line with them. A run holding one still becomes one
+    character, its first no-break space: ``Oui [rire]`` + NBSP + ``!`` once
+    the filter drops ``[rire]`` shows no double gap, and a doubled NBSP before
+    ``:`` folds to the one space a speaker-label filter allows. The parser
+    tokenizes the line through :func:`fold_no_break_spaces`; both characters
+    fold one for one, so token offsets index the stored line unchanged. Edge
+    whitespace, no-break included, still strips: an ``&nbsp;`` placeholder cue
+    stays empty.
+    """
+    if not keep_no_break:
+        return " ".join(text.split())
+    return _WHITESPACE_RUN_RE.sub(_collapse_run_keeping_no_break, text).strip()
+
+
+def fold_no_break_spaces(text: str) -> str:
+    """U+00A0 and U+202F to a plain space, one character for one: the text a tagger reads."""
+    return text.translate(_NO_BREAK_SPACE_FOLD)
 
 
 def _drop_other_script_lines(text: str, has_target_script: Callable[[str], bool]) -> str:
@@ -243,13 +285,20 @@ def strip_inline_annotations(text: str) -> str:
 
     Each pass applies independently to every physical line (actual newlines or
     ASS/SSA ``\\N``/``\\n`` markers), so an annotation at any physical line start
-    cannot become mid-cue dialogue when whitespace is later flattened. Mid-line
+    cannot become mid-cue dialogue when whitespace is later flattened. A cue
+    that is a whole caption only once its lines are joined (a caption wrapped
+    over two lines) is dropped as a whole. Mid-line
     paren groups containing kanji are left untouched (conservative). Balanced-
     paren matching only:
     malformed/unbalanced parens leave the text unchanged. Pure function — no
     I/O, no config; the caller gates it.
     """
-    return "\n".join(_strip_inline_annotations_line(line) for line in re.split(r"\\[nN]|\r\n?|\n", text))
+    lines = re.split(r"\\[nN]|\r\n?|\n", text)
+    # A caption wrapped over several physical lines (（ミコトと / 東海林の笑い声）)
+    # is unbalanced on every line alone; judged as one cue it is a whole caption.
+    if len(lines) > 1 and _is_whole_line_caption(" ".join(lines)):
+        return ""
+    return "\n".join(_strip_inline_annotations_line(line) for line in lines)
 
 
 def _strip_inline_annotations_line(text: str) -> str:
@@ -584,6 +633,25 @@ def generate_reading(text: str, tagger) -> str:
         Plain hiragana reading, e.g. ``"おうこくです。"`` for ``"王国です。"``.
     """
     return generate_reading_from_tokens(tagger(text))
+
+
+def front_reading(expression: str, tagger: Any, reading_support: "ReadingSupport | None") -> str:
+    """The reading mining writes for a card front, from the tagger alone.
+
+    Each token reads through the mining language's ``ReadingSupport`` (ja kana,
+    zh pinyin, yue jyutping); a language with no support (es, de, ko, ...)
+    writes none. For ja the result equals
+    ``katakana_to_hiragana(generate_reading(expression, tagger))`` exactly:
+    ``JaReadingSupport`` answers a token's kana or, without one, its surface,
+    the same rung ``generate_reading_from_tokens`` takes.
+
+    No dictionary attestation reaches this path, so a reconciling support (zh)
+    is not asked to reconcile: with nothing attested it would hand the engine's
+    reading back unchanged.
+    """
+    if reading_support is None:
+        return ""
+    return katakana_to_hiragana("".join(reading_support.word_reading(token) for token in tagger(expression)))
 
 
 def wrap_target_plain(sentence: str, start: int, end: int) -> str:

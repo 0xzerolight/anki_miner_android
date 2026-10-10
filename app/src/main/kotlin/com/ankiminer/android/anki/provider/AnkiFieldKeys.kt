@@ -14,7 +14,7 @@ internal object AnkiFieldKeys {
     /** Where a stock two-field note type's second field goes on a fresh pick. */
     const val DEFINITION = "definition"
 
-    /** All 19 logical keys the engine can populate, in a stable order for UI. */
+    /** All 20 logical keys the engine can populate, in a stable order for UI. */
     val ALL: List<String> =
         listOf(
             "word",
@@ -36,6 +36,7 @@ internal object AnkiFieldKeys {
             "source",
             "expression_audio",
             "sentence_translation",
+            "language",
         )
 
     /**

@@ -26,6 +26,23 @@ class QtCoreShimTests(unittest.TestCase):
         qtcore = _load_qtcore()
         self.assertEqual(qtcore.substitute_args("%1 of %2 (%10)", 2, 5), "2 of 5 (%10)")
 
+    def test_translate_noop_returns_the_source_text(self) -> None:
+        qtcore = _load_qtcore()
+        self.assertEqual(qtcore.QT_TRANSLATE_NOOP("ctx", "text"), "text")
+        self.assertEqual(qtcore.QT_TRANSLATE_NOOP("ctx", "text", "disambiguation"), "text")
+
+    def test_shim_defines_only_the_names_the_engine_imports(self) -> None:
+        qtcore = _load_qtcore()
+        defined = {
+            name
+            for name, value in vars(qtcore).items()
+            if not name.startswith("_")
+            and getattr(value, "__module__", None) == qtcore.__name__
+        }
+        self.assertEqual(
+            defined, {"QCoreApplication", "QT_TRANSLATE_NOOP", "substitute_args"}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

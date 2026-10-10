@@ -117,6 +117,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
             "source": "Source",
             "expression_audio": "ExpressionAudio",
             "sentence_translation": "Translation",
+            "language": "Language",
         },
         "card_type": "word_and_sentence",
         "card_type_marker_fields": {
@@ -142,9 +143,8 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "excluded_wordsets": ["given-names"],
         "dictionary_chain": [
             {"kind": "indexed", "dict_id": "jmdict-english", "enabled": True},
-            {"kind": "jisho", "dict_id": None, "enabled": False},
+            {"kind": "indexed", "dict_id": "jitendex", "enabled": False},
         ],
-        "jisho_delay": 0.5,
         "expression_audio_chain": [{"kind": "pack", "pack_id": "local-audio", "enabled": True}],
         "reading_tts_enabled": True,
         "pitch_category_format": "romaji",
@@ -675,6 +675,36 @@ def test_whitelist_coverage_never_crosses_the_result_wire(
     event = json.loads(raw_events[0])
     Draft202012Validator(schemas["engine_events"], registry=_cross_schema_registry(schemas)).validate(event)
     assert "whitelistCoverage" not in event["payload"]["result"]
+
+
+def test_not_mined_report_and_its_language_stay_off_the_result_wire(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    """Every result carries both since v3.8.0; B1 wires them, until then neither crosses.
+
+    ``not_mined`` maps an Enum to frozensets, which has no JSON form here, and
+    Kotlin decodes a result against an exact key set.
+    """
+    from android_bridge import mining
+    from anki_miner.models.processing import NotMinedReason, NotMinedReport, ProcessingResult
+
+    result = ProcessingResult(
+        total_words_found=2,
+        new_words_found=1,
+        cards_created=1,
+        card_ids=[7],
+        mined_forms=["猫"],
+        mined_forms_language="ja",
+        video_file="/video.mkv",
+        subtitle_file="/subtitle.srt",
+        not_mined=NotMinedReport.from_drops({"犬": NotMinedReason.KNOWN}, mined=frozenset({"猫"})),
+    )
+
+    _outcome, raw_terminal = mining._result_terminal("run_" + "a" * 32, result)
+    terminal = json.loads(raw_terminal)
+    Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas)).validate(terminal)
+    assert {"notMined", "minedFormsLanguage"}.isdisjoint(terminal["payload"]["result"])
+    assert terminal["payload"]["result"]["minedForms"] == ["猫"]
 
 
 def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:

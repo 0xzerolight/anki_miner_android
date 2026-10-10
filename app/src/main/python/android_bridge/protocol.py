@@ -196,7 +196,10 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
 # feeds desktop's whitelist coverage report, which Android does not have: it holds
 # frozensets, which have no JSON form here, and Kotlin decodes a result against an
 # exact key set, so emitting it would fail every run a whitelist is on for.
-_UNWIRED_PROCESSING_RESULT_FIELDS = frozenset({"whitelist_coverage"})
+# ``not_mined`` (an Enum-keyed mapping of frozensets) and ``mined_forms_language``
+# arrived with desktop v3.8.0 on every result; they stay off the wire until the
+# not-mined report and Undo-by-run-language land (catch-up task B1).
+_UNWIRED_PROCESSING_RESULT_FIELDS = frozenset({"whitelist_coverage", "not_mined", "mined_forms_language"})
 
 
 def processing_result_to_json(result: Any) -> Any:

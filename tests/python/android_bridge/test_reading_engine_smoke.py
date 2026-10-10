@@ -100,7 +100,9 @@ def _reading_request(
             "cacheDir": str(cache_dir),
             "nativeLibraryDir": str(cache_dir / "native"),
             "configSnapshot": {
-                "settings": {},
+                # Kotlin always names the note type; config_map refuses the engine's blank default.
+                # Only the run's log receipt reads it, so the snapshot output is unchanged.
+                "settings": {"anki_note_type": "Lapis"},
                 "androidTtsEnabled": False,
             },
         },

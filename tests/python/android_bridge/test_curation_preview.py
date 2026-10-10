@@ -118,7 +118,11 @@ def _run(
             "cacheDir": str(tmp_path),
             "nativeLibraryDir": str(tmp_path / "native"),
             "configSnapshot": {
-                "settings": {"anki_fields": anki_fields, "merge_incomplete_cues": True},
+                "settings": {
+                    "anki_note_type": "Lapis",
+                    "anki_fields": anki_fields,
+                    "merge_incomplete_cues": True,
+                },
                 "androidTtsEnabled": False,
             },
         },
@@ -157,6 +161,10 @@ def _run(
             return [word], []
 
         def count_lemmas(self, subtitle_file: Path) -> collections.Counter[str]:
+            return collections.Counter({"猫": 2})
+
+        def count_fronts(self, subtitle_file: Path) -> collections.Counter[str]:
+            # The curator's occurrence count, keyed by card front (mined_form).
             return collections.Counter({"猫": 2})
 
     monkeypatch.setattr(parser_module, "get_shared_tagger", lambda: object())
@@ -247,6 +255,7 @@ def test_each_sentence_arrives_with_its_merge_and_translation(
     curation, fields = _run(tmp_path, initialized_bridge_home, monkeypatch, untouched)
 
     _candidate_id, default, alternative = _sentences(curation)
+    assert curation["candidates"][0]["occurrenceCount"] == 2
     # The fragment still names the cue; the counts say how far the card reaches.
     assert (default["sentence"], default.get("linesBefore"), default["linesAfter"]) == ("猫を", None, 1)
     assert default["translation"] == "I saw the cat."

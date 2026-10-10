@@ -418,8 +418,9 @@ def scoped_defaults_wire(profile: Any) -> dict[str, object]:
 
     Each value is in the settings-snapshot shape config_map accepts for that
     field, so Kotlin can store it and send it back unchanged. The one value
-    config_map refuses is a blank ``anki_note_type`` (every non-ja profile's
-    default): it means "pick a note type", and a run cannot start until one is.
+    config_map refuses is a blank ``anki_note_type`` (every profile's default
+    since desktop v3.8.0): it means "pick a note type", and a run cannot start
+    until one is.
     """
 
     from anki_miner.languages.switching import LANGUAGE_SCOPED_FIELDS

@@ -190,9 +190,11 @@ def test_the_extra_card_fields_survive_from_the_dictionary_to_the_note(
     extra: dict[str, str] = {}
     for hook in profile.render_hooks:
         extra.update(hook.render(word, config=config))
+    # Tone colours are note-type-overridable CSS variables with a hex fallback (desktop 16b9d0dd2).
+    blue = "color:var(--amn-tone-blue, #4286e5)"
     assert extra == {
         "measure_word": "間",
-        "expression_jyutping": '<span style="color:#4286e5">ngan4</span> <span style="color:#4286e5">hong4</span>',
+        "expression_jyutping": f'<span style="{blue}">ngan4</span> <span style="{blue}">hong4</span>',
     }
 
     payload = CardPayload(word=word, media=MediaData(), definition=definition, extra_fields=extra)

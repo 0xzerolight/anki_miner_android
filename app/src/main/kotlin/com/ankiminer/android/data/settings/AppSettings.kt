@@ -846,38 +846,17 @@ internal object EngineSettingsSnapshotMapper {
                     .map(::text),
             )
 
-        // Resource-backed chains are Android-owned. Never retain the desktop placeholder slot,
-        // and keep Jisho opt-in because lookup terms leave the device.
+        // Resource-backed chains are Android-owned. Never retain the desktop placeholder slot.
+        // Desktop v3.8.0 removed Jisho, so a stored `jishoEnabled` reaches nothing (B3 retires it).
         val dictionaries =
-            buildList {
-                resolveResourceChain(settings.dictionarySources, installedDictionaryIds)
-                    .forEach { selection ->
-                    add(
-                        BridgeJsonValue.ObjectValue(
-                            mapOf(
-                                "kind" to text("indexed"),
-                                "dict_id" to text(selection.resourceId),
-                                "enabled" to bool(selection.enabled),
-                            ),
-                        ),
-                    )
-                    }
-                // Jisho is a Japanese dictionary and the declared egress is Japanese lookups: another
-                // language's terms never go to jisho.org, whatever a restored backup says.
-                if (settings.jishoEnabled && settings.language == LanguageScope.JAPANESE) {
-                    // Android's settled network budget is at most 10 requests per 10 seconds.
-                    // The desktop 0.5-second floor is intentionally tightened for this port.
-                    values["jisho_delay"] = decimal(1.0)
-                    add(
-                        BridgeJsonValue.ObjectValue(
-                            mapOf(
-                                "kind" to text("jisho"),
-                                "dict_id" to BridgeJsonValue.Null,
-                                "enabled" to bool(true),
-                            ),
-                        ),
-                    )
-                }
+            resolveResourceChain(settings.dictionarySources, installedDictionaryIds).map { selection ->
+                BridgeJsonValue.ObjectValue(
+                    mapOf(
+                        "kind" to text("indexed"),
+                        "dict_id" to text(selection.resourceId),
+                        "enabled" to bool(selection.enabled),
+                    ),
+                )
             }
         values["dictionary_chain"] = BridgeJsonValue.ArrayValue(dictionaries)
 

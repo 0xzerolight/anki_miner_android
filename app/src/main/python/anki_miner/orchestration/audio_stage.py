@@ -24,6 +24,7 @@ from PyQt6.QtCore import QCoreApplication
 
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.interfaces import PresenterProtocol, ProgressCallback
+from anki_miner.languages.registry import config_language, get_profile
 from anki_miner.models import MediaData, TokenizedWord
 from anki_miner.services.audio_fetch_common import (
     expression_audio_candidates as _expression_audio_candidates,
@@ -84,12 +85,16 @@ def _sentence_chain_labels(config: AnkiMinerConfig) -> tuple[list[str], int]:
 
     Sentence TTS has no chain dataclass — its providers are two flags — so the
     labels are built from those, keeping both stages' ``chain=`` field one
-    vocabulary.
+    vocabulary. The labels name what the mining language can actually use, the
+    rule ``service_factory._build_sentence_audio_fetcher`` builds by: the web
+    voice is ``AudioDefaults.sentence_web_voice`` (Edge for a language Google
+    cannot speak), and each leg appears only when the language has a voice for it.
     """
-    providers = (
-        ("google", config.reading_tts_google_enabled),
-        ("papago", config.reading_tts_papago_enabled),
-    )
+    audio = get_profile(config_language(config)).audio
+    web = audio.sentence_web_voice(config)
+    providers = [(web, config.reading_tts_google_enabled)] if web else []
+    if audio.papago_speaker:
+        providers.append(("papago", config.reading_tts_papago_enabled))
     labels = [_chain_label(name, None, enabled) for name, enabled in providers]
     return labels, sum(1 for _, enabled in providers if enabled)
 
@@ -288,20 +293,27 @@ class AudioStage:
     def reading_tts_active(self) -> bool:
         """True when the sentence-TTS stage should run and occupy a progress band.
 
-        Four-part gate: fetcher injected AND the master flag on AND the
+        Five-part gate: fetcher injected AND the master flag on AND the
         sentence-audio Anki field (key ``audio``) mapped AND at least one
-        provider selected. The dedicated ``reading_tts_enabled`` flag exists
+        provider selected AND the chain built a provider for the mining
+        language (a Papago-only selection for a language Papago cannot speak
+        builds none). The dedicated ``reading_tts_enabled`` flag exists
         because — unlike expression_audio — the ``audio`` field is mapped by
         default, so field-presence cannot express consent. Checked in two
         places — the processor's ``process_reading`` (band registration) and
         :meth:`fetch_sentence_audio` (band consumption) — via this property so
         the conditions can't drift apart.
+
+        ``has_providers`` is read with a default of True and compared to
+        ``False`` by identity: a duck-typed fetcher without it, or a MagicMock
+        whose auto-attribute is truthy, keeps the stage on.
         """
         return (
             self.sentence_audio_fetcher is not None
             and self.config.reading_tts_enabled
             and bool(self.config.anki_fields.get("audio"))
             and (self.config.reading_tts_google_enabled or self.config.reading_tts_papago_enabled)
+            and getattr(self.sentence_audio_fetcher, "has_providers", True) is not False
         )
 
     def attach_expression_audio_probe(self, words: list[TokenizedWord]) -> None:
@@ -665,7 +677,9 @@ class AudioStage:
             QCoreApplication.translate("EpisodeProcessor", "Sentence audio: %1"),
             _per_item,
         )
-        if not completed:
+        # Nothing synthesized (every card brought its own clip, or no line had
+        # text): a "0/0 sentences" line would say nothing.
+        if not completed or not attempts:
             return
         self.presenter.show_info(
             tr_format(

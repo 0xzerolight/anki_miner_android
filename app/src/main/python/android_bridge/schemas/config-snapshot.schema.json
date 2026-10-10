@@ -62,6 +62,7 @@
         "source": {"$ref": "#/$defs/optionalMappedField"},
         "expression_audio": {"$ref": "#/$defs/optionalMappedField"},
         "sentence_translation": {"$ref": "#/$defs/optionalMappedField"},
+        "language": {"$ref": "#/$defs/optionalMappedField"},
         "affixes": {"$ref": "#/$defs/optionalMappedField"},
         "aspect_pair": {"$ref": "#/$defs/optionalMappedField"},
         "binyan": {"$ref": "#/$defs/optionalMappedField"},
@@ -104,16 +105,6 @@
       "properties": {
         "kind": {"const": "indexed"},
         "dict_id": {"$ref": "#/$defs/resourceId"},
-        "enabled": {"type": "boolean"}
-      }
-    },
-    "jishoDictionary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind"],
-      "properties": {
-        "kind": {"const": "jisho"},
-        "dict_id": {"type": "null"},
         "enabled": {"type": "boolean"}
       }
     },
@@ -200,9 +191,8 @@
         "dictionary_chain": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"oneOf": [{"$ref": "#/$defs/indexedDictionary"}, {"$ref": "#/$defs/jishoDictionary"}]}
+          "items": {"$ref": "#/$defs/indexedDictionary"}
         },
-        "jisho_delay": {"type": "number", "minimum": 0.5},
         "expression_audio_chain": {
           "type": "array",
           "uniqueItems": true,

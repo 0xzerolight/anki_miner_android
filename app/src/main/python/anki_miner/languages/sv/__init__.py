@@ -36,6 +36,7 @@ from anki_miner.languages.sv.morphology import (
     SV_EXCLUDED_SUBTYPES,
     SV_LEADING_WORDS,
     SV_MODEL_PACKAGE,
+    SV_RESCUABLE_TAGS,
     SV_SUBTITLE_REGEX,
     sv_normalize,
 )
@@ -97,7 +98,10 @@ def build_profile() -> LanguageProfile:
             bare_fallback=True,
         ),
         pos_defaults=PosDefaults(
-            allowed_pos=SV_ALLOWED_POS, excluded_subtypes=SV_EXCLUDED_SUBTYPES, labels=UPOS_LABELS
+            allowed_pos=SV_ALLOWED_POS,
+            excluded_subtypes=SV_EXCLUDED_SUBTYPES,
+            labels=UPOS_LABELS,
+            rescuable_tags=SV_RESCUABLE_TAGS,
         ),
         catalog=SV_CATALOG,
         capabilities=frozenset({"pos_tag", "noun_article", "lemmatised_frequency"}),

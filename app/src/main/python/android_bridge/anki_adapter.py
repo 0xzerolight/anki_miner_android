@@ -42,8 +42,9 @@ logger = logging.getLogger(__name__)
 _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]")
 # What desktop's ``AnkiService._build_note`` hands ``build_note`` for a ja profile.
 # AnkiService derives the five from the profile; ja declares no extra card field,
-# is left-to-right and tags no card language, so they behave exactly like the
-# builder's defaults (content_lang is read only on the rtl branch). Spelled out
+# is left-to-right and tags no card language, so they behave like the builder's
+# defaults except content_lang, which since desktop v3.8.0 also fills a mapped
+# Language field ("ja"), not only the rtl wrapper's lang. Spelled out
 # rather than derived because resolving a profile imports the parser, which the
 # host lane cannot, and because a re-pin that changes ja's derivation must fail
 # the parity test instead of writing different notes. A non-ja profile needs its

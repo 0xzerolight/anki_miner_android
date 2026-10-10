@@ -141,6 +141,7 @@ def test_the_hanja_card_field_survives_to_the_note(initialized_bridge_home: Path
 
     from android_bridge.anki_adapter import _note_builder_kwargs
     from android_bridge.config_map import AndroidPaths, map_config_settings
+    from anki_miner.languages.profile import CARD_FRONT_KEY
     from anki_miner.languages.registry import get_profile
     from anki_miner.models import CardPayload, MediaData, TokenizedWord
     from anki_miner.services.anki_note_builder import build_note
@@ -150,23 +151,41 @@ def test_the_hanja_card_field_survives_to_the_note(initialized_bridge_home: Path
         {"language": "ko", "anki_note_type": "Basic", "anki_fields": {"hanja": "Hanja"}},
         AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native"),
     ).engine_config
-    word = TokenizedWord(
-        surface="漢字", lemma="漢字", reading="", sentence="漢字로 쓴다.", start_time=1.0, end_time=2.0, duration=1.0
+    # A KRDICT hanja-keyed row, headword span kept and gloss trimmed as desktop's
+    # test_ko_render_hooks.py does: the bold hangul headword is the word's card front.
+    definition = (
+        '<span class="gloss-sc-span" lang="ko"><span class="gloss-sc-span" lang="ko" style="font-weight: bold">'
+        '한자</span><span class="gloss-sc-span" lang="ko"> 〔漢字〕</span></span>Chinese characters'
     )
-    # EpisodeProcessor._apply_render_hooks: every hook of the profile fills extra_fields.
+    word = TokenizedWord(
+        surface="漢字",
+        lemma="漢字",
+        reading="",
+        sentence="漢字로 쓴다.",
+        start_time=1.0,
+        end_time=2.0,
+        duration=1.0,
+        definition_html=definition,
+    )
+    # EpisodeProcessor._apply_render_hooks stashes the definition on the word, then every hook of
+    # the profile fills extra_fields.
     extra_fields: dict[str, str] = {}
     for hook in get_profile("ko").render_hooks:
         extra_fields.update(hook.render(word, config=config))
 
     built = build_note(
-        CardPayload(word=word, media=MediaData(), definition="Chinese characters", extra_fields=extra_fields),
+        CardPayload(word=word, media=MediaData(), definition=definition, extra_fields=extra_fields),
         config,
         set(),
         **_note_builder_kwargs(config),
     )
 
-    assert extra_fields == {"hanja": "漢字"}
+    # An all-Hanja word is carded under KRDICT's hangul headword, with the Hanja in its own
+    # field (desktop 2b4c84fee); mined_form stays the Hanja for lookups and known words.
+    assert extra_fields == {"hanja": "漢字", CARD_FRONT_KEY: "한자"}
     assert built.note["fields"]["Hanja"] == "漢字"
+    assert built.note["fields"][config.anki_fields["word"]] == "한자"
+    assert word.mined_form == "漢字"
 
 
 def test_every_desktop_catalog_row_is_pinned_or_excluded(initialized_bridge_home: Path) -> None:

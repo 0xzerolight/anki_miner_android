@@ -21,6 +21,7 @@ from anki_miner.utils import (
     wrap_target_furigana,
     wrap_target_plain,
 )
+from anki_miner.utils.text_utils import _format_furigana
 
 if TYPE_CHECKING:
     from anki_miner.languages.profile import MinedFormPolicy, ScriptSupport
@@ -323,6 +324,16 @@ class WordFilterService:
 
         return [word for word in all_words if not _is_known(word)]
 
+    def known_forms(self, forms: Iterable[str], existing_vocabulary: set[str]) -> set[str]:
+        """Which bare card fronts ``existing_vocabulary`` holds, probed as :meth:`filter_unknown` probes.
+
+        For fronts with no ``TokenizedWord`` behind them (the parse's turned-away
+        tokens, named in the not-mined report), so there is no lemma and no
+        kana-variant fold - only the front's own folded key.
+        """
+        fold = self._dedup_fold
+        return {form for form in forms if (form if fold is None else fold(form)) in existing_vocabulary}
+
     def filter_by_frequency(
         self,
         words: list[TokenizedWord],
@@ -382,8 +393,8 @@ class WordFilterService:
         """Filter words using the user blacklist.
 
         Blacklist entries match against ``word.mined_form`` (the card-front
-        spelling) with a miss-only ``word.lemma`` fallback — a word is dropped
-        when EITHER form is blacklisted. UniDic collapses kanji variants
+        spelling) OR ``word.lemma`` — a word is dropped when EITHER form is
+        blacklisted. UniDic collapses kanji variants
         (賭ける→掛ける) into one lemma, so keying on lemma alone let a blacklist
         entry for the card front (賭ける) be ignored; mirrors the def/freq lookup
         convention (commit 99e2c04). Users should enter dictionary forms in
@@ -414,18 +425,19 @@ class WordFilterService:
 
         Force-included words bypass every optional coverage filter — the caller
         runs the filter chain on ``rest`` only and merges ``forced`` back in
-        before the integrity gates. Matching is on ``word.mined_form`` (the
-        card-front spelling) with a miss-only ``word.lemma`` fallback, the
-        convention shared with :meth:`filter_by_word_lists`: UniDic collapses
-        kanji variants (賭ける→掛ける) into one lemma, so whitelisting the card
-        front must force-include it even though its lemma differs.
-        This OR-match is the explicit alias policy: a canonical-lemma whitelist
-        entry also admits every distinct card-front surface sharing that lemma
-        (its ``lemma-siblings``), including below an occurrence floor.
-        ``all_words`` is already lemma-deduped upstream
-        (``SubtitleParserService``), so exactly one word per whitelisted form is
-        moved to ``forced``. The match itself lives in :func:`whitelisted_keys`,
-        shared with the run-end coverage report.
+        before the within-run duplicate collapse. The integrity gates the
+        whitelist does not override (known words, definition existence) have
+        already run on ``words``. A word matches on ``word.mined_form`` (the
+        card-front spelling) OR ``word.lemma``, the convention shared with
+        :meth:`filter_by_word_lists`: UniDic collapses kanji variants
+        (賭ける→掛ける) into one lemma, so whitelisting the card front must
+        force-include it even though its lemma differs. This OR-match is the
+        explicit alias policy: a canonical-lemma whitelist entry also admits
+        every distinct card-front surface sharing that lemma (its
+        ``lemma-siblings``), including below an occurrence floor. ``words`` is
+        deduped on ``mined_form`` upstream (``SubtitleParserService``), so one
+        entry can force several same-lemma fronts. The match itself lives in
+        :func:`whitelisted_keys`, shared with the run-end coverage report.
 
         Args:
             words: List of candidate words.
@@ -565,6 +577,7 @@ class WordFilterService:
         words: list[TokenizedWord],
         max_duration: float = 0.0,
         max_chars: int = 0,
+        measure: Callable[[TokenizedWord], tuple[float, str]] | None = None,
     ) -> list[TokenizedWord]:
         """Drop words whose example sentence exceeds the configured caps.
 
@@ -577,6 +590,11 @@ class WordFilterService:
                 ``0.0`` means no duration cap.
             max_chars: Maximum allowed ``len(word.sentence)``. ``0`` means
                 no character cap.
+            measure: What to read the ``(duration, sentence)`` from. ``None``
+                (the phase-2 call) reads ``word.duration`` and ``word.sentence``.
+                The automatic cue merge passes the merged window a word is
+                about to acquire, so the caps judge what the card will
+                actually carry rather than the fragment phase 2 measured.
 
         Returns:
             Filtered list of words.
@@ -584,11 +602,13 @@ class WordFilterService:
         if max_duration <= 0.0 and max_chars <= 0:
             return words
 
+        read = measure if measure is not None else (lambda word: (word.duration, word.sentence))
         result = []
         for word in words:
-            if max_duration > 0.0 and word.duration > max_duration:
+            duration, sentence = read(word)
+            if max_duration > 0.0 and duration > max_duration:
                 continue
-            if max_chars > 0 and len(word.sentence) > max_chars:
+            if max_chars > 0 and len(sentence) > max_chars:
                 continue
             result.append(word)
         return result
@@ -598,18 +618,27 @@ class WordFilterService:
         mineable_unknowns: list[TokenizedWord],
         line_index: list[LineLemmas],
         all_unknown_lemmas: set[str] | None = None,
+        all_unknown_fronts: set[str] | None = None,
     ) -> list[TokenizedWord]:
         """Restrict mining to words covered by at least one i+1 example sentence.
 
-        An "i+1" line is a subtitle line containing exactly one UNKNOWN lemma
-        — checked against ``all_unknown_lemmas``, the full unknown set — and
-        that one unknown must also be a mineable target. Checking against the
-        mineable set alone is wrong (Issue #74): unknowns removed by optional
-        filters (frequency rank, blacklist, script type, name wordsets) are
-        still unknown to the learner, so a line packed with them must not
-        qualify. For each candidate word, the earliest such line in
-        ``line_index`` order whose card front remains compatible wins the
-        tie-break; words with no compatible i+1 line are dropped.
+        An "i+1" line is a subtitle line containing exactly one UNKNOWN word
+        — checked against the full unknown set — and that one unknown must
+        also be a mineable target. Checking against the mineable set alone is
+        wrong (Issue #74): unknowns removed by optional filters (frequency
+        rank, blacklist, script type, name wordsets) are still unknown to the
+        learner, so a line packed with them must not qualify. For each
+        candidate word, the earliest such line in ``line_index`` order whose
+        card front remains compatible wins the tie-break; words with no
+        compatible i+1 line are dropped.
+
+        A word is its card front (P4): a line that carries ``front_spans`` (every
+        parsed line) is counted and matched on ``all_unknown_fronts``, so a
+        known 取る never counts as unknown beside an unknown 撮る, and 撮る never
+        takes a line holding only 取る, although UniDic gives both the lemma 取る.
+        A hand-built line without fronts, or a caller passing only
+        ``all_unknown_lemmas``, keeps the lemma count and the
+        ``_line_preserves_mined_form`` guard.
 
         The returned words have their sentence/timing/sentence_furigana/
         sentence_reading swapped to those of the selected line. ``surface`` and
@@ -635,9 +664,13 @@ class WordFilterService:
                 subtitle order.
             all_unknown_lemmas: Every lemma the learner doesn't know,
                 snapshotted BEFORE optional filters shrink the unknown set
-                (the count basis for "exactly one unknown"). ``None`` means
-                "no unknowns beyond the targets" and degrades to checking
-                against the mineable set only.
+                (the count basis for "exactly one unknown" on a line without
+                fronts). ``None`` means "no unknowns beyond the targets" and
+                degrades to checking against the mineable set only.
+            all_unknown_fronts: The same snapshot as card fronts — the count
+                basis on every line that carries fronts. ``None`` with
+                ``all_unknown_lemmas`` given keeps those lines on the lemma
+                count (a lemma-only caller).
 
         Returns:
             Filtered list of words with i+1 sentence/timing swapped in,
@@ -647,26 +680,43 @@ class WordFilterService:
             return []
 
         target_lemmas = {w.lemma for w in mineable_unknowns}
+        target_fronts = {w.mined_form for w in mineable_unknowns}
         # Union defensively: a caller-supplied set that somehow misses a
         # target must not make that target unmatchable.
         unknown_lemmas = (all_unknown_lemmas | target_lemmas) if all_unknown_lemmas is not None else target_lemmas
+        unknown_fronts = (all_unknown_fronts | target_fronts) if all_unknown_fronts is not None else target_fronts
+        by_front = all_unknown_fronts is not None or all_unknown_lemmas is None
 
-        lines_by_lemma: dict[str, list[LineLemmas]] = {}
-        for line in line_index:
-            unknown_in_line = line.lemmas & unknown_lemmas
+        # (position, line) per sole unknown, so the two keyings merge back
+        # into subtitle order for the earliest-line tie-break.
+        lines_by_front: dict[str, list[tuple[int, LineLemmas]]] = {}
+        lines_by_lemma: dict[str, list[tuple[int, LineLemmas]]] = {}
+        for position, line in enumerate(line_index):
+            if by_front and line.front_spans:
+                keys, unknown, targets, lines = line.fronts, unknown_fronts, target_fronts, lines_by_front
+            else:
+                keys, unknown, targets, lines = line.lemmas, unknown_lemmas, target_lemmas, lines_by_lemma
+            unknown_in_line = keys & unknown
             if len(unknown_in_line) == 1:
                 (only,) = unknown_in_line
-                if only in target_lemmas:
-                    lines_by_lemma.setdefault(only, []).append(line)
+                if only in targets:
+                    lines.setdefault(only, []).append((position, line))
 
         result: list[TokenizedWord] = []
         for word in mineable_unknowns:
-            match = next(
-                (line for line in lines_by_lemma.get(word.lemma, ()) if self._line_preserves_mined_form(word, line)),
+            front_match = next(iter(lines_by_front.get(word.mined_form, ())), None)
+            lemma_match = next(
+                (
+                    (position, line)
+                    for position, line in lines_by_lemma.get(word.lemma, ())
+                    if self._line_preserves_mined_form(word, line)
+                ),
                 None,
             )
-            if match is None:
+            matches = [m for m in (front_match, lemma_match) if m is not None]
+            if not matches:
                 continue
+            _, match = min(matches, key=lambda m: m[0])
             result.append(self._swap_word_to_line(word, match))
         return result
 
@@ -715,7 +765,12 @@ class WordFilterService:
         # If the entry is missing for any reason (e.g. legacy index without
         # lemma_spans), fall back to the original surface/offsets — bold would
         # then point at the old sentence, so we also disable the bolded fields.
+        # The word's own card front first: the lemma's first span may be a
+        # UniDic sibling (取る beside 撮る on one line).
         span_entry = next(
+            ((s, st, en, he) for (front, s, st, en, he) in match.front_spans if front == word.mined_form),
+            None,
+        ) or next(
             ((s, st, en, he) for (lemma_key, s, st, en, he) in match.lemma_spans if lemma_key == word.lemma),
             None,
         )
@@ -748,7 +803,15 @@ class WordFilterService:
         expr_furigana = word.expression_furigana
         expr_reading = word.expression_reading
         surface_is_expression = self._tracks_surface(word)
-        if surface_is_expression and new_surface != word.surface and self.tagger is not None:
+        # The generators are Japanese (contiguous kana tokens): a language with
+        # no sentence annotator keeps its parse-time values, as expand_word_lines
+        # does (BA-054).
+        if (
+            surface_is_expression
+            and new_surface != word.surface
+            and self.tagger is not None
+            and self._sentence_annotation
+        ):
             expr_furigana = generate_furigana(new_surface, self.tagger)
             expr_reading = generate_reading(new_surface, self.tagger)
 
@@ -786,6 +849,56 @@ class WordFilterService:
         bold_end = highlight_end if highlight_end >= 0 else end
         furigana_bolded = wrap_target_furigana(text, self.tagger, start, bold_end) if self._sentence_annotation else ""
         return (wrap_target_plain(text, start, bold_end), furigana_bolded)
+
+    def word_on_line(
+        self,
+        word: TokenizedWord,
+        line: tuple[float, float, str],
+        span: tuple[int, int],
+        *,
+        reading: str | None = None,
+    ) -> TokenizedWord:
+        """``word`` rebuilt on one subtitle line at ``span`` (the ``--api`` word made from its line).
+
+        ``line`` is a ``parse_raw_entries`` cue and ``span`` the word's ``[start, end)``
+        in its text. The rebuild is :meth:`_swap_word_to_line`'s, the sentence
+        picker's, over a one-line index made here, with the line's sentence
+        annotations generated the way :meth:`expand_word_lines` generates them.
+        ``reading`` replaces the word's readings, and its furigana in a language
+        that annotates, after the swap (which regenerates a surface-tracked
+        word's reading from its new surface).
+        """
+        start_time, end_time, text = line
+        start, end = span
+        annotate = self.tagger is not None and self._sentence_annotation
+        match = LineLemmas(
+            line_text=text,
+            lemmas=frozenset({word.lemma}),
+            start_time=start_time,
+            end_time=end_time,
+            duration=end_time - start_time,
+            sentence_furigana=generate_furigana(text, self.tagger) if annotate else "",
+            sentence_reading=generate_reading(text, self.tagger) if annotate else "",
+            front_spans=((word.mined_form, text[start:end], start, end, -1),),
+            fronts=frozenset({word.mined_form}),
+        )
+        moved = self._swap_word_to_line(word, match)
+        return self.with_reading(moved, reading) if reading else moved
+
+    def with_reading(self, word: TokenizedWord, reading: str) -> TokenizedWord:
+        """``word`` with ``reading`` as its readings, and its furigana in a language that annotates.
+
+        The ``--api`` entry's ``reading`` (API.md): it chooses among dictionary
+        entries in phase 4 and is the card's reading.
+        """
+        return dataclasses.replace(
+            word,
+            reading=reading,
+            expression_reading=reading,
+            lemma_reading=reading,
+            resolved_reading="",
+            expression_furigana=_format_furigana(word.mined_form, reading) if self._sentence_annotation else "",
+        )
 
     def expand_word_lines(
         self,
@@ -869,9 +982,11 @@ class WordFilterService:
     ) -> None:
         """Populate ``word.sentence_candidates`` for words that repeat across lines.
 
-        For each word, collects every ``line_index`` entry whose content lemmas
-        include ``word.lemma`` and whose matched surface preserves the card front
-        (subtitle order preserved). When a word appears on two or more compatible
+        For each word, collects every ``line_index`` entry that carries its card
+        front (a hand-built line without fronts: whose content lemmas include
+        ``word.lemma`` and whose matched surface preserves the card front), in
+        subtitle order. A line holding only a UniDic lemma-sibling (取る for
+        撮る) is never offered. When a word appears on two or more compatible
         lines, builds one fully-swapped :class:`TokenizedWord` variant per line
         (earliest-first) via :meth:`_swap_word_to_line` and assigns the list —
         including the variant for the word's current sentence, so the curator can
@@ -888,13 +1003,23 @@ class WordFilterService:
         """
         if not line_index:
             return
-        lines_by_lemma: dict[str, list[LineLemmas]] = {}
-        for line in line_index:
-            for lemma in line.lemmas:
-                lines_by_lemma.setdefault(lemma, []).append(line)
+        lines_by_front: dict[str, list[tuple[int, LineLemmas]]] = {}
+        lines_by_lemma: dict[str, list[tuple[int, LineLemmas]]] = {}
+        for position, line in enumerate(line_index):
+            if line.front_spans:
+                for front in line.fronts:
+                    lines_by_front.setdefault(front, []).append((position, line))
+            else:
+                for lemma in line.lemmas:
+                    lines_by_lemma.setdefault(lemma, []).append((position, line))
 
         for word in words:
-            lines = [line for line in lines_by_lemma.get(word.lemma, ()) if self._line_preserves_mined_form(word, line)]
+            compatible = lines_by_front.get(word.mined_form, []) + [
+                (position, line)
+                for position, line in lines_by_lemma.get(word.lemma, ())
+                if self._line_preserves_mined_form(word, line)
+            ]
+            lines = [line for _, line in sorted(compatible, key=lambda entry: entry[0])]
             if len(lines) < 2:
                 continue
             if max_candidates is not None:
@@ -902,77 +1027,77 @@ class WordFilterService:
             word.sentence_candidates = [self._swap_word_to_line(word, line) for line in lines]
 
     def _counts_for_words(self, words: list[TokenizedWord], counts: Mapping[str, int]) -> Mapping[str, int]:
-        """Lemma→count mapping restated over the lemmas ``words`` were mined under.
+        """Card-front→count mapping restated over the fronts ``words`` were mined under.
 
-        The parser counts every occurrence under the lemma it saw, but a
-        spelling the fold merges away never becomes a word of its own: under the
-        zh script fold 頭髮 and 头发 are one word, so mixed-script material split
-        that word's occurrences across two keys and a lookup read only one of
-        them — the curator under-reported and the reading occurrence floor
-        dropped words that had cleared it.
+        The parser counts every occurrence under the card front it mines
+        (``count_fronts`` / ``parse_text_units``, the T-38 parity), so a card is
+        never credited with a lemma-sibling's lines: UniDic files 賭ける under
+        掛ける's lemma, and they are two cards (audit L3-005).
 
-        A mined lemma therefore keeps its OWN count and collects the counts of
-        spellings that fold onto it only when it is the ONLY mined lemma with
-        that key. Summing the fold outright would double the corpus wherever
-        the run kept both spellings as separate cards (Character Set = As
-        written): each card would report the pair's total, and two cards that
-        occur three times and once would both claim four. Two mined spellings
-        can share a key without either being the other's (裏面 and 裡面 both
-        fold to 里面), and crediting an unmined third spelling to both is that
-        same double count one step further out — so it goes to neither.
+        A spelling the language's fold merges can still arrive under a front of
+        its own: zh As written cards 頭髮 and 头发 apart, and 裏面 and 裡面 both
+        fold to 里面. A mined front therefore keeps its OWN count and collects
+        the counts of spellings that fold onto it only when it is the ONLY mined
+        front with that key. Summing the fold outright would double the corpus
+        wherever the run kept both spellings as separate cards: each card would
+        report the pair's total, and two cards that occur three times and once
+        would both claim four. Crediting an unmined third spelling to two mined
+        ones is that same double count one step further out, so it goes to
+        neither.
 
-        Folding happens HERE and never at the count site
-        (``count_lemmas``/``parse_text_units``): the curator dialog's
-        "Occurrences" column (``EpisodeProcessor._run_curation``) reads those
-        Counter keys straight, unfolded. A language with no fold (ja/ko) gets
-        its own mapping back untouched.
+        Folding happens HERE and never at the count site: the Counter keys stay
+        the unfolded fronts. A language with no fold (ja/ko) gets its own
+        mapping back untouched.
         """
         fold = self._dedup_fold
         if fold is None:
             return counts
-        mined = {word.lemma for word in words}
-        # The one mined lemma holding each key, or None where two of them do.
+        mined = {word.mined_form for word in words}
+        # The one mined front holding each key, or None where two of them do.
         owner: dict[str, str | None] = {}
-        for lemma in mined:
-            key = fold(lemma)
-            owner[key] = None if key in owner else lemma
+        for front in mined:
+            key = fold(front)
+            owner[key] = None if key in owner else front
         credit: dict[str, int] = {}
-        for lemma, count in counts.items():
-            if lemma in mined:
+        for front, count in counts.items():
+            if front in mined:
                 continue
-            claimant = owner.get(fold(lemma))
+            claimant = owner.get(fold(front))
             if claimant is not None:
                 credit[claimant] = credit.get(claimant, 0) + count
         if not credit:
             return counts
-        return {lemma: counts.get(lemma, 0) + credit.get(lemma, 0) for lemma in mined}
+        return {front: counts.get(front, 0) + credit.get(front, 0) for front in mined}
 
     def attach_occurrence_counts(self, words: list[TokenizedWord], counts: Mapping[str, int]) -> None:
-        """Set ``word.occurrence_count`` from in-episode lemma counts (Issue #88).
+        """Set ``word.occurrence_count`` from in-document card-front counts (Issue #88).
 
-        ``counts`` is a lemma→occurrences mapping (e.g. the Counter from
-        ``SubtitleParserService.count_lemmas``), restated over the mined lemmas
-        first, so a word that merged two spellings gets the sum of both (see
-        :meth:`_counts_for_words`). Lemmas absent from the mapping get 0.
+        ``counts`` maps card front → occurrences (``SubtitleParserService.count_fronts``
+        or ``parse_text_units``), restated over the mined fronts first, so a word
+        whose spellings fold together gets the sum of both (see
+        :meth:`_counts_for_words`). Fronts absent from the mapping get 0.
         Mutates ``words`` in place; display/sort-only data for the curator.
         """
         counts = self._counts_for_words(words, counts)
         for word in words:
-            word.occurrence_count = counts.get(word.lemma, 0)
+            word.occurrence_count = counts.get(word.mined_form, 0)
 
     def attach_line_unknown_counts(
         self,
         words: list[TokenizedWord],
         line_index: list[LineLemmas],
         unknown_lemmas: set[str],
+        unknown_fronts: set[str] | None = None,
     ) -> None:
-        """Set ``line_unknown_count`` — distinct unknown lemmas on the word's own line.
+        """Set ``line_unknown_count`` — distinct unknown words on the word's own line.
 
-        ``unknown_lemmas`` must be the basis :meth:`filter_i_plus_one` counts
-        against (the pre-optional-filter snapshot unioned with the mineable
-        targets), or the curator's column disagrees with the filter: a count of
-        1 is exactly the i+1 condition, which is what makes sorting that column
-        ascending i+1 without i+1's word loss.
+        ``unknown_lemmas``/``unknown_fronts`` must be the bases
+        :meth:`filter_i_plus_one` counts against (the pre-optional-filter
+        snapshot unioned with the mineable targets), or the curator's column
+        disagrees with the filter: a count of 1 is exactly the i+1 condition,
+        which is what makes sorting that column ascending i+1 without i+1's
+        word loss. A line carrying fronts counts card fronts when
+        ``unknown_fronts`` is given, exactly as the filter does.
 
         Lines are matched by TEXT, not by time. Both the mining parse and the
         i+1 swap set ``sentence`` to a line's cleaned text, and two lines with
@@ -989,12 +1114,16 @@ class WordFilterService:
         """
         if not line_index:
             return
-        lemmas_by_text = {line.line_text: line.lemmas for line in line_index}
+        lines_by_text = {line.line_text: line for line in line_index}
         for word in words:
             for variant in (word, *word.sentence_candidates):
-                lemmas = lemmas_by_text.get(variant.sentence)
-                if lemmas is not None:
-                    variant.line_unknown_count = len(lemmas & unknown_lemmas)
+                line = lines_by_text.get(variant.sentence)
+                if line is None:
+                    continue
+                if unknown_fronts is not None and line.front_spans:
+                    variant.line_unknown_count = len(line.fronts & unknown_fronts)
+                else:
+                    variant.line_unknown_count = len(line.lemmas & unknown_lemmas)
 
     def filter_by_episode_count(
         self,
@@ -1002,18 +1131,22 @@ class WordFilterService:
         cross_episode_counts: dict[str, int],
         min_appearances: int,
     ) -> list[TokenizedWord]:
-        """Filter words by cross-episode appearance count.
+        """The Reading occurrence floor (``reading_min_occurrence``).
 
-        Only keeps words that appear in at least `min_appearances` episodes.
-        Counts are restated over the mined lemmas the same way
+        Only keeps words that occur at least `min_appearances` times in the
+        document. Counts are restated over the mined card fronts the same way
         :meth:`attach_occurrence_counts` restates them for the curator's
-        Occurrences column — the floor must not drop a word the column says
-        cleared it.
+        Occurrences column. The floor runs in phase 2, before the within-run
+        collapse knows dictionary identities, so a word written two ways that
+        the collapse later merges (よそ見 / 余所見) is judged per spelling; the
+        column, read after the collapse, shows the merged card the sum. (The
+        parameter names predate the floor: they served the removed
+        cross-episode filter.)
 
         Args:
             words: List of words to filter.
-            cross_episode_counts: Mapping of lemma to episode count.
-            min_appearances: Minimum number of episodes a word must appear in.
+            cross_episode_counts: Mapping of card front to occurrences in the document.
+            min_appearances: Minimum number of occurrences a word must have.
 
         Returns:
             Filtered list of words.
@@ -1022,4 +1155,4 @@ class WordFilterService:
             return words
 
         counts = self._counts_for_words(words, cross_episode_counts)
-        return [word for word in words if counts.get(word.lemma, 0) >= min_appearances]
+        return [word for word in words if counts.get(word.mined_form, 0) >= min_appearances]

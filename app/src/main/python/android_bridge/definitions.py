@@ -80,7 +80,7 @@ def _text(value: object, *, name: str, max_bytes: int) -> str:
 
 
 def _build_service(config: object) -> object:
-    """Build a fresh offline-only provider chain for one request.
+    """Build a fresh provider chain for one request.
 
     Function-local imports preserve the ANKI_MINER_HOME bootstrap ordering.
     """
@@ -89,9 +89,7 @@ def _build_service(config: object) -> object:
 
     registry = DictionaryRegistry(config.dicts_root)
     registry.load()
-    providers = [
-        provider for provider in registry.build_provider_chain(config) if not getattr(provider, "is_online", False)
-    ]
+    providers = registry.build_provider_chain(config)
     # Desktop's _lookup_kwarg: the run language's miss ladder; ja's is the default.
     language = config_language(config)
     lookup = {} if language == JAPANESE else {"lookup": get_profile(language).lookup}

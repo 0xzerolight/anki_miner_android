@@ -71,6 +71,7 @@ class AnkiFieldAutoMapTest {
                 "source" to "",
                 "expression_audio" to "",
                 "sentence_translation" to "",
+                "language" to "",
             )
         assertEquals(expected, map)
         // The plain `sentence` key must land on "Sentence", NOT on "SentenceFurigana" — exact
@@ -177,6 +178,7 @@ class AnkiFieldAutoMapTest {
                 "source" to "miscInfo",
                 "expression_audio" to "wordAudio",
                 "sentence_translation" to "sentenceTranslation",
+                "language" to "",
             )
         assertEquals(expected, map)
     }

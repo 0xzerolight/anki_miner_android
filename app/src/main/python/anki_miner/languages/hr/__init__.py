@@ -30,6 +30,7 @@ from anki_miner.languages.hr.morphology import (
     HR_EXCLUDED_SUBTYPES,
     HR_MODEL_PACKAGE,
     HR_OPENERS,
+    HR_RESCUABLE_TAGS,
     HR_SUBTITLE_REGEX,
     hr_normalize,
     hr_tone_fold,
@@ -102,7 +103,10 @@ def build_profile() -> LanguageProfile:
             bare_fallback=True,
         ),
         pos_defaults=PosDefaults(
-            allowed_pos=HR_ALLOWED_POS, excluded_subtypes=HR_EXCLUDED_SUBTYPES, labels=UPOS_LABELS
+            allowed_pos=HR_ALLOWED_POS,
+            excluded_subtypes=HR_EXCLUDED_SUBTYPES,
+            labels=UPOS_LABELS,
+            rescuable_tags=HR_RESCUABLE_TAGS,
         ),
         catalog=HR_CATALOG,
         capabilities=frozenset({"pos_tag", "noun_gender", "aspect_pairs", "lemmatised_frequency"}),

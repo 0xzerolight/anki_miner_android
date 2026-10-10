@@ -187,7 +187,7 @@ def test_japanese_composition_keeps_the_known_words_file_and_language(
 
     monkeypatch.setattr(subtitle_parser, "SubtitleParserService", JapaneseParser)
     paths = AndroidPaths(initialized_bridge_home, tmp_path / "cache", tmp_path / "native")
-    config = map_config_settings({}, paths).engine_config
+    config = map_config_settings({"anki_note_type": "Lapis"}, paths).engine_config
     captured = _compose(monkeypatch, config)
 
     assert captured["known_word_db"]._db_path == initialized_bridge_home / "known_words.db"
@@ -539,31 +539,10 @@ def test_the_curation_pane_uses_the_run_languages_lookup_ladder(tmp_path: Path) 
         service.close()
 
 
-# ---------------------------------------------------------------- Jisho guard
+# ---------------------------------------------------------------- dictionary chain
 
 
-def test_a_jisho_entry_under_another_language_is_refused(tmp_path: Path) -> None:
-    """Jisho is Japanese; a Hebrew chain naming it would send Hebrew terms to jisho.org."""
-    _runtime_lane()
-    with pytest.raises(BridgeProtocolError) as refused:
-        _hebrew_config(
-            tmp_path,
-            dictionary_chain=[{"kind": "jisho", "dict_id": None, "enabled": True}],
-        )
-    assert refused.value.code == "invalid_config_field"
-    assert "dictionary_chain.kind" in str(refused.value)
-
-
-def test_a_disabled_jisho_entry_under_another_language_is_refused_too(tmp_path: Path) -> None:
-    _runtime_lane()
-    with pytest.raises(BridgeProtocolError):
-        _hebrew_config(
-            tmp_path,
-            dictionary_chain=[{"kind": "jisho", "dict_id": None, "enabled": False}],
-        )
-
-
-def test_a_hebrew_chain_without_jisho_still_maps(tmp_path: Path) -> None:
+def test_a_hebrew_indexed_chain_maps(tmp_path: Path) -> None:
     _runtime_lane()
     config = _hebrew_config(
         tmp_path,

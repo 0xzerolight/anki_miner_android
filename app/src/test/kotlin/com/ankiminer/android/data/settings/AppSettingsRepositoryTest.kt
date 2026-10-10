@@ -677,7 +677,7 @@ class AppSettingsRepositoryTest {
             jishoEnabled = true,
             // Non-default, or corrupting the key would quarantine to the value already stored.
             language = "he",
-            languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "jisho_enabled" to true)),
+            languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "max_sentence_characters" to 30)),
         )
 
     private fun unreadableDataStore(): DataStore<Preferences> =

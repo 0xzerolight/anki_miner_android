@@ -501,7 +501,10 @@
         "subtitle_regex_replacement",
         "min_frequency_rank",
         "max_frequency_rank",
-        "frequency_keep_unranked"
+        "frequency_keep_unranked",
+        "pitch_category_format",
+        "card_type_marker_fields",
+        "max_sentence_chars"
       ],
       "properties": {
         "dictionary_chain": {
@@ -542,7 +545,7 @@
         },
         "anki_note_type": {
           "type": "string",
-          "$comment": "Blank for every non-ja profile: the user must pick a note type before a run, and config_map refuses a blank one."
+          "$comment": "Blank for every profile: the user must pick a note type before a run, and config_map refuses a blank one."
         },
         "card_type": {
           "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/card_type"
@@ -585,6 +588,15 @@
         },
         "frequency_keep_unranked": {
           "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/frequency_keep_unranked"
+        },
+        "pitch_category_format": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/pitch_category_format"
+        },
+        "card_type_marker_fields": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/card_type_marker_fields"
+        },
+        "max_sentence_chars": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/max_sentence_chars"
         }
       }
     },

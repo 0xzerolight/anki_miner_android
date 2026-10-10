@@ -58,6 +58,9 @@ internal object LanguageScope {
             "min_frequency_rank",
             "max_frequency_rank",
             "frequency_keep_unranked",
+            "pitch_category_format",
+            "card_type_marker_fields",
+            "max_sentence_chars",
         )
 
     /**
@@ -65,9 +68,9 @@ internal object LanguageScope {
      *
      * Membership is measured, not chosen: `LanguageScopeTest` changes every [AppSettings] property
      * in turn and requires this map to hold exactly those that move a snapshot key in
-     * [ENGINE_FIELDS]. That is how indirect feeders get here — `jishoEnabled` writes the Jisho entry
-     * of `dictionary_chain`, `audioPacks` the whole `expression_audio_chain`, and
-     * `cardTypeMarkerField` decides whether `card_type` reaches the engine at all.
+     * [ENGINE_FIELDS]. That is how indirect feeders get here — `audioPacks` writes the whole
+     * `expression_audio_chain`, and `cardTypeMarkerField` decides whether `card_type` reaches the
+     * engine at all.
      */
     val SETTINGS: Map<String, String> =
         linkedMapOf(
@@ -95,10 +98,19 @@ internal object LanguageScope {
             "pitchSources" to "pitch_sources_v1",
             "audioPacks" to "audio_packs_v1",
             "enabledWordsets" to "enabled_wordsets_v2",
-            "jishoEnabled" to "jisho_enabled",
+            "maxSentenceCharacters" to "max_sentence_characters",
+            "pitchCategoryFormat" to "pitch_category_format",
         )
 
     val PREFERENCE_NAMES: Set<String> = SETTINGS.values.toSet()
+
+    /**
+     * Scoped preferences that were global on Android when stashes could already exist: desktop
+     * `_FORMERLY_GLOBAL_FIELDS`, minus the names Android scoped together with the stash itself (the
+     * regex trio, the frequency band and `card_type_marker_field` were scoped from day one).
+     */
+    internal val FORMERLY_GLOBAL_PREFERENCES: Set<String> =
+        setOf("max_sentence_characters", "pitch_category_format")
 
     /**
      * What a first visit to [profile] starts from, before anything parked for it is laid over.
@@ -108,8 +120,7 @@ internal object LanguageScope {
      * first-visit config, so an omitted key resolves to `scoped_defaults` there. Three settings
      * deliberately ignore the profile, as they do on a fresh Japanese install: the note type, the
      * field map and the card type stay the user's to pick (no run starts until they do, rather than
-     * mining into a desktop default like Lapis), and Jisho stays opt-in because lookups leave the
-     * device.
+     * mining into a desktop default).
      */
     fun firstVisit(profile: LanguageProfileInfo): AppSettings {
         val defaults = profile.scopedDefaults
@@ -163,14 +174,22 @@ internal object LanguageScope {
  * snapshot lacks takes the profile default rather than keeping the outgoing language's value. An
  * entry parked for the language that is already active is stale (a settings import can change the
  * language without touching the machine-local stash), so it is discarded.
+ *
+ * A [LanguageScope.FORMERLY_GLOBAL_PREFERENCES] name that no parked snapshot carries yet was global
+ * when they were parked, so its live value is the one every language shared: each snapshot is
+ * completed with it once. From then on every snapshot carries its own, and a first visit still
+ * starts from the profile.
  */
 internal fun AppSettings.switchLanguage(target: LanguageProfileInfo): AppSettings {
     val code = target.code
     if (code == language) {
         return if (code in languageStash) copy(languageStash = languageStash - code) else this
     }
-    val stash = languageStash.toMutableMap()
-    stash[language] = DataStoreAppSettingsRepository.parkScoped(this)
+    val live = DataStoreAppSettingsRepository.parkScoped(this)
+    val alreadyParked = languageStash.values.flatMapTo(mutableSetOf()) { it.keys }
+    val shared = (LanguageScope.FORMERLY_GLOBAL_PREFERENCES - alreadyParked).associateWith { live[it] }
+    val stash = languageStash.mapValues { (_, parked) -> shared + parked }.toMutableMap()
+    stash[language] = live
     val parked = stash.remove(code).orEmpty()
     return DataStoreAppSettingsRepository.overlayScoped(
         copy(language = code, languageStash = stash),

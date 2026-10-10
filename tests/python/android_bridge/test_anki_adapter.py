@@ -933,7 +933,8 @@ class FakeKotlinAnki:
 def _config(home: Path, **changes: object) -> Any:
     from anki_miner.config import AnkiMinerConfig
 
-    base = AnkiMinerConfig(dicts_root=home / "dicts")
+    # The engine default note type is "" (nothing chosen); Kotlin always sends one.
+    base = AnkiMinerConfig(dicts_root=home / "dicts", anki_note_type="Lapis")
     return replace(base, **changes)
 
 

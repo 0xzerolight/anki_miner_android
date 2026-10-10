@@ -26,6 +26,7 @@ from anki_miner.languages.pl.morphology import (
     PL_GENDER_LABELS,
     PL_KEYS,
     PL_MODEL_PACKAGE,
+    PL_RESCUABLE_TAGS,
     PL_SENTENCE_RULES,
     PL_SUBTITLE_REGEX,
     PL_VERB_POS,
@@ -91,7 +92,10 @@ def build_profile() -> LanguageProfile:
             bare_fallback=True,
         ),
         pos_defaults=PosDefaults(
-            allowed_pos=PL_ALLOWED_POS, excluded_subtypes=PL_EXCLUDED_SUBTYPES, labels=UPOS_LABELS
+            allowed_pos=PL_ALLOWED_POS,
+            excluded_subtypes=PL_EXCLUDED_SUBTYPES,
+            labels=UPOS_LABELS,
+            rescuable_tags=PL_RESCUABLE_TAGS,
         ),
         catalog=PL_CATALOG,
         capabilities=frozenset({"pos_tag", "noun_gender", "aspect_pairs", "lemmatised_frequency"}),

@@ -70,8 +70,8 @@ def _scoped_defaults() -> Mapping[str, object]:
             "excluded_subtypes": TH_EXCLUDED_SUBTYPES,
             "anki_fields": TH_CARD_FIELD_DEFAULTS,
             # "" is not a deck AnkiConnect accepts, and inheriting ja's default
-            # would file Thai cards into the Japanese deck. The ja note type is
-            # ja-specific, so th ships empty and the user picks (zh precedent).
+            # would file Thai cards into the Japanese deck. The note type starts
+            # empty, as in every language: the user picks.
             "anki_deck_name": "Anki Miner",
             "anki_note_type": "",
             # S10: the SDH filter is on for a first visit; parked values stay.
@@ -108,8 +108,9 @@ def build_profile() -> LanguageProfile:
             # boundary, which is what split_on_whitespace (S9) is for.
             terminators=frozenset("!?"),
             ellipses=frozenset("…"),
-            openers=frozenset('“‘("'),
-            closers=frozenset('”’)"'),
+            # No ASCII ' or ": a symmetric quote can only ever open here, and a stray closer would then glue sentences.
+            openers=frozenset("“‘("),
+            closers=frozenset("”’)"),
             space_aware=False,
             split_on_whitespace=True,
             whitespace_joiners=TH_WHITESPACE_JOINERS,
@@ -126,7 +127,10 @@ def build_profile() -> LanguageProfile:
             bare_fallback=True,
         ),
         pos_defaults=PosDefaults(
-            allowed_pos=TH_ALLOWED_POS, excluded_subtypes=TH_EXCLUDED_SUBTYPES, labels=TH_POS_LABELS
+            allowed_pos=TH_ALLOWED_POS,
+            excluded_subtypes=TH_EXCLUDED_SUBTYPES,
+            labels=TH_POS_LABELS,
+            rescuable_tags=(*TH_ALLOWED_POS, "PROPN"),
         ),
         catalog=TH_CATALOG,
         capabilities=frozenset({"thai_reading", "thai_classifier"}),

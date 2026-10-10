@@ -126,8 +126,8 @@ def test_known_words_path_mirrors_desktop_resolve_known_words_db_path(tmp_path: 
 
 
 def test_explicit_japanese_maps_exactly_like_an_absent_language(tmp_path: Path) -> None:
-    implicit = map_config_settings({}, _paths(tmp_path)).engine_config
-    explicit = map_config_settings({"language": "ja"}, _paths(tmp_path)).engine_config
+    implicit = map_config_settings(dict(_NOTE_TYPE), _paths(tmp_path)).engine_config
+    explicit = map_config_settings({"language": "ja", **_NOTE_TYPE}, _paths(tmp_path)).engine_config
     assert explicit == implicit
     assert explicit.language == "ja"
 
@@ -193,18 +193,23 @@ def test_profile_extra_card_fields_are_accepted_only_for_their_language(tmp_path
     assert mapped.anki_fields["transliteration"] == "Translit"
 
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"anki_fields": {"transliteration": "Translit"}}, _paths(tmp_path))
+        map_config_settings({**_NOTE_TYPE, "anki_fields": {"transliteration": "Translit"}}, _paths(tmp_path))
     assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith("anki_fields:")
 
 
 def test_script_variant_is_limited_to_the_profile_offer(tmp_path: Path) -> None:
-    assert map_config_settings({"script_variant": ""}, _paths(tmp_path)).engine_config.script_variant == ""
+    assert (
+        map_config_settings({**_NOTE_TYPE, "script_variant": ""}, _paths(tmp_path)).engine_config.script_variant == ""
+    )
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"script_variant": "simplified"}, _paths(tmp_path))
+        map_config_settings({**_NOTE_TYPE, "script_variant": "simplified"}, _paths(tmp_path))
     assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith("script_variant:")
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"script_variant": 1}, _paths(tmp_path))
+        map_config_settings({**_NOTE_TYPE, "script_variant": 1}, _paths(tmp_path))
     assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith("script_variant:")
 
 
 def test_script_variant_is_refused_for_a_non_ja_language_without_variants(tmp_path: Path) -> None:
@@ -215,10 +220,13 @@ def test_script_variant_is_refused_for_a_non_ja_language_without_variants(tmp_pa
 
 
 def test_reading_tone_color_is_a_boolean_setting(tmp_path: Path) -> None:
-    assert map_config_settings({"reading_tone_color": True}, _paths(tmp_path)).engine_config.reading_tone_color
+    assert map_config_settings(
+        {**_NOTE_TYPE, "reading_tone_color": True}, _paths(tmp_path)
+    ).engine_config.reading_tone_color
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"reading_tone_color": "yes"}, _paths(tmp_path))
+        map_config_settings({**_NOTE_TYPE, "reading_tone_color": "yes"}, _paths(tmp_path))
     assert error.value.code == "invalid_config_field"
+    assert str(error.value).startswith("reading_tone_color:")
 
 
 def test_language_stash_never_crosses_the_wire(tmp_path: Path) -> None:
@@ -274,17 +282,25 @@ def test_ja_scoped_defaults_carry_the_desktop_ja_values() -> None:
     from anki_miner.languages.registry import get_profile
 
     wire = languages.scoped_defaults_wire(get_profile("ja"))
-    assert wire["anki_note_type"] == "Lapis"
-    assert wire["dictionary_chain"] == [
-        {"kind": "indexed", "dict_id": "jmdict-english", "enabled": True},
-        {"kind": "jisho", "dict_id": None, "enabled": False},
-    ]
+    # Desktop v3.8.0: no language picks a note type (the setup wizard does), and Jisho is gone.
+    assert wire["anki_note_type"] == ""
+    assert wire["dictionary_chain"] == [{"kind": "indexed", "dict_id": "jmdict-english", "enabled": True}]
+    # Scoped since v3.8.0, at the config defaults every language shared while they were global.
+    assert wire["pitch_category_format"] == "jp"
+    assert wire["max_sentence_chars"] == 0
+    assert wire["card_type_marker_fields"] == {
+        "word_and_sentence": "IsWordAndSentenceCard",
+        "click": "IsClickCard",
+        "sentence": "IsSentenceCard",
+        "audio": "IsAudioCard",
+    }
+    assert wire["anki_fields"]["language"] == ""
     # jpod101 + googletts: both cut kinds, so the Android default chain is empty.
     assert wire["expression_audio_chain"] == []
     assert wire["known_words_match_kana_variants"] is True
 
 
-def test_base_config_fields_are_the_132_engine_fields() -> None:
+def test_base_config_fields_are_the_engine_fields() -> None:
     _runtime_lane()
     from anki_miner.config import AnkiMinerConfig
 

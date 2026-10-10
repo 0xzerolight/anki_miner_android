@@ -559,7 +559,7 @@ def test_a_long_book_mines_its_most_frequent_word_from_a_picked_variant(
                 "stagingRoot": str(tmp_path),
                 "cacheDir": str(tmp_path),
                 "nativeLibraryDir": str(tmp_path / "native"),
-                "configSnapshot": {"settings": {}, "androidTtsEnabled": False},
+                "configSnapshot": {"settings": {"anki_note_type": "Lapis"}, "androidTtsEnabled": False},
             },
         )
     )

@@ -169,13 +169,17 @@ class MediaExtractorService:
     # Seconds between cancelled_check polls while encodes are still in flight.
     _CANCEL_POLL_INTERVAL = 0.2
 
-    def __init__(self, config: AnkiMinerConfig):
+    def __init__(self, config: AnkiMinerConfig, *, still_height: int | None = None):
         """Initialize the media extractor.
 
         Args:
             config: Configuration for media extraction
+            still_height: Scale the static picture to this height in pixels
+                (the ``--api media`` call's key); ``None`` keeps the video's
+                own size, as cards always have.
         """
         self.config = config
+        self._still_height = still_height
         ensure_directory(config.media_temp_folder)
         self._audio_stream_cache: dict[Path, int | None] = {}
         self._audio_stream_list_cache: dict[Path, list[AudioStream]] = {}
@@ -1082,6 +1086,7 @@ class MediaExtractorService:
         if screenshot_time is None:
             screenshot_time = resolve_screenshot_time(None, start_time, duration, self.config.screenshot_offset)
 
+        scale = ["-vf", f"scale=-2:{self._still_height}"] if self._still_height else []
         cmd = [
             resolve_ffmpeg(self.config),
             "-y",  # Overwrite output
@@ -1091,6 +1096,7 @@ class MediaExtractorService:
             str(video_file),
             "-frames:v",
             "1",  # Extract single frame
+            *scale,
             "-q:v",
             "2",  # Quality (2 = high)
             str(output_path),
@@ -1435,7 +1441,10 @@ class MediaExtractorService:
             if video_file in self._no_jp_audio_warned:
                 return
             self._no_jp_audio_warned.add(video_file)
-        logger.warning("No Japanese audio found in %s, using first audio stream", video_file)
+        from anki_miner.languages.registry import config_language, get_profile
+
+        language = get_profile(config_language(self.config)).english_name
+        logger.warning("No %s audio found in %s, using first audio stream", language, video_file)
 
     def _list_audio_streams_cached(
         self,

@@ -445,11 +445,6 @@
                     "kind": "indexed",
                     "dict_id": "jmdict-english",
                     "enabled": true
-                  },
-                  {
-                    "kind": "jisho",
-                    "dict_id": null,
-                    "enabled": false
                   }
                 ],
                 "frequency_chain": [],
@@ -499,10 +494,11 @@
                   "frequency_sort": "",
                   "source": "",
                   "expression_audio": "",
-                  "sentence_translation": ""
+                  "sentence_translation": "",
+                  "language": ""
                 },
                 "anki_deck_name": "Anki Miner",
-                "anki_note_type": "Lapis",
+                "anki_note_type": "",
                 "card_type": "",
                 "blacklist_path": null,
                 "whitelist_path": null,
@@ -516,7 +512,15 @@
                 "subtitle_regex_replacement": "",
                 "min_frequency_rank": 0,
                 "max_frequency_rank": 0,
-                "frequency_keep_unranked": false
+                "frequency_keep_unranked": false,
+                "pitch_category_format": "jp",
+                "card_type_marker_fields": {
+                  "word_and_sentence": "IsWordAndSentenceCard",
+                  "click": "IsClickCard",
+                  "sentence": "IsSentenceCard",
+                  "audio": "IsAudioCard"
+                },
+                "max_sentence_chars": 0
               },
               "extraCardFields": []
             },
@@ -585,6 +589,7 @@
                   "source": "",
                   "expression_audio": "",
                   "sentence_translation": "",
+                  "language": "",
                   "transliteration": "",
                   "root": "",
                   "binyan": "",
@@ -607,7 +612,15 @@
                 "subtitle_regex_replacement": "",
                 "min_frequency_rank": 0,
                 "max_frequency_rank": 0,
-                "frequency_keep_unranked": false
+                "frequency_keep_unranked": false,
+                "pitch_category_format": "jp",
+                "card_type_marker_fields": {
+                  "word_and_sentence": "IsWordAndSentenceCard",
+                  "click": "IsClickCard",
+                  "sentence": "IsSentenceCard",
+                  "audio": "IsAudioCard"
+                },
+                "max_sentence_chars": 0
               },
               "extraCardFields": [
                 {
@@ -716,6 +729,7 @@
                   "source": "",
                   "expression_audio": "",
                   "sentence_translation": "",
+                  "language": "",
                   "root": "",
                   "expression_grammar": "",
                   "clitic_segmentation": ""
@@ -735,7 +749,15 @@
                 "subtitle_regex_replacement": "",
                 "min_frequency_rank": 0,
                 "max_frequency_rank": 0,
-                "frequency_keep_unranked": false
+                "frequency_keep_unranked": false,
+                "pitch_category_format": "jp",
+                "card_type_marker_fields": {
+                  "word_and_sentence": "IsWordAndSentenceCard",
+                  "click": "IsClickCard",
+                  "sentence": "IsSentenceCard",
+                  "audio": "IsAudioCard"
+                },
+                "max_sentence_chars": 0
               },
               "extraCardFields": [
                 {
@@ -1754,6 +1776,7 @@
                   "source": "",
                   "expression_audio": "",
                   "sentence_translation": "",
+                  "language": "",
                   "root": "",
                   "expression_grammar": "",
                   "clitic_segmentation": ""
@@ -1773,7 +1796,15 @@
                 "subtitle_regex_replacement": "",
                 "min_frequency_rank": 0,
                 "max_frequency_rank": 0,
-                "frequency_keep_unranked": false
+                "frequency_keep_unranked": false,
+                "pitch_category_format": "jp",
+                "card_type_marker_fields": {
+                  "word_and_sentence": "IsWordAndSentenceCard",
+                  "click": "IsClickCard",
+                  "sentence": "IsSentenceCard",
+                  "audio": "IsAudioCard"
+                },
+                "max_sentence_chars": 0
               },
               "extraCardFields": [
                 {
@@ -1867,7 +1898,15 @@
                 "subtitle_regex_replacement": "",
                 "min_frequency_rank": 0,
                 "max_frequency_rank": 0,
-                "frequency_keep_unranked": false
+                "frequency_keep_unranked": false,
+                "pitch_category_format": "jp",
+                "card_type_marker_fields": {
+                  "word_and_sentence": "IsWordAndSentenceCard",
+                  "click": "IsClickCard",
+                  "sentence": "IsSentenceCard",
+                  "audio": "IsAudioCard"
+                },
+                "max_sentence_chars": 0
               },
               "extraCardFields": [
                 {
@@ -1984,6 +2023,7 @@
                   "source": "",
                   "expression_audio": "",
                   "sentence_translation": "",
+                  "language": "",
                   "transliteration": "",
                   "root": "",
                   "binyan": "",
@@ -2006,7 +2046,15 @@
                 "subtitle_regex_replacement": "",
                 "min_frequency_rank": 0,
                 "max_frequency_rank": 0,
-                "frequency_keep_unranked": false
+                "frequency_keep_unranked": false,
+                "pitch_category_format": "jp",
+                "card_type_marker_fields": {
+                  "word_and_sentence": "IsWordAndSentenceCard",
+                  "click": "IsClickCard",
+                  "sentence": "IsSentenceCard",
+                  "audio": "IsAudioCard"
+                },
+                "max_sentence_chars": 0
               },
               "extraCardFields": [
                 {

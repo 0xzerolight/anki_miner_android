@@ -89,7 +89,7 @@ class AppSettingsTest {
         )
         assertTrue(markers.values.values.all { it == BridgeJsonValue.Text("") })
         val fields = snapshot.settings["anki_fields"] as BridgeJsonValue.ObjectValue
-        assertEquals(19, AnkiFieldKeys.ALL.size)
+        assertEquals(20, AnkiFieldKeys.ALL.size)
         assertEquals(AnkiFieldKeys.ALL.toSet(), fields.values.keys)
         assertTrue(fields.values.values.all { it == BridgeJsonValue.Text("") })
         assertFalse(snapshot.settings.containsKey("max_parallel_workers"))
@@ -116,7 +116,9 @@ class AppSettingsTest {
     }
 
     @Test
-    fun snapshotFreezesInstalledDictionariesAndOptInJishoInOrder() {
+    fun snapshotFreezesInstalledDictionariesInOrderAndNeverSendsJisho() {
+        // Desktop v3.8.0 removed Jisho. A stored `jisho_enabled = true` (B3 drops the key) must not
+        // put a Jisho entry or `jisho_delay` on the snapshot, or every upgraded ja run fails.
         val snapshot =
             EngineSettingsSnapshotMapper.map(
                 AppSettings(deckName = "Japanese", jishoEnabled = true),
@@ -125,13 +127,19 @@ class AppSettingsTest {
 
         assertEquals(BridgeJsonValue.Text("Japanese"), snapshot.settings["anki_deck_name"])
         val chain = snapshot.settings.getValue("dictionary_chain") as BridgeJsonValue.ArrayValue
-        assertEquals(3, chain.values.size)
-        val first = chain.values[0] as BridgeJsonValue.ObjectValue
-        val last = chain.values[2] as BridgeJsonValue.ObjectValue
-        assertEquals(BridgeJsonValue.Text("jitendex"), first.values["dict_id"])
-        assertEquals(BridgeJsonValue.Text("jisho"), last.values["kind"])
-        assertEquals(BridgeJsonValue.Null, last.values["dict_id"])
-        assertEquals(BridgeJsonValue.Decimal(1.0), snapshot.settings["jisho_delay"])
+        assertEquals(
+            listOf("jitendex", "custom-one").map { id ->
+                BridgeJsonValue.ObjectValue(
+                    mapOf(
+                        "kind" to BridgeJsonValue.Text("indexed"),
+                        "dict_id" to BridgeJsonValue.Text(id),
+                        "enabled" to BridgeJsonValue.Bool(true),
+                    ),
+                )
+            },
+            chain.values,
+        )
+        assertFalse("jisho_delay" in snapshot.settings)
     }
 
     @Test

@@ -289,6 +289,42 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `a snapshot carrying Jisho is refused now that desktop v3_8_0 removed it`() {
+        val jishoEntry =
+            BridgeJsonValue.ArrayValue(
+                listOf(
+                    BridgeJsonValue.ObjectValue(
+                        mapOf(
+                            "kind" to BridgeJsonValue.Text("jisho"),
+                            "dict_id" to BridgeJsonValue.Null,
+                            "enabled" to BridgeJsonValue.Bool(true),
+                        ),
+                    ),
+                ),
+            )
+        listOf(
+            mapOf("dictionary_chain" to jishoEntry),
+            mapOf("jisho_delay" to BridgeJsonValue.Decimal(1.0)),
+        ).forEach { settings ->
+            val request = videoRequest(audioOnly = false).copy(configSnapshot = MiningConfigSnapshot(settings))
+            assertThrows(settings.keys.single(), BridgeProtocolException::class.java) {
+                BridgeJsonCodec.encodeVideoRun(request)
+            }
+        }
+    }
+
+    @Test
+    fun `a Japanese snapshot maps the Language field`() {
+        val settings =
+            mapOf(
+                "anki_fields" to BridgeJsonValue.ObjectValue(mapOf("language" to BridgeJsonValue.Text("Language"))),
+            )
+        val request = videoRequest(audioOnly = false).copy(configSnapshot = MiningConfigSnapshot(settings))
+
+        assertEquals(BridgeMessage.VideoRun(request), BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(request)))
+    }
+
+    @Test
     fun `video run decoder rejects a missing audio only field`() {
         val fixture =
             fixtures("contracts/mining_protocol_v1.json", "invalid")
@@ -1279,6 +1315,18 @@ class BridgeJsonCodecTest {
             hebrew.extraCardFields.first(),
         )
         assertEquals(LanguageUnavailableReason.DATA_REQUIRED, arabic.unavailableReason)
+        // Desktop v3.8.0 scoped three more fields and gave every note a Language field.
+        assertEquals(BridgeJsonValue.Text("jp"), japanese.scopedDefaults["pitch_category_format"])
+        assertEquals(BridgeJsonValue.Integer(0), japanese.scopedDefaults["max_sentence_chars"])
+        assertEquals(
+            BridgeJsonValue.Text("IsClickCard"),
+            (japanese.scopedDefaults["card_type_marker_fields"] as BridgeJsonValue.ObjectValue).values["click"],
+        )
+        assertEquals(
+            BridgeJsonValue.Text(""),
+            (japanese.scopedDefaults["anki_fields"] as BridgeJsonValue.ObjectValue).values["language"],
+        )
+        assertEquals(BridgeJsonValue.Text(""), japanese.scopedDefaults["anki_note_type"])
     }
 
     @Test

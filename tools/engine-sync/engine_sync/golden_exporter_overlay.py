@@ -36,7 +36,7 @@ SCHEMA_ATTESTATION = (
 MATERIALIZED_SHA256 = {
     "dump_engine_goldens.py": SOURCE_ATTESTATIONS["dump_engine_goldens.py"][0],
     "engine_golden_contract_v2.py": (
-        "0ad91ca03fe038969a4cd1f5410b639d24ebc05bee33da9fdad6deb5a00be6d3"
+        "cabee5baf922551605693b6332e50ba52192670a0d69a4a521ae7000205d344f"
     ),
     "prepare_golden_unidic.py": SOURCE_ATTESTATIONS["prepare_golden_unidic.py"][0],
 }

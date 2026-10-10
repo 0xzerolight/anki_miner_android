@@ -64,9 +64,8 @@ def _scoped_defaults() -> Mapping[str, object]:
             "excluded_subtypes": YUE_EXCLUDED_SUBTYPES,
             "anki_fields": YUE_CARD_FIELD_DEFAULTS,
             # "" is not a deck AnkiConnect accepts, and inheriting ja's default
-            # would file Cantonese cards into the Japanese deck. The ja note type
-            # is ja-specific, so yue ships empty and the user picks (zh/th
-            # precedent).
+            # would file Cantonese cards into the Japanese deck. The note type
+            # starts empty, as in every language: the user picks.
             "anki_deck_name": "Anki Miner",
             "anki_note_type": "",
             # The jyutping hook's only consumer; on, like zh's pinyin.
@@ -95,7 +94,7 @@ def build_profile() -> LanguageProfile:
         # chi, zho, zh and cmn are NOT claimed: zh owns them and on the web they
         # are overwhelmingly Mandarin, so a chi-tagged Cantonese track stays
         # hand-selectable instead of being auto-selected.
-        audio_track_codes=frozenset({"yue", "yue-HK", "zh-yue", "cantonese"}),
+        audio_track_codes=frozenset({"yue", "yue-hk", "zh-yue", "cantonese"}),
         # gb18030 BEFORE big5hkscs: big5hkscs decodes simplified gb18030 bytes
         # without raising (PUA share 0.0, measured), so a Big5-first ladder would
         # silently mis-decode a Mandarin file. big5hkscs rather than big5 because
@@ -135,7 +134,10 @@ def build_profile() -> LanguageProfile:
             bare_fallback=True,
         ),
         pos_defaults=PosDefaults(
-            allowed_pos=YUE_ALLOWED_POS, excluded_subtypes=YUE_EXCLUDED_SUBTYPES, labels=YUE_POS_LABELS
+            allowed_pos=YUE_ALLOWED_POS,
+            excluded_subtypes=YUE_EXCLUDED_SUBTYPES,
+            labels=YUE_POS_LABELS,
+            rescuable_tags=(*YUE_ALLOWED_POS, "PROPN", "INTJ"),
         ),
         catalog=YUE_CATALOG,
         capabilities=frozenset({"jyutping", "tone_color", "measure_word"}),

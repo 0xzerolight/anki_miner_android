@@ -1372,7 +1372,7 @@ class SettingsViewModelTest {
     @Test
     fun `switching language saves pending edits to the outgoing language first`() =
         runTest(mainDispatcherRule.dispatcher) {
-            val repository = FakeAppSettingsRepository(AppSettings(jishoEnabled = true))
+            val repository = FakeAppSettingsRepository(AppSettings(maxSentenceCharacters = 30))
             val viewModel =
                 SettingsViewModel(
                     repository = repository,
@@ -1387,11 +1387,10 @@ class SettingsViewModelTest {
 
             assertEquals("he", repository.current.language)
             assertEquals("Japanese", repository.current.languageStash.getValue("ja")["deck_name"])
-            assertEquals(true, repository.current.languageStash.getValue("ja")["jisho_enabled"])
-            assertFalse(repository.current.jishoEnabled)
+            assertEquals(30, repository.current.languageStash.getValue("ja")["max_sentence_characters"])
+            assertEquals(null, repository.current.maxSentenceCharacters)
             assertEquals(EngineDefaults.DECK_NAME, viewModel.draftState.value.draft.deckName)
             assertFalse(viewModel.draftState.value.dirty)
-            assertFalse(viewModel.draftState.value.draft.jisho)
         }
 
     @Test

@@ -22,7 +22,7 @@ def _bootstrap_mapper(initialized_bridge_home: Path) -> None:
     assert Path(os.environ["ANKI_MINER_HOME"]).resolve() == initialized_bridge_home.resolve()
 
 
-# The exact wire shape the Kotlin EngineSettingsSnapshotMapper emits: all 19 logical keys are
+# The exact wire shape the Kotlin EngineSettingsSnapshotMapper emits: all 20 logical keys are
 # always present, the seven required keys carry the user's field names, every optional key is
 # present but blank rather than absent (so no key can inherit a desktop default via overlay).
 _USER_FIELD_MAP = {
@@ -45,15 +45,16 @@ _USER_FIELD_MAP = {
     "frequency_sort": "",
     "source": "",
     "sentence_translation": "",
+    "language": "",
 }
 
 
 def test_user_field_map_covers_every_logical_key() -> None:
-    # Pins the fixture to the 19-key contract shared with AnkiFieldKeys.ALL, so a drift in either
+    # Pins the fixture to the 20-key contract shared with AnkiFieldKeys.ALL, so a drift in either
     # side surfaces here rather than silently narrowing the round-trip below.
     from anki_miner.config import AnkiMinerConfig
 
-    assert len(_USER_FIELD_MAP) == 19
+    assert len(_USER_FIELD_MAP) == 20
     assert set(_USER_FIELD_MAP) == set(AnkiMinerConfig().anki_fields)
 
 

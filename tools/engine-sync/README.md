@@ -158,7 +158,7 @@ resolved directory to the exporter, and records it under the reserved
 `unidic_dicdir` asset name.
 
 `engine-v1.json` is frozen at desktop revision `ba3b3cf`, which predates the
-`a1259f4e` in `engine.lock`. `run_goldens.py` takes its expected revision from
+`e7cf74e8` in `engine.lock`. `run_goldens.py` takes its expected revision from
 `--lock`, so reproducing v1 means pointing both `--engine-root` and `--lock` at
 `ba3b3cf`; against the current lock the run fails the revision check. Pass
 `--check` too — `--output` defaults to the committed fixture, so a run without

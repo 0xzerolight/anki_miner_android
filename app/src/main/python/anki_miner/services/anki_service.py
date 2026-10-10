@@ -14,6 +14,7 @@ from PyQt6.QtCore import QCoreApplication
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.exceptions import AnkiConnectionError, SetupError
 from anki_miner.interfaces import ProgressCallback
+from anki_miner.languages.profile import CARD_FRONT_KEY
 from anki_miner.models import AnkiWriteState, CardPayload
 from anki_miner.services._ankiconnect import _expect_list, post_action, post_multi
 from anki_miner.services.anki_media_store import AnkiMediaStore
@@ -38,8 +39,10 @@ from anki_miner.utils.i18n import tr_format
 from anki_miner.utils.logging_ext import capped, log_summary
 
 if TYPE_CHECKING:
-    # Type-only: `services` must not take a module-level runtime import of
-    # `languages` (profile.py reaches back into services.resource_catalog).
+    # Type-only. profile.py imports services.resource_catalog, which runs
+    # services/__init__: a module that init imports eagerly must not import
+    # `languages.profile` at module level. Lazily loaded ones may, as
+    # anki_note_builder does for CARD_FRONT_KEY.
     from anki_miner.languages.profile import ScriptSupport
 
 logger = logging.getLogger(__name__)
@@ -923,6 +926,9 @@ class AnkiService:
         # incremental cache merge in the finally. Only created words are merged —
         # see the rationale there (F10).
         created_forms: list[str] = []
+        # The rendered front of each created note that has its own (ko 學校
+        # carded as 학교): the collection holds the front, not the mined form.
+        created_fronts: list[str] = []
         created_lemmas: list[str] = []
         # "Cards silently not created" evidence: the words whose addNotes slot
         # came back null despite the duplicate probe clearing them, plus a
@@ -1039,6 +1045,11 @@ class AnkiService:
                 created_forms.extend(
                     item.word.mined_form for item, nid in zip(submit_payloads, note_ids, strict=True) if nid is not None
                 )
+                created_fronts.extend(
+                    front
+                    for item, nid in zip(submit_payloads, note_ids, strict=True)
+                    if nid is not None and (front := (item.extra_fields or {}).get(CARD_FRONT_KEY))
+                )
                 created_lemmas.extend(
                     item.word.lemma for item, nid in zip(submit_payloads, note_ids, strict=True) if nid is not None
                 )
@@ -1069,9 +1080,9 @@ class AnkiService:
             self.last_skipped_duplicates = skipped_duplicates
             self.last_media_store_failures = media_store_failures
             # Incremental merge: if the cache is already populated, union the
-            # mined_forms of cards actually CREATED this run into it so subsequent
-            # episodes (within the same batch run) get a cheap cache hit instead
-            # of a full collection re-scan.
+            # mined_forms of cards actually CREATED this run into it, plus each
+            # one's rendered front, so subsequent episodes (within the same batch
+            # run) get a cheap cache hit instead of a full collection re-scan.
             # Only created words are merged — NOT every attempted word: a null
             # addNotes slot is usually a duplicate (already in the collection, and
             # thus already in the cache from the initial scan), but it can also be
@@ -1080,7 +1091,7 @@ class AnkiService:
             # and filter them out of later batch items. When the cache is None
             # (not yet populated), leave it None so the next call scans normally.
             if self._existing_vocab_cache is not None:
-                for form in created_forms:
+                for form in (*created_forms, *created_fronts):
                     key = self._dedup_key(form)
                     if key and self._is_target_script(key):
                         self._existing_vocab_cache.add(key)
@@ -1125,6 +1136,21 @@ class AnkiService:
             ),
         )
         return list(all_created_ids)
+
+    def duplicate_fronts(self, word_data_list: list[CardPayload]) -> set[str]:
+        """The mined forms :meth:`create_cards_batch` would refuse as duplicates, adding nothing.
+
+        The ``--api`` dry run's duplicate check, the branch create_cards_batch
+        takes: excluded-deck admission when it applies (those notes are then
+        added with duplicates allowed, never probed), else the per-note probe,
+        whose note options keep ``allow_duplicate_cards``' deck scope. Raises
+        ``AnkiConnectionError`` when Anki does not answer.
+        """
+        if self.config.excluded_decks and not self.config.allow_duplicate_cards:
+            return set(self._admit_against_excluded_decks(word_data_list)[1])
+        notes = [self._build_note(item, set()).note for item in word_data_list]
+        flags = self._probe_duplicates(notes) if notes else []
+        return {item.word.mined_form for item, dup in zip(word_data_list, flags, strict=True) if dup}
 
     def _reset_last_run(self) -> None:
         """Clear the per-call receipts before a new ``create_cards_batch`` run."""
@@ -1243,7 +1269,7 @@ class AnkiService:
         carry megabytes of rendered HTML — just to ask "is this a duplicate?"
         wastes bandwidth and AnkiConnect time. ``verify_card_target`` requires
         the word mapping to target the model's first field and rejects mapping
-        collisions; ``build_note`` emits that mined-form field first.
+        collisions; ``build_note`` emits that word field first.
         """
         stripped = dict(note)
         fields = note.get("fields") or {}
@@ -1259,7 +1285,7 @@ class AnkiService:
         """The card front of a probe note — the word every rejection must name.
 
         ``verify_card_target`` requires the word mapping to target the model's
-        first field and ``build_note`` emits that mined-form field first, so the
+        first field and ``build_note`` emits that word field first, so the
         first field of a probed note is the spelling the user sees on the card.
         """
         fields = note.get("fields") or {}
@@ -1363,6 +1389,13 @@ class AnkiService:
         ``canAddNotesWithErrorDetail`` (top-level "unsupported action"), falls back
         to two diffed ``canAddNotes`` calls.
 
+        A note that leaves ``allowDuplicate`` off and repeats the front of an
+        earlier note in the same call is a duplicate too. ``canAdd`` judges
+        each note against the collection alone, but ``addNotes`` adds in order
+        and rolls the whole request back on one in-request duplicate. Two mined
+        forms can share a front: ko sends 學校 with the hangul front 학교 beside
+        a mined 학교.
+
         Raises:
             AnkiConnectionError: connection/transport failure, a malformed
                 response, or a per-note non-duplicate rejection.
@@ -1397,7 +1430,9 @@ class AnkiService:
                     "Anki duplicate probe fallback: reason=unsupported_action error_type=%s",
                     type(e).__name__,
                 )
-                fallback_result = self._probe_duplicates_fallback(stripped, no_dup)
+                fallback_result = self._mark_repeated_fronts(
+                    stripped, self._probe_duplicates_fallback(stripped, no_dup)
+                )
                 logger.debug("Anki duplicate probe done: duplicates=%d", sum(fallback_result))
                 return fallback_result
             raise
@@ -1420,8 +1455,32 @@ class AnkiService:
                     error,
                 )
                 raise AnkiConnectionError(f"Anki refused the card for '{self._first_field_value(no_dup[i])}': {error}")
+        is_duplicate = self._mark_repeated_fronts(stripped, is_duplicate)
         logger.debug("Anki duplicate probe done: duplicates=%d", sum(is_duplicate))
         return is_duplicate
+
+    def _mark_repeated_fronts(self, notes: list[dict], is_duplicate: list[bool]) -> list[bool]:
+        """``is_duplicate`` with every repeat of an earlier note's front marked too.
+
+        Only for a note that leaves ``allowDuplicate`` off, read from the note's
+        own options: that flag is what decides the rollback. With it on
+        (allow_duplicate_cards, whose repeats phase 2 deliberately keeps)
+        addNotes creates the repeat instead of failing the request.
+
+        Keyed by ``_dedup_key``, the fold every other dedup site uses (S3).
+        It is broader than Anki's checksum, but safe here: without duplicates
+        allowed, phase 2's word-identity fold has already merged any two words
+        it would join (de Hund/hund), so they never meet in one probe.
+        """
+        seen: set[str] = set()
+        marked: list[bool] = []
+        for note, duplicate in zip(notes, is_duplicate, strict=True):
+            front = self._dedup_key(self._first_field_value(note))
+            allowed = bool((note.get("options") or {}).get("allowDuplicate"))
+            marked.append(duplicate or (front in seen and not allowed))
+            if front:
+                seen.add(front)
+        return marked
 
     def _validate_notes_addible(self, notes: list[dict]) -> None:
         """Raise if any first-field-only note is invalid with duplicates allowed."""

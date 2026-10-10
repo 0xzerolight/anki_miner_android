@@ -95,6 +95,7 @@ def _run(
     cancel_event: threading.Event | None = None,
     words: list[Any] | None = None,
     known_word_db: object | None = None,
+    curate: Any = None,
 ) -> tuple[Any, FakeKotlinAnki, Any]:
     """Run the fixture; the optional doubles default to one 猫 card and a fresh Kotlin."""
 
@@ -131,7 +132,10 @@ def _run(
             "secondarySubtitleOffsetMs": offset_ms,
             "cacheDir": str(tmp_path),
             "nativeLibraryDir": str(tmp_path / "native"),
-            "configSnapshot": {"settings": {"anki_fields": anki_fields}, "androidTtsEnabled": False},
+            "configSnapshot": {
+                "settings": {"anki_note_type": "Lapis", "anki_fields": anki_fields},
+                "androidTtsEnabled": False,
+            },
         },
     )
     request = mining._parse_request(raw)
@@ -171,6 +175,10 @@ def _run(
             assert subtitle_file == primary
             return collections.Counter(token.lemma for token in tokens)
 
+        def count_fronts(self, subtitle_file: Path) -> collections.Counter[str]:
+            assert subtitle_file == primary
+            return collections.Counter(token.mined_form for token in tokens)
+
     # Constructing the parser asks for the shared MeCab tagger; nothing here
     # tokenizes, so it never needs a real one.
     monkeypatch.setattr(parser_module, "get_shared_tagger", lambda: object())
@@ -197,7 +205,7 @@ def _run(
         run_id=RUN_ID,
         cancel_event=threading.Event() if cancel_event is None else cancel_event,
         progress=None,
-        curate=lambda words: list(words),
+        curate=(lambda words: list(words)) if curate is None else curate,
     )
     result = mining._process_episode(request, config, adapters)
     return result, kotlin, presenter
@@ -229,6 +237,53 @@ def test_staged_translation_track_fills_the_mapped_translation_field(
         "Sentence": "猫を見る。",
         "Translation": "I see a cat.",
     }
+
+
+def test_the_curator_counts_occurrences_by_card_front(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """v3.8.0 stamps the curator's occurrence count from ``count_fronts`` (keyed by mined_form)."""
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    from anki_miner.models import TokenizedWord
+
+    def cat(sentence: str, start: float) -> Any:
+        return TokenizedWord(
+            surface="猫",
+            lemma="猫",
+            reading="ネコ",
+            sentence=sentence,
+            start_time=start,
+            end_time=start + 2.0,
+            duration=2.0,
+            expression_furigana="猫[ねこ]",
+            expression_reading="ねこ",
+            lemma_reading="ねこ",
+            pos="名詞",
+        )
+
+    curated: list[Any] = []
+
+    def curate(words: list[Any]) -> list[Any]:
+        curated.extend(words)
+        return list(words)
+
+    result, _kotlin, presenter = _run(
+        tmp_path,
+        initialized_bridge_home,
+        monkeypatch,
+        translation=None,
+        offset_ms=0,
+        words=[cat("猫を見る。", 1.0), cat("猫を見る。", 1.0)],
+        curate=curate,
+    )
+
+    assert (result.errors, presenter.errors) == ([], [])
+    # One card front, seen twice: the curator gets one candidate counted twice (Kotlin's occurrenceCount).
+    assert [word.mined_form for word in curated] == ["猫"]
+    assert curated[0].occurrence_count == 2
+    assert result.cards_created == 1
 
 
 def test_the_translation_offset_is_what_lines_the_track_up(
