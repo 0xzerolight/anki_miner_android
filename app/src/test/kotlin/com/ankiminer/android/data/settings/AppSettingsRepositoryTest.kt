@@ -234,6 +234,37 @@ class AppSettingsRepositoryTest {
     }
 
     @Test
+    fun `migration drops the retired jisho key and changes nothing else`() {
+        // Desktop v3.8.0 removed Jisho. An upgrading ja user with it on keeps every other value
+        // and the same schema marker; only the key goes.
+        val retired = booleanPreferencesKey("jisho_enabled")
+        val current = DataStoreAppSettingsRepository.migratePreferences(
+            DataStoreAppSettingsRepository.encodePreferences(populatedSettings(), preferencesOf()),
+        )
+        val upgraded = current.toMutablePreferences().apply { this[retired] = true }.toPreferences()
+
+        assertTrue(DataStoreAppSettingsRepository.migrationRequired(upgraded))
+        val migrated = DataStoreAppSettingsRepository.migratePreferences(upgraded)
+
+        assertFalse(migrated.contains(retired))
+        assertEquals(current.asMap() - retired, migrated.asMap())
+        assertEquals(
+            DataStoreAppSettingsRepository.decodePreferences(upgraded),
+            DataStoreAppSettingsRepository.decodePreferences(migrated),
+        )
+        assertFalse(DataStoreAppSettingsRepository.migrationRequired(migrated))
+    }
+
+    @Test
+    fun `writing settings drops a stray jisho key`() {
+        val stray = preferencesOf(booleanPreferencesKey("jisho_enabled") to true)
+
+        val encoded = DataStoreAppSettingsRepository.encodePreferences(AppSettings(), stray)
+
+        assertFalse(encoded.asMap().keys.any { it.name == "jisho_enabled" })
+    }
+
+    @Test
     fun `schema v3 migration zeroes the caps an absent length toggle kept inert`() {
         // Pin-era stores filtered only when the toggle was true AND a cap was above zero; the
         // engine now filters on the caps alone, so typed caps behind an absent toggle would start
@@ -581,7 +612,6 @@ class AppSettingsRepositoryTest {
         assertEquals(listOf(ResourceChainSelection("local-audio")), settings.audioPacks)
         assertEquals(listOf("place-names"), settings.enabledWordsets)
         assertTrue(settings.readingTtsEnabled)
-        assertTrue(settings.jishoEnabled)
 
         val gateway = FakeAnkiProviderGateway()
         gateway.queryHandler = { query, _ ->
@@ -674,7 +704,6 @@ class AppSettingsRepositoryTest {
             audioPacks = listOf(ResourceChainSelection("local-audio")),
             enabledWordsets = listOf("place-names"),
             readingTtsEnabled = true,
-            jishoEnabled = true,
             // Non-default, or corrupting the key would quarantine to the value already stored.
             language = "he",
             languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "max_sentence_characters" to 30)),
@@ -879,7 +908,6 @@ class AppSettingsRepositoryTest {
                 "reading_tts_enabled",
                 original.copy(readingTtsEnabled = defaults.readingTtsEnabled),
             ),
-            corruptBoolean("jisho_enabled", original.copy(jishoEnabled = defaults.jishoEnabled)),
             corruptString("mining_language", original.copy(language = defaults.language)),
             corruptString("language_stash_v1", original.copy(languageStash = defaults.languageStash)),
         )

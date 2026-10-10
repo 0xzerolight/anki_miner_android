@@ -160,6 +160,7 @@ class DataStoreAppSettingsRepository internal constructor(
             return stagePreferenceWrite(preferences) { candidate ->
                 decoded.invalidKeys.forEach { candidate -= it }
                 candidate -= Keys.legacyAllowDuplicateCards
+                candidate -= Keys.legacyJishoEnabled
                 if (needsWordsetMigration) {
                     candidate[Keys.enabledWordsets] =
                         EnabledWordsetPreferenceCodec.encode(migratedWordsets)
@@ -205,6 +206,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 !preferences.contains(Keys.enabledWordsets) ||
                 !preferences.contains(Keys.wordsetDefaultsPolicy) ||
                 preferences.contains(Keys.legacyAllowDuplicateCards) ||
+                preferences.contains(Keys.legacyJishoEnabled) ||
                 preferences.contains(Keys.legacyUseSentenceLength)
         }
 
@@ -304,8 +306,8 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate -= Keys.legacyExcludedWordsets
                 candidate -= Keys.legacyAllowDuplicateCards
                 candidate -= Keys.legacyUseSentenceLength
+                candidate -= Keys.legacyJishoEnabled
                 candidate[Keys.readingTtsEnabled] = value.readingTtsEnabled
-                candidate[Keys.jishoEnabled] = value.jishoEnabled
                 candidate[Keys.miningLanguage] = value.language
                 candidate.setOrRemove(
                     Keys.languageStash,
@@ -537,7 +539,6 @@ class DataStoreAppSettingsRepository internal constructor(
                         ) { AppSettingsValidator.validate(AppSettings(audioPacks = it)) },
                     enabledWordsets = decodeEnabledWordsets(preferences, decoder),
                     readingTtsEnabled = decoder.read(Keys.readingTtsEnabled, false, { it }),
-                    jishoEnabled = decoder.read(Keys.jishoEnabled, false, { it }),
                     language = storedLanguage,
                     languageStash =
                         decoder.read(
@@ -716,8 +717,11 @@ class DataStoreAppSettingsRepository internal constructor(
             val wordsetDefaultsPolicy = register(stringPreferencesKey("wordset_defaults_policy"))
             val legacyExcludedWordsets = stringPreferencesKey("excluded_wordsets_v1")
             val legacyAllowDuplicateCards = booleanPreferencesKey("allow_duplicate_cards")
+
+            // Desktop v3.8.0 removed the online Jisho fallback; dropped by presence, never read.
+            val legacyJishoEnabled = booleanPreferencesKey("jisho_enabled")
+
             val readingTtsEnabled = register(booleanPreferencesKey("reading_tts_enabled"))
-            val jishoEnabled = register(booleanPreferencesKey("jisho_enabled"))
             val miningLanguage = register(stringPreferencesKey("mining_language"))
             val languageStash = register(stringPreferencesKey("language_stash_v1"))
 

@@ -1,5 +1,8 @@
 package com.ankiminer.android.data.settings
 
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
@@ -117,13 +120,17 @@ class AppSettingsTest {
 
     @Test
     fun snapshotFreezesInstalledDictionariesInOrderAndNeverSendsJisho() {
-        // Desktop v3.8.0 removed Jisho. A stored `jisho_enabled = true` (B3 drops the key) must not
-        // put a Jisho entry or `jisho_delay` on the snapshot, or every upgraded ja run fails.
-        val snapshot =
-            EngineSettingsSnapshotMapper.map(
-                AppSettings(deckName = "Japanese", jishoEnabled = true),
-                listOf("jitendex", "custom-one"),
+        // Desktop v3.8.0 removed Jisho. A store still holding `jisho_enabled = true` (read before
+        // the migration drops it) must not put a Jisho entry or `jisho_delay` on the snapshot, or
+        // every upgraded ja run fails.
+        val upgraded =
+            DataStoreAppSettingsRepository.decodePreferences(
+                preferencesOf(
+                    stringPreferencesKey("deck_name") to "Japanese",
+                    booleanPreferencesKey("jisho_enabled") to true,
+                ),
             )
+        val snapshot = EngineSettingsSnapshotMapper.map(upgraded, listOf("jitendex", "custom-one"))
 
         assertEquals(BridgeJsonValue.Text("Japanese"), snapshot.settings["anki_deck_name"])
         val chain = snapshot.settings.getValue("dictionary_chain") as BridgeJsonValue.ArrayValue

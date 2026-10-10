@@ -724,8 +724,6 @@
     <string name="resource_panel_add_frequency">添加词频来源…</string>
     <string name="resource_panel_import_yomitan_zip">导入 Yomitan ZIP…</string>
     <string name="resource_panel_download_recommended">下载推荐资源…</string>
-    <string name="resource_panel_meta_online">在线</string>
-    <string name="resource_panel_warning_jisho">限速，速度较慢</string>
     <string name="resource_panel_warning_missing">缺失，需重新导入</string>
     <string name="resource_panel_warning_repair">重新导入以修复</string>
     <string name="resource_panel_row_repair">修复</string>
@@ -739,8 +737,6 @@
     <string name="settings_word_audio_voice_available">已安装此语言的语音。</string>
     <string name="settings_word_audio_voice_missing_data">此语言的语音尚未下载。请在“管理语音服务”中下载。</string>
     <string name="settings_word_audio_voice_unsupported">此设备没有此语言的文字转语音声音。</string>
-    <string name="settings_jisho">Jisho 释义回退</string>
-    <string name="settings_jisho_disclosure">默认关闭。启用后，若触发此回退，会将从字幕或阅读内容得出的查询词发送至 jisho.org。</string>
     <string name="settings_validation_card_type_marker">Anki 字段“%1$s”已映射自“%2$s”</string>
     <string name="settings_validation_numeric_incomplete">请填写或清除每个数值</string>
     <string name="settings_validation_excluded_decks">排除的 Anki 牌组无效</string>
@@ -788,13 +784,10 @@
     <string name="attribution_embedded_absent">该词典未提供可读取的内嵌署名元数据。</string>
     <string name="attribution_derived_terms_title">Jitendex 及衍生数据条款</string>
     <string name="attribution_derived_terms">Jitendex 按 CC BY-SA 4.0 共享。其 JMdict/JMnedict 数据由 Electronic Dictionary Research and Development Group 根据 EDRDG 许可证提供。Tatoeba 示例采用 CC BY 2.0 FR，Kanji alive 音频采用 CC BY 4.0，JmdictFurigana 采用 CC BY-SA 4.0。请访问下方源 URL 获取完整条款和贡献者记录。</string>
-    <string name="attribution_jisho_title">Jisho 网络隐私声明</string>
-    <string name="attribution_jisho_disclosure">Jisho 默认关闭。启用后，会将从所选字幕或阅读内容得出的查询词发送至 https://jisho.org。媒体文件、完整句子、Anki 数据和帐户标识符不会被发送。</string>
-    <string name="attribution_jisho_rate_limit">请求至少间隔一秒。关闭 Jisho 可实现完全离线查询。</string>
     <string name="attribution_license">许可证：%1$s</string>
     <string name="privacy_title">隐私和数据处理</string>
     <string name="privacy_local_processing">媒体、阅读文件、Anki 数据、资源和设置均在本地处理。无帐户、广告、分析或崩溃报告。</string>
-    <string name="privacy_network_processing">资源从固定的 HTTPS 主机下载。Jisho 是唯一的内容衍生出口，启用前始终关闭。远程词典图像会被阻止。离线语音合成不发送任何内容。</string>
+    <string name="privacy_network_processing">资源通过 HTTPS 下载。源自你的字幕、媒体或阅读内容的任何数据都不会通过网络发送。远程词典图像会被阻止。离线语音合成不发送任何内容。</string>
     <string name="privacy_retention">应用数据会保留，直到被替换、清除或卸载应用。已在 AnkiDroid 中的笔记由 AnkiDroid 管理。</string>
     <string name="privacy_open_policy">打开完整隐私政策</string>
     <string name="source_notices_title">源代码和第三方声明</string>

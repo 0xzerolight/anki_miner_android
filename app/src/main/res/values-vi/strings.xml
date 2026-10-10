@@ -724,8 +724,6 @@
     <string name="resource_panel_add_frequency">Thêm nguồn tần suất…</string>
     <string name="resource_panel_import_yomitan_zip">Nhập ZIP Yomitan…</string>
     <string name="resource_panel_download_recommended">Tải xuống tài nguyên được đề xuất…</string>
-    <string name="resource_panel_meta_online">Trực tuyến</string>
-    <string name="resource_panel_warning_jisho">Giới hạn tốc độ, chậm hơn</string>
     <string name="resource_panel_warning_missing">Thiếu tệp - nhập lại</string>
     <string name="resource_panel_warning_repair">Nhập lại để sửa chữa</string>
     <string name="resource_panel_row_repair">Sửa chữa</string>
@@ -739,8 +737,6 @@
     <string name="settings_word_audio_voice_available">Đã cài giọng cho ngôn ngữ này.</string>
     <string name="settings_word_audio_voice_missing_data">Chưa tải xuống giọng cho ngôn ngữ này. Hãy tải xuống trong Quản lý dịch vụ giọng nói.</string>
     <string name="settings_word_audio_voice_unsupported">Thiết bị này không có giọng chuyển văn bản thành giọng nói cho ngôn ngữ này.</string>
-    <string name="settings_jisho">Dự phòng định nghĩa Jisho</string>
-    <string name="settings_jisho_disclosure">Mặc định tắt. Khi bật và dùng đến phương án dự phòng này, thuật ngữ tra cứu từ phụ đề hoặc nội dung đọc được gửi đến jisho.org.</string>
     <string name="settings_validation_card_type_marker">Trường Anki \'%1$s\' đã được ánh xạ từ \'%2$s\'</string>
     <string name="settings_validation_numeric_incomplete">Hoàn tất hoặc xóa từng giá trị số</string>
     <string name="settings_validation_excluded_decks">Các bộ thẻ Anki bị loại trừ không hợp lệ</string>
@@ -788,13 +784,10 @@
     <string name="attribution_embedded_absent">Từ điển không cung cấp siêu dữ liệu ghi công nhúng có thể đọc được.</string>
     <string name="attribution_derived_terms_title">Điều khoản Jitendex và dữ liệu phái sinh</string>
     <string name="attribution_derived_terms">Jitendex được chia sẻ theo CC BY-SA 4.0. Dữ liệu JMdict/JMnedict của nó do Electronic Dictionary Research and Development Group cung cấp theo giấy phép EDRDG. Ví dụ Tatoeba theo CC BY 2.0 FR, âm thanh Kanji alive theo CC BY 4.0 và JmdictFurigana theo CC BY-SA 4.0. Hãy theo các URL nguồn bên dưới để xem đầy đủ điều khoản và hồ sơ người đóng góp.</string>
-    <string name="attribution_jisho_title">Thông báo quyền riêng tư mạng Jisho</string>
-    <string name="attribution_jisho_disclosure">Jisho mặc định tắt. Khi bật, các thuật ngữ tra cứu từ phụ đề hoặc nội dung đọc đã chọn được gửi đến https://jisho.org. Không bao giờ gửi tệp phương tiện, câu hoàn chỉnh, dữ liệu Anki hay mã tài khoản.</string>
-    <string name="attribution_jisho_rate_limit">Các yêu cầu cách nhau ít nhất một giây. Tắt Jisho để tra cứu hoàn toàn ngoại tuyến.</string>
     <string name="attribution_license">Giấy phép: %1$s</string>
     <string name="privacy_title">Quyền riêng tư và xử lý dữ liệu</string>
     <string name="privacy_local_processing">Phương tiện, tệp đọc, dữ liệu Anki, tài nguyên và cài đặt được xử lý cục bộ. Không có tài khoản, quảng cáo, phân tích hay báo cáo sự cố.</string>
-    <string name="privacy_network_processing">Tài nguyên tải xuống từ các máy chủ HTTPS đã ghim. Jisho là kênh gửi ra duy nhất bắt nguồn từ nội dung và vẫn tắt cho đến khi bật. Ảnh từ điển từ xa bị chặn. TTS ngoại tuyến không gửi gì.</string>
+    <string name="privacy_network_processing">Tài nguyên được tải xuống qua HTTPS. Không có dữ liệu nào bắt nguồn từ phụ đề, phương tiện hay nội dung đọc của bạn được gửi qua mạng. Ảnh từ điển từ xa bị chặn. TTS ngoại tuyến không gửi gì.</string>
     <string name="privacy_retention">Dữ liệu ứng dụng được giữ đến khi bị thay thế, xóa hoặc gỡ cài đặt ứng dụng. Ghi chú đã có trong AnkiDroid được quản lý tại đó.</string>
     <string name="privacy_open_policy">Mở chính sách quyền riêng tư đầy đủ</string>
     <string name="source_notices_title">Thông báo nguồn và bên thứ ba</string>

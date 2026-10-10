@@ -724,8 +724,6 @@
     <string name="resource_panel_add_frequency">Tambah sumber frekuensi…</string>
     <string name="resource_panel_import_yomitan_zip">Impor ZIP Yomitan…</string>
     <string name="resource_panel_download_recommended">Unduh sumber daya yang direkomendasikan…</string>
-    <string name="resource_panel_meta_online">Daring</string>
-    <string name="resource_panel_warning_jisho">Dibatasi laju, lebih lambat</string>
     <string name="resource_panel_warning_missing">Hilang - impor ulang</string>
     <string name="resource_panel_warning_repair">Impor ulang untuk memperbaiki</string>
     <string name="resource_panel_row_repair">Perbaiki</string>
@@ -739,8 +737,6 @@
     <string name="settings_word_audio_voice_available">Suara untuk bahasa ini sudah terpasang.</string>
     <string name="settings_word_audio_voice_missing_data">Suara untuk bahasa ini belum diunduh. Unduh di Kelola layanan suara.</string>
     <string name="settings_word_audio_voice_unsupported">Perangkat ini tidak memiliki suara text-to-speech untuk bahasa ini.</string>
-    <string name="settings_jisho">Fallback definisi Jisho</string>
-    <string name="settings_jisho_disclosure">Nonaktif secara default. Jika diaktifkan dan fallback ini tercapai, istilah pencarian dari subtitel atau konten bacaan Anda dikirim ke jisho.org.</string>
     <string name="settings_validation_card_type_marker">Bidang Anki \'%1$s\' sudah dipetakan dari \'%2$s\'</string>
     <string name="settings_validation_numeric_incomplete">Lengkapi atau hapus setiap nilai numerik</string>
     <string name="settings_validation_excluded_decks">Dek Anki yang dikecualikan tidak valid</string>
@@ -788,13 +784,10 @@
     <string name="attribution_embedded_absent">Kamus tidak menyediakan metadata atribusi tertanam yang dapat dibaca.</string>
     <string name="attribution_derived_terms_title">Ketentuan Jitendex dan data turunan</string>
     <string name="attribution_derived_terms">Jitendex dibagikan di bawah CC BY-SA 4.0. Data JMdict/JMnedict-nya disediakan oleh Electronic Dictionary Research and Development Group di bawah lisensi EDRDG. Contoh Tatoeba berlisensi CC BY 2.0 FR, audio Kanji alive berlisensi CC BY 4.0, dan JmdictFurigana berlisensi CC BY-SA 4.0. Ikuti URL sumber di bawah untuk ketentuan lengkap dan catatan kontributor.</string>
-    <string name="attribution_jisho_title">Pemberitahuan privasi jaringan Jisho</string>
-    <string name="attribution_jisho_disclosure">Jisho nonaktif secara default. Jika diaktifkan, istilah pencarian dari subtitel atau konten bacaan terpilih dikirim ke https://jisho.org. Berkas media, kalimat lengkap, data Anki, dan pengenal akun tidak pernah dikirim.</string>
-    <string name="attribution_jisho_rate_limit">Permintaan berjarak minimal satu detik. Nonaktifkan Jisho untuk pencarian sepenuhnya luring.</string>
     <string name="attribution_license">Lisensi: %1$s</string>
     <string name="privacy_title">Privasi dan penanganan data</string>
     <string name="privacy_local_processing">Media, berkas bacaan, data Anki, sumber daya, dan pengaturan diproses secara lokal. Tidak ada akun, iklan, analitik, atau pelaporan kerusakan.</string>
-    <string name="privacy_network_processing">Sumber daya diunduh dari host HTTPS yang ditetapkan. Jisho adalah satu-satunya akses keluar yang berasal dari konten dan tetap nonaktif hingga diaktifkan. Gambar kamus jarak jauh diblokir. TTS luring tidak mengirim apa pun.</string>
+    <string name="privacy_network_processing">Sumber daya diunduh melalui HTTPS. Tidak ada yang berasal dari subtitel, media, atau konten bacaan Anda yang dikirim melalui jaringan. Gambar kamus jarak jauh diblokir. TTS luring tidak mengirim apa pun.</string>
     <string name="privacy_retention">Data aplikasi tetap ada hingga diganti, dihapus, atau aplikasi dicopot. Catatan yang sudah ada di AnkiDroid dikelola di sana.</string>
     <string name="privacy_open_policy">Buka kebijakan privasi lengkap</string>
     <string name="source_notices_title">Pemberitahuan sumber dan pihak ketiga</string>

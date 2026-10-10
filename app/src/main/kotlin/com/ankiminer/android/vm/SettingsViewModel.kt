@@ -258,7 +258,6 @@ internal data class SettingsDraft(
     val audioPacks: List<ResourceChainSelection>,
     val enabledWordsets: List<String>,
     val readingTts: Boolean,
-    val jisho: Boolean,
 ) {
     val validation: Map<SettingsFieldKey, LocalizedStringResource>
         get() =
@@ -451,7 +450,6 @@ internal data class SettingsDraft(
             audioPacks = audioPacks,
             enabledWordsets = enabledWordsets,
             readingTtsEnabled = readingTts,
-            jishoEnabled = jisho,
         )
 
     /**
@@ -677,7 +675,6 @@ internal data class SettingsDraft(
                 audioPacks = settings.audioPacks,
                 enabledWordsets = settings.enabledWordsets,
                 readingTts = settings.readingTtsEnabled,
-                jisho = settings.jishoEnabled,
             ).withInventory(resources, settings.language)
     }
 }
@@ -817,7 +814,6 @@ private fun SettingsDraft.rebaseChangesSince(
                 persisted.enabledWordsets,
             ),
         readingTts = changedValue(baseline.readingTts, readingTts, persisted.readingTts),
-        jisho = changedValue(baseline.jisho, jisho, persisted.jisho),
     )
 
 private fun <T> changedValue(

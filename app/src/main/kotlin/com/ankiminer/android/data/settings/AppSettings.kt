@@ -176,7 +176,6 @@ data class AppSettings(
     /** Bundled proper-noun rejection sets enabled for mining. Wire name stays excluded_wordsets. */
     val enabledWordsets: List<String> = DEFAULT_ENABLED_WORDSETS,
     val readingTtsEnabled: Boolean = false,
-    val jishoEnabled: Boolean = false,
     /** The mining language's registry code; the settings in [LanguageScope.SETTINGS] are its own. */
     val language: String = LanguageScope.JAPANESE,
     /**
@@ -847,7 +846,6 @@ internal object EngineSettingsSnapshotMapper {
             )
 
         // Resource-backed chains are Android-owned. Never retain the desktop placeholder slot.
-        // Desktop v3.8.0 removed Jisho, so a stored `jishoEnabled` reaches nothing (B3 retires it).
         val dictionaries =
             resolveResourceChain(settings.dictionarySources, installedDictionaryIds).map { selection ->
                 BridgeJsonValue.ObjectValue(

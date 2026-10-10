@@ -140,16 +140,6 @@ internal fun AttributionScreen(
         }
 
         item(key = "attribution:divider", contentType = "divider") { HorizontalDivider() }
-        item(key = "attribution:jisho", contentType = "attribution-card") {
-            OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                    CardHeading(stringResource(R.string.attribution_jisho_title))
-                    Text(stringResource(R.string.attribution_jisho_disclosure))
-                    Text(stringResource(R.string.attribution_jisho_rate_limit))
-                }
-            }
-        }
-
         item(key = "attribution:privacy", contentType = "attribution-card") {
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {

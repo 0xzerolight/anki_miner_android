@@ -607,7 +607,6 @@ private fun LazyListScope.resourceSettings(
         recorder,
         expansion,
         callbacks,
-        offersJisho = language.offersJisho,
         otherLanguageSlots = otherLanguageSlots.dictionaries,
     )
     // Pitch accent is a Japanese capability: a language without it has no pitch sources to rank
@@ -652,7 +651,6 @@ private fun LazyListScope.dictionarySourcesCard(
     recorder: SettingsCardIndexRecorder,
     expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
-    offersJisho: Boolean,
     otherLanguageSlots: List<Pair<String, String>>,
 ) {
     // One panel for every dictionary the engine may consult, in the order it consults them. The
@@ -666,13 +664,10 @@ private fun LazyListScope.dictionarySourcesCard(
             dictionaryPanelRows(
                 chain = draft.dictionarySources,
                 installed = resources.dictionaries,
-                jishoEnabled = draft.jisho,
-                offersJisho = offersJisho,
                 strings = dictionaryRowStrings(),
                 onChainChange = {
                     callbacks.onDraftChange(draft.copy(dictionarySources = it))
                 },
-                onJishoChange = { callbacks.onDraftChange(draft.copy(jisho = it)) },
                 onRepair = setupViewModel::installCatalogDictionary,
                 onReplace = callbacks.onReplaceCustom,
             )
@@ -750,11 +745,6 @@ private fun LazyListScope.dictionarySourcesCard(
                             )
                         }
                     OtherLanguageSlotsNote(otherLanguageSlots)
-                    // The pinned Jisho row is the only network dictionary; the disclosure it carries
-                    // is what the Play data-safety declaration promises the user can read here.
-                    if (offersJisho) {
-                        SupportingText(stringResource(R.string.settings_jisho_disclosure))
-                    }
                 },
             )
         }
@@ -931,9 +921,6 @@ internal fun dictionaryRowStrings(): DictionaryRowStrings =
         rows = resourceRowStrings(),
         repairAction = stringResource(R.string.resource_panel_row_repair),
         replaceAction = stringResource(R.string.resource_panel_row_replace),
-        jishoTitle = stringResource(R.string.settings_jisho),
-        jishoMeta = stringResource(R.string.resource_panel_meta_online),
-        jishoWarning = stringResource(R.string.resource_panel_warning_jisho),
     )
 
 

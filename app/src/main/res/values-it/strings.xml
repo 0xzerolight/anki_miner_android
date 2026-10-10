@@ -734,8 +734,6 @@
     <string name="resource_panel_add_frequency">Aggiungi sorgente di frequenza…</string>
     <string name="resource_panel_import_yomitan_zip">Importa ZIP Yomitan…</string>
     <string name="resource_panel_download_recommended">Scarica risorse consigliate…</string>
-    <string name="resource_panel_meta_online">Online</string>
-    <string name="resource_panel_warning_jisho">Limitato, più lento</string>
     <string name="resource_panel_warning_missing">Mancante - reimporta</string>
     <string name="resource_panel_warning_repair">Reimporta per riparare</string>
     <string name="resource_panel_row_repair">Ripara</string>
@@ -749,8 +747,6 @@
     <string name="settings_word_audio_voice_available">È installata una voce per questa lingua.</string>
     <string name="settings_word_audio_voice_missing_data">La voce di questa lingua non è ancora scaricata. Scaricala in Gestisci servizi vocali.</string>
     <string name="settings_word_audio_voice_unsupported">Questo dispositivo non ha una voce di sintesi vocale per questa lingua.</string>
-    <string name="settings_jisho">Ripiego definizioni Jisho</string>
-    <string name="settings_jisho_disclosure">Disattivato per impostazione predefinita. Se abilitato e raggiunto questo ripiego, i termini di ricerca dai tuoi sottotitoli o contenuto di lettura vengono inviati a jisho.org.</string>
     <string name="settings_validation_card_type_marker">Il campo Anki \'%1$s\' è già mappato da \'%2$s\'</string>
     <string name="settings_validation_numeric_incomplete">Completa o cancella ogni valore numerico</string>
     <string name="settings_validation_excluded_decks">I mazzi Anki esclusi non sono validi</string>
@@ -798,13 +794,10 @@
     <string name="attribution_embedded_absent">Il dizionario non ha fornito metadati di attribuzione incorporati leggibili.</string>
     <string name="attribution_derived_terms_title">Termini di Jitendex e dati derivati</string>
     <string name="attribution_derived_terms">Jitendex è condiviso con licenza CC BY-SA 4.0. I suoi dati JMdict/JMnedict sono forniti da Electronic Dictionary Research and Development Group con licenza EDRDG. Gli esempi di Tatoeba sono CC BY 2.0 FR, l\'audio di Kanji alive è CC BY 4.0 e JmdictFurigana è CC BY-SA 4.0. Segui gli URL delle fonti qui sotto per i termini completi e i registri dei collaboratori.</string>
-    <string name="attribution_jisho_title">Informativa sulla privacy della rete Jisho</string>
-    <string name="attribution_jisho_disclosure">Jisho è disattivato per impostazione predefinita. Se abilitato, i termini di ricerca dai sottotitoli o dal contenuto di lettura selezionati vengono inviati a https://jisho.org. File multimediali, frasi complete, dati Anki e identificatori dell\'account non vengono mai inviati.</string>
-    <string name="attribution_jisho_rate_limit">Le richieste distano almeno un secondo. Disattiva Jisho per la ricerca completamente offline.</string>
     <string name="attribution_license">Licenza: %1$s</string>
     <string name="privacy_title">Privacy e gestione dei dati</string>
     <string name="privacy_local_processing">Contenuti multimediali, file di lettura, dati Anki, risorse e impostazioni sono elaborati localmente. Nessun account, pubblicità, analisi o segnalazione degli arresti anomali.</string>
-    <string name="privacy_network_processing">Le risorse si scaricano da host HTTPS fissati. Jisho è l\'unica uscita derivata dai contenuti e resta disattivato finché non lo abiliti. Le immagini remote dei dizionari sono bloccate. Il TTS offline non invia nulla.</string>
+    <string name="privacy_network_processing">Le risorse si scaricano tramite HTTPS. Nulla di ciò che deriva dai tuoi sottotitoli, contenuti multimediali o di lettura viene inviato in rete. Le immagini remote dei dizionari sono bloccate. Il TTS offline non invia nulla.</string>
     <string name="privacy_retention">I dati dell\'app restano finché non vengono sostituiti, cancellati o l\'app disinstallata. Le note già in AnkiDroid si gestiscono lì.</string>
     <string name="privacy_open_policy">Apri l\'informativa sulla privacy completa</string>
     <string name="source_notices_title">Note sul codice sorgente e su terze parti</string>

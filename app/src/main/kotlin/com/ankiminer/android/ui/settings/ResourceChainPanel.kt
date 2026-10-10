@@ -80,8 +80,8 @@ internal object ResourcePanelTestTags {
  * One row of a resource priority list.
  *
  * [id] is both the stable list key and the selection identity, so it has to survive a reorder: a
- * slot id, a source id, a pack id, or the pinned `"jisho"`. [metadata] is joined with `" · "` on the
- * second line, where [warning] follows it in the error color.
+ * slot id, a source id or a pack id. [metadata] is joined with `" · "` on the second line, where
+ * [warning] follows it in the error color.
  */
 internal data class ResourceRowSpec(
     val id: String,
@@ -91,7 +91,6 @@ internal data class ResourceRowSpec(
     val onToggle: ((Boolean) -> Unit)?,
     val warning: String? = null,
     val movable: Boolean = true,
-    val removable: Boolean = true,
     /** Rendered by the toolbar while this row is selected, not on the row itself. */
     val quietAction: ResourcePanelAction? = null,
 )
@@ -207,7 +206,7 @@ internal fun ResourceChainPanel(
             extras = extras,
             busy = busy,
             quietAction = selectedRow?.quietAction,
-            removeVisible = selectedRow?.removable == true,
+            removeVisible = selectedRow != null,
             removeEnabled = !busy,
             onRemove = { selectedRow?.let { onRemove(it.id) } },
         )

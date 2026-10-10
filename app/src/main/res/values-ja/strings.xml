@@ -727,8 +727,6 @@
     <string name="resource_panel_add_frequency">頻度ソースを追加…</string>
     <string name="resource_panel_import_yomitan_zip">Yomitan ZIPをインポート…</string>
     <string name="resource_panel_download_recommended">推奨リソースをダウンロード…</string>
-    <string name="resource_panel_meta_online">オンライン</string>
-    <string name="resource_panel_warning_jisho">レート制限あり、低速</string>
     <string name="resource_panel_warning_missing">見つかりません · 再インポート</string>
     <string name="resource_panel_warning_repair">再インポートで修復</string>
     <string name="resource_panel_row_repair">修復</string>
@@ -742,8 +740,6 @@
     <string name="settings_word_audio_voice_available">この言語の音声はインストール済みです。</string>
     <string name="settings_word_audio_voice_missing_data">この言語の音声はまだダウンロードされていません。「音声サービスを管理」からダウンロードしてください。</string>
     <string name="settings_word_audio_voice_unsupported">この端末には、この言語の音声合成用の音声がありません。</string>
-    <string name="settings_jisho">Jisho定義フォールバック</string>
-    <string name="settings_jisho_disclosure">デフォルトでオフ。有効にしてこのフォールバックに達すると、字幕や読書コンテンツから得た検索語がjisho.orgに送信されます。</string>
     <string name="settings_validation_numeric_incomplete">すべての数値項目を入力するかクリアしてください</string>
     <string name="settings_validation_excluded_decks">除外Ankiデッキが無効です</string>
     <string name="settings_validation_canonical_name">%1$sは空でないNFCテキストで、前後に空白を含めないでください</string>
@@ -791,13 +787,10 @@
     <string name="attribution_embedded_absent">この辞書には読み取り可能な埋め込み属性情報がありません。</string>
     <string name="attribution_derived_terms_title">Jitendex および派生データの利用条件</string>
     <string name="attribution_derived_terms">Jitendexは CC BY-SA 4.0 のもとで公開されています。その JMdict/JMnedict データは Electronic Dictionary Research and Development Group が提供し、EDRDG ライセンスに基づきます。Tatoeba の例文は CC BY 2.0 FR、Kanji alive の音声は CC BY 4.0、JmdictFurigana は CC BY-SA 4.0 です。完全な利用条件と貢献者記録は、以下のソース URL を参照してください。</string>
-    <string name="attribution_jisho_title">Jishoネットワークプライバシー通知</string>
-    <string name="attribution_jisho_disclosure">Jishoは既定で無効です。有効にすると、選択した字幕や読み物コンテンツから抽出した検索語が https://jisho.org に送信されます。メディアファイル、例文全体、Ankiデータ、アカウント識別子は送信されません。</string>
-    <string name="attribution_jisho_rate_limit">リクエストの間隔は最低1秒です。完全にオフラインで検索するにはJishoを無効にしてください。</string>
     <string name="attribution_license">ライセンス: %1$s</string>
     <string name="privacy_title">プライバシーとデータの取り扱い</string>
     <string name="privacy_local_processing">メディア、読み物ファイル、Ankiデータ、リソース、設定はすべてローカルで処理されます。アカウント、広告、分析、クラッシュレポートは含まれません。</string>
-    <string name="privacy_network_processing">リソースは固定されたHTTPSホストからダウンロードされます。Jishoはコンテンツ由来の唯一の通信先で、有効にするまでオフのままです。リモート辞書画像はブロックされます。オフラインTTSは何も送信しません。</string>
+    <string name="privacy_network_processing">リソースはHTTPS経由でダウンロードされます。字幕、メディア、読書コンテンツに由来するデータがネットワークに送信されることはありません。リモート辞書画像はブロックされます。オフラインTTSは何も送信しません。</string>
     <string name="privacy_retention">アプリデータは、置き換え・消去・アンインストールまで保持されます。AnkiDroidに追加済みのノートはAnkiDroid側で管理されます。</string>
     <string name="privacy_open_policy">完全なプライバシーポリシーを開く</string>
     <string name="source_notices_title">ソースおよびサードパーティ通知</string>

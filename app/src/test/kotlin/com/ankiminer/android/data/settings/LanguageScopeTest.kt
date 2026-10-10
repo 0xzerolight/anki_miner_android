@@ -20,7 +20,7 @@ class LanguageScopeTest {
     fun `the stash set is exactly the settings that move a language-scoped snapshot key`() {
         // `language` is the scope key itself, never parked. A switch away from Japanese moves
         // expression_audio_chain, because the device voice stands in for every other language's
-        // network voice. `jishoEnabled` moves nothing since desktop v3.8.0 removed Jisho.
+        // network voice.
         val scoped =
             (ALTERNATIVES.keys - "language").filterTo(linkedSetOf()) { property ->
                 BASES.any { base ->
@@ -416,7 +416,6 @@ class LanguageScopeTest {
                 frequencySources = listOf(selection("freq-a")),
                 pitchSources = listOf(selection("pitch-a")),
                 audioPacks = listOf(selection("pack-a")),
-                jishoEnabled = true,
             )
 
         val BASES = listOf(AppSettings(), RICH)
@@ -482,7 +481,6 @@ class LanguageScopeTest {
                     listOf(emptyList<ResourceChainSelection>(), listOf(selection("pack-b"), selection("pack-a", false))),
                 "enabledWordsets" to listOf(emptyList<String>(), listOf("place-names")),
                 "readingTtsEnabled" to listOf(true, false),
-                "jishoEnabled" to listOf(true, false),
                 "language" to listOf("he"),
                 "languageStash" to listOf(mapOf("he" to mapOf<String, Any?>("deck_name" to "Hebrew"))),
             )
@@ -518,7 +516,6 @@ class LanguageScopeTest {
                 pitchSources = listOf(selection("kanjium")),
                 audioPacks = listOf(selection("ja-pack")),
                 enabledWordsets = listOf("surnames"),
-                jishoEnabled = true,
             )
 
         /** [JAPANESE_USER] upgraded from a release where he was parked before the cap was scoped. */

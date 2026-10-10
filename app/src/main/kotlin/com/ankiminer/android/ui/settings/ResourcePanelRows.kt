@@ -6,9 +6,6 @@ import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.settings.ResourceChainSelection
 
-/** Row id of the pinned Jisho fallback, which is a draft boolean rather than a chain entry. */
-internal const val JISHO_ROW_ID = "jisho"
-
 /**
  * The strings one panel's rows need.
  *
@@ -22,14 +19,11 @@ internal data class ResourceRowStrings(
     val repairWarning: String,
 )
 
-/** [ResourceRowStrings] plus the dictionary-only row actions and the pinned Jisho row. */
+/** [ResourceRowStrings] plus the dictionary-only row actions. */
 internal data class DictionaryRowStrings(
     val rows: ResourceRowStrings,
     val repairAction: String,
     val replaceAction: String,
-    val jishoTitle: String,
-    val jishoMeta: String,
-    val jishoWarning: String,
 )
 
 /**
@@ -47,7 +41,7 @@ internal data class ResourcePanelSlot(
 
 /**
  * Rows for the dictionary panel: the chain in its own order, then any slot the chain does not
- * name, then the pinned Jisho fallback.
+ * name.
  *
  * A catalog-owned slot that has gone bad offers Repair — a re-install of the same catalog
  * resource. Every other slot offers Replace, which is what the inventory card this panel absorbs
@@ -56,12 +50,8 @@ internal data class ResourcePanelSlot(
 internal fun dictionaryPanelRows(
     chain: List<ResourceChainSelection>,
     installed: List<InstalledDictionary>,
-    jishoEnabled: Boolean,
-    /** Jisho is Japanese: another language's panel has no Jisho row. */
-    offersJisho: Boolean = true,
     strings: DictionaryRowStrings,
     onChainChange: (List<ResourceChainSelection>) -> Unit,
-    onJishoChange: (Boolean) -> Unit,
     onRepair: (catalogResourceId: String) -> Unit,
     onReplace: (slotId: String) -> Unit,
 ): List<ResourceRowSpec> {
@@ -83,19 +73,7 @@ internal fun dictionaryPanelRows(
                 ResourcePanelAction(strings.replaceAction) { onReplace(slot.id) }
             }
         },
-    ) +
-        listOfNotNull(
-            ResourceRowSpec(
-                id = JISHO_ROW_ID,
-                title = strings.jishoTitle,
-                metadata = listOf(strings.jishoMeta),
-                enabled = jishoEnabled,
-                onToggle = onJishoChange,
-                warning = strings.jishoWarning,
-                movable = false,
-                removable = false,
-            ).takeIf { offersJisho },
-        )
+    )
 }
 
 internal fun pitchPanelRows(

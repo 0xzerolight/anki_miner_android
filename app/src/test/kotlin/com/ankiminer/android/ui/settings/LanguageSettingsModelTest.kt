@@ -45,15 +45,13 @@ class LanguageSettingsModelTest {
     }
 
     @Test
-    fun `pitch and jisho are Japanese and tone colour is nobody's yet`() {
+    fun `pitch is Japanese and tone colour is nobody's yet`() {
         val japanese = LanguageSettingsState(activeCode = "ja", profiles = profiles)
         val hebrew = LanguageSettingsState(activeCode = "he", profiles = profiles)
 
         assertTrue(japanese.showsPitch)
-        assertTrue(japanese.offersJisho)
         assertFalse(japanese.showsToneColor)
         assertFalse(hebrew.showsPitch)
-        assertFalse(hebrew.offersJisho)
         assertFalse(hebrew.showsToneColor)
         // Before the bridge answers, Japanese keeps its pitch card.
         assertTrue(LanguageSettingsState().showsPitch)
@@ -105,13 +103,12 @@ class LanguageSettingsModelTest {
     }
 
     @Test
-    fun `search hides the pitch and jisho rows of a language without them`() {
+    fun `search hides the pitch rows of a language without them`() {
         val hebrew = LanguageSettingsState(activeCode = "he", profiles = profiles)
         val ids =
             availableSettingsSearchEntries(SETTINGS_SEARCH_INDEX, SetupUiState(), false, hebrew).map { it.id }
 
         assertFalse("resources.pitch_chain" in ids)
-        assertFalse("resources.jisho" in ids)
         assertTrue("language.mining_language" in ids)
         assertFalse("language.reading_tone_color" in ids)
     }

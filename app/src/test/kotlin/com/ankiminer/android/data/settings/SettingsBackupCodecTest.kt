@@ -57,7 +57,6 @@ class SettingsBackupCodecTest {
             audioPacks = listOf(ResourceChainSelection("nhk16", enabled = true)),
             enabledWordsets = listOf("surnames"),
             readingTtsEnabled = true,
-            jishoEnabled = true,
         )
 
     @Test
@@ -386,6 +385,34 @@ class SettingsBackupCodecTest {
 
         assertEquals(12.0, applied.settings.maxSentenceDurationSeconds)
         assertEquals(listOf("use_sentence_length"), applied.ignoredKeys)
+    }
+
+    @Test
+    fun `a v5 backup carrying the retired jisho key imports without a notice`() {
+        listOf("true", "false", "null").forEach { stored ->
+            val json =
+                """{"ankiMinerAndroidSettings":5,"appVersion":"1.1.0","schemaVersion":3,""" +
+                    """"settings":{"jisho_enabled":$stored,"deck_name":"Mining","mining_language":"ja",""" +
+                    """"dictionary_sources_v1":null,"frequency_sources_v1":null,""" +
+                    """"pitch_sources_v1":null,"audio_packs_v1":null},""" +
+                    """"resourceChains":{"dictionary_sources_v1":[],"frequency_sources_v1":[],""" +
+                    """"pitch_sources_v1":[],"audio_packs_v1":[]}}"""
+
+            val applied =
+                with(SettingsBackupCodec) { parse(json).applyTo(AppSettings(), ResourceManagerState()) }
+
+            assertEquals(stored, emptyList<String>(), applied.ignoredKeys)
+            assertEquals(stored, emptyList<String>(), applied.rejectedKeys)
+            assertEquals(stored, "Mining", applied.settings.deckName)
+        }
+    }
+
+    @Test
+    fun `a backup never carries the retired jisho key`() {
+        val json = SettingsBackupCodec.encode(populated, "1.2.0", ResourceManagerState())
+
+        assertTrue(json, "jisho_enabled" !in json)
+        assertTrue("jisho_enabled" !in SettingsBackupCodec.portableKeyNames)
     }
 
     /** A format-3 export as the pin-era app wrote it: every portable key present, null when unset. */

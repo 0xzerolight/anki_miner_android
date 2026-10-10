@@ -86,7 +86,6 @@ class S5VideoMiningAcceptanceInstrumentedTest {
                     useKnownWordsDatabase = false,
                     useIPlusOneFilter = false,
                     maxParallelWorkers = 1,
-                    jishoEnabled = false,
                 ),
             )
         }
@@ -159,7 +158,6 @@ class S5VideoMiningAcceptanceInstrumentedTest {
                     useKnownWordsDatabase = false,
                     useIPlusOneFilter = false,
                     maxParallelWorkers = 1,
-                    jishoEnabled = false,
                 ),
             )
         }

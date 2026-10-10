@@ -734,8 +734,6 @@
     <string name="resource_panel_add_frequency">Ajouter une source de fréquence…</string>
     <string name="resource_panel_import_yomitan_zip">Importer un ZIP Yomitan…</string>
     <string name="resource_panel_download_recommended">Télécharger les ressources recommandées…</string>
-    <string name="resource_panel_meta_online">En ligne</string>
-    <string name="resource_panel_warning_jisho">Limité en débit, plus lent</string>
     <string name="resource_panel_warning_missing">Manquant - à réimporter</string>
     <string name="resource_panel_warning_repair">Réimporter pour réparer</string>
     <string name="resource_panel_row_repair">Réparer</string>
@@ -749,8 +747,6 @@
     <string name="settings_word_audio_voice_available">Une voix est installée pour cette langue.</string>
     <string name="settings_word_audio_voice_missing_data">La voix de cette langue n\'est pas encore téléchargée. Téléchargez-la dans Gérer les services vocaux.</string>
     <string name="settings_word_audio_voice_unsupported">Cet appareil n\'a aucune voix de synthèse vocale pour cette langue.</string>
-    <string name="settings_jisho">Solution de repli de définition Jisho</string>
-    <string name="settings_jisho_disclosure">Désactivé par défaut. Une fois activé et cette solution de repli atteinte, les termes recherchés depuis vos sous-titres ou votre contenu de lecture sont envoyés à jisho.org.</string>
     <string name="settings_validation_card_type_marker">Le champ Anki \'%1$s\' est déjà mappé depuis \'%2$s\'</string>
     <string name="settings_validation_numeric_incomplete">Renseignez ou effacez chaque valeur numérique</string>
     <string name="settings_validation_excluded_decks">Les paquets Anki exclus ne sont pas valides</string>
@@ -798,13 +794,10 @@
     <string name="attribution_embedded_absent">Le dictionnaire n\'a pas fourni de métadonnées d\'attribution intégrées lisibles.</string>
     <string name="attribution_derived_terms_title">Conditions de Jitendex et des données dérivées</string>
     <string name="attribution_derived_terms">Jitendex est partagé sous CC BY-SA 4.0. Ses données JMdict/JMnedict sont fournies par l\'Electronic Dictionary Research and Development Group sous licence EDRDG. Les exemples Tatoeba sont sous CC BY 2.0 FR, l\'audio Kanji alive est sous CC BY 4.0 et JmdictFurigana sous CC BY-SA 4.0. Suivez les URL source ci-dessous pour les conditions complètes et les listes de contributeurs.</string>
-    <string name="attribution_jisho_title">Avis de confidentialité réseau de Jisho</string>
-    <string name="attribution_jisho_disclosure">Jisho est désactivé par défaut. Une fois activé, les termes recherchés depuis les sous-titres sélectionnés ou le contenu de lecture sont envoyés à https://jisho.org. Les fichiers multimédias, les phrases complètes, les données Anki et les identifiants de compte ne sont jamais envoyés.</string>
-    <string name="attribution_jisho_rate_limit">Les requêtes sont espacées d\'au moins une seconde. Désactivez Jisho pour une recherche entièrement hors ligne.</string>
     <string name="attribution_license">Licence : %1$s</string>
     <string name="privacy_title">Confidentialité et traitement des données</string>
     <string name="privacy_local_processing">Les médias, fichiers de lecture, données Anki, ressources et paramètres sont traités localement. Aucun compte, publicité, analyse ni rapport de plantage.</string>
-    <string name="privacy_network_processing">Les ressources sont téléchargées depuis des hôtes HTTPS fixes. Jisho est la seule transmission dérivée du contenu et reste désactivée tant qu\'elle n\'est pas activée. Les images de dictionnaire distantes sont bloquées. La synthèse vocale hors ligne n\'envoie rien.</string>
+    <string name="privacy_network_processing">Les ressources sont téléchargées via HTTPS. Rien de ce qui provient de vos sous-titres, médias ou contenus de lecture n\'est envoyé sur le réseau. Les images de dictionnaire distantes sont bloquées. La synthèse vocale hors ligne n\'envoie rien.</string>
     <string name="privacy_retention">Les données de l\'application restent jusqu\'à leur remplacement, leur effacement ou la désinstallation de l\'application. Les notes déjà présentes dans AnkiDroid y sont gérées.</string>
     <string name="privacy_open_policy">Ouvrir la politique de confidentialité complète</string>
     <string name="source_notices_title">Avis sur les sources et les tiers</string>

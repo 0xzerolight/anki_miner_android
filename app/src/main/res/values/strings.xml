@@ -739,8 +739,6 @@
     <string name="resource_panel_add_frequency">Add frequency source…</string>
     <string name="resource_panel_import_yomitan_zip">Import Yomitan ZIP…</string>
     <string name="resource_panel_download_recommended">Download recommended resources…</string>
-    <string name="resource_panel_meta_online">Online</string>
-    <string name="resource_panel_warning_jisho">Rate-limited, slower</string>
     <string name="resource_panel_warning_missing">Missing - re-import</string>
     <string name="resource_panel_warning_repair">Re-import to repair</string>
     <string name="resource_panel_row_repair">Repair</string>
@@ -754,8 +752,6 @@
     <string name="settings_word_audio_voice_available">A voice for this language is installed.</string>
     <string name="settings_word_audio_voice_missing_data">This language\'s voice is not downloaded yet. Download it under Manage speech services.</string>
     <string name="settings_word_audio_voice_unsupported">This device has no text-to-speech voice for this language.</string>
-    <string name="settings_jisho">Jisho definition fallback</string>
-    <string name="settings_jisho_disclosure">Off by default. When enabled and this fallback is reached, lookup terms from your subtitles or reading content are sent to jisho.org.</string>
     <string name="settings_validation_card_type_marker">Anki field \'%1$s\' is already mapped from \'%2$s\'</string>
     <string name="settings_validation_numeric_incomplete">Complete or clear every numeric value</string>
     <string name="settings_validation_excluded_decks">Excluded Anki decks are invalid</string>
@@ -803,13 +799,10 @@
     <string name="attribution_embedded_absent">The dictionary did not provide readable embedded attribution metadata.</string>
     <string name="attribution_derived_terms_title">Jitendex and derived data terms</string>
     <string name="attribution_derived_terms">Jitendex is shared under CC BY-SA 4.0. Its JMdict/JMnedict data is provided by the Electronic Dictionary Research and Development Group under the EDRDG licence. Tatoeba examples are CC BY 2.0 FR, Kanji alive audio is CC BY 4.0, and JmdictFurigana is CC BY-SA 4.0. Follow the source URLs below for the complete terms and contributor records.</string>
-    <string name="attribution_jisho_title">Jisho network privacy notice</string>
-    <string name="attribution_jisho_disclosure">Jisho is off by default. When enabled, lookup terms from selected subtitles or reading content are sent to https://jisho.org. Media files, full sentences, Anki data, and account identifiers are never sent.</string>
-    <string name="attribution_jisho_rate_limit">Requests are at least one second apart. Disable Jisho for fully offline lookup.</string>
     <string name="attribution_license">Licence: %1$s</string>
     <string name="privacy_title">Privacy and data handling</string>
     <string name="privacy_local_processing">Media, reading files, Anki data, resources, and settings are processed locally. No accounts, ads, analytics, or crash reporting.</string>
-    <string name="privacy_network_processing">Resources download from pinned HTTPS hosts. Jisho is the only content-derived egress and stays off until enabled. Remote dictionary images are blocked. Offline TTS sends nothing.</string>
+    <string name="privacy_network_processing">Resources download over HTTPS. Nothing derived from your subtitles, media or reading content is sent over the network. Remote dictionary images are blocked. Offline TTS sends nothing.</string>
     <string name="privacy_retention">App data stays until replaced, cleared, or the app is uninstalled. Notes already in AnkiDroid are managed there.</string>
     <string name="privacy_open_policy">Open the complete privacy policy</string>
     <string name="source_notices_title">Source and third-party notices</string>
