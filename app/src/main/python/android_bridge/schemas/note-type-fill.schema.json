@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/note-type-fill.json",
+  "title": "Anki Miner Android note-type fill payload",
+  "$comment": "Payload-only request/result schema for anki.notetype.fill, desktop's \"Fill in automatically\" (services/note_presets.fill_note_type_fields). fieldNames are bounded by anki_limits_v1.json names.targetFields and names.field; the runtime also enforces their UTF-8 byte ceilings. With a preset, fields is the preset's whole map and an empty string is its answer, not a gap; without one, fields is the keyword pass. extraFields holds only the language's own card fields that matched.",
+  "oneOf": [
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/result"}
+  ],
+  "$defs": {
+    "logicalKey": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "fieldName": {"type": "string", "minLength": 1, "maxLength": 256},
+    "mapping": {
+      "type": "object",
+      "maxProperties": 128,
+      "propertyNames": {"$ref": "#/$defs/logicalKey"},
+      "additionalProperties": {"type": "string", "maxLength": 256}
+    },
+    "cardTypeId": {"enum": ["", "word_and_sentence", "click", "sentence", "audio"]},
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fieldNames", "language"],
+      "properties": {
+        "fieldNames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/fieldName"}
+        },
+        "language": {"type": "string", "pattern": "^[a-z]{2,3}$", "$comment": "The mining language; the bridge refuses a code with no vendored profile (unsupported_language)."}
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "pitchCategoryFormat",
+        "cardTypeMarkerFields",
+        "supportedCardTypes",
+        "boldTargetInSentence"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/logicalKey"},
+        "name": {"type": "string", "minLength": 1},
+        "pitchCategoryFormat": {"enum": ["jp", "romaji"]},
+        "cardTypeMarkerFields": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["word_and_sentence", "click", "sentence", "audio"],
+          "properties": {
+            "word_and_sentence": {"type": "string", "maxLength": 256},
+            "click": {"type": "string", "maxLength": 256},
+            "sentence": {"type": "string", "maxLength": 256},
+            "audio": {"type": "string", "maxLength": 256}
+          }
+        },
+        "supportedCardTypes": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {"$ref": "#/$defs/cardTypeId"},
+          "contains": {"const": ""},
+          "$comment": "Always includes \"\", the disabled state."
+        },
+        "boldTargetInSentence": {"type": "boolean"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preset", "fields", "extraFields"],
+      "properties": {
+        "preset": {
+          "oneOf": [
+            {"$ref": "#/$defs/preset"},
+            {"type": "null"}
+          ]
+        },
+        "fields": {"$ref": "#/$defs/mapping"},
+        "extraFields": {"$ref": "#/$defs/mapping"}
+      }
+    }
+  }
+}
