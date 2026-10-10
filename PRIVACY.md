@@ -17,10 +17,6 @@ text-to-speech voice.
 
 The app only contacts the network for these purposes, and only over HTTPS:
 
-- **Dictionary lookups (Jisho.org):** when enabled, it sends the selected lookup
-  term to jisho.org. Lookup terms can contain personal or sensitive text. The
-  app adds no account identifier, but Jisho receives ordinary connection data
-  such as the requester's IP address.
 - **Update check (GitHub):** unless switched off in Settings, the app asks
   `api.github.com` once a day whether a newer release exists, and shows the
   answer. It never downloads or installs anything, and sends no identifier —
