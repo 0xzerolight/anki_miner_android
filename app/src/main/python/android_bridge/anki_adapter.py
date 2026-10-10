@@ -14,7 +14,7 @@ import logging
 import os
 import re
 import stat
-from collections.abc import Callable, Mapping, Sequence, Set
+from collections.abc import Callable, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass
 from html import escape as html_escape
 from html import unescape as html_unescape
@@ -342,6 +342,12 @@ class _DuplicateProbeResult:
     occurrence: int
 
 
+def _payload_mined_form(payload: Any) -> str:
+    """The card payload's ``mined_form``: the engine keys known words and its not-mined report on it."""
+
+    return getattr(getattr(payload, "word", None), "mined_form", "") or ""
+
+
 @dataclass(frozen=True)
 class _PendingNote:
     payload: Any
@@ -371,7 +377,8 @@ class _CreatePreflightPlan:
     dictionary_media_sources: tuple[str, ...]
     pending_media_name_reservations: dict[str, tuple[str, str]]
     pending_notes: tuple[_PendingNote, ...]
-    skipped_outgoing_duplicates: int
+    # Notes whose front an earlier note of this call already carries.
+    skipped_outgoing_notes: tuple[_PendingNote, ...]
     # The call budgets this plan used, read when a call is split. Built-note
     # bytes are the larger of the as-built and the worst-case-after-storage
     # totals.
@@ -880,6 +887,14 @@ class AndroidAnkiAdapter:
         self.last_created_lemmas: list[str] = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
+        # Desktop AnkiService.last_not_created: why each payload of the last
+        # create_cards_batch call made no note, by mined_form. "duplicate" (the
+        # collection or this call already holds its front), "refused" (Anki or a
+        # size limit turned it down) or "uncertain" (its createNotes request
+        # escaped unanswered, so Anki may hold it). The engine's not-mined report
+        # reads it; a payload in neither it nor last_created_mined_forms was
+        # never reached.
+        self.last_not_created: dict[str, str] = {}
         # Installed and cleared by the engine around create_cards_batch. Kept
         # separate from the constructor's cancellation check: conflating them
         # would leave the engine's check installed after its finally clears it.
@@ -2768,7 +2783,7 @@ class AndroidAnkiAdapter:
         worst_note_utf8_bytes = 0
         pending_notes: list[_PendingNote] = []
         seen_outgoing: set[str] = set()
-        skipped_outgoing_duplicates = 0
+        skipped_outgoing_notes: list[_PendingNote] = []
         binding_ids: dict[tuple[str, str], str] = {}
         for source_index, (payload, built_note, fields) in enumerate(
             zip(
@@ -2816,7 +2831,7 @@ class AndroidAnkiAdapter:
                 preflight_media_bindings=preflight_bindings,
             )
             if pending.key in seen_outgoing:
-                skipped_outgoing_duplicates += 1
+                skipped_outgoing_notes.append(pending)
                 continue
             seen_outgoing.add(pending.key)
             pending_notes.append(pending)
@@ -2837,7 +2852,7 @@ class AndroidAnkiAdapter:
             tuple(dictionary_sources),
             pending_reservations,
             tuple(pending_notes),
-            skipped_outgoing_duplicates,
+            tuple(skipped_outgoing_notes),
             source_utf8_bytes=source_utf8_bytes,
             note_utf8_bytes=max(note_utf8_bytes, worst_note_utf8_bytes),
             media_bytes=media_bytes,
@@ -3027,8 +3042,8 @@ class AndroidAnkiAdapter:
 
     def _admit_against_excluded_decks(
         self, pending_notes: Sequence[_PendingNote], seen: set[str]
-    ) -> tuple[tuple[_PendingNote, ...], int]:
-        """Desktop ``AnkiService._admit_against_excluded_decks``: admitted notes and the refused count.
+    ) -> tuple[tuple[_PendingNote, ...], tuple[_PendingNote, ...]]:
+        """Desktop ``AnkiService._admit_against_excluded_decks``: admitted notes and the refused ones.
 
         A note is refused when its folded front is already known outside the
         excluded decks, or another note of this call took it first. ``seen``
@@ -3040,13 +3055,16 @@ class AndroidAnkiAdapter:
 
         existing = self.get_existing_vocabulary(allow_degraded=False)
         admitted: list[_PendingNote] = []
+        refused: list[_PendingNote] = []
         for pending in pending_notes:
             key = self._dedup_key(pending.key)
             if not (key and (key in existing or key in seen)):
                 admitted.append(pending)
+            else:
+                refused.append(pending)
             if key:
                 seen.add(key)
-        return tuple(admitted), len(pending_notes) - len(admitted)
+        return tuple(admitted), tuple(refused)
 
     def _create_duplicate_scope(self) -> dict[str, Any]:
         snapshot_limits = {
@@ -3337,7 +3355,7 @@ class AndroidAnkiAdapter:
 
     def _parse_create_notes_result(
         self, payload: dict[str, Any], client_ids: Sequence[str]
-    ) -> tuple[list[int | None], list[bool], int, AnkiCallbackError | None]:
+    ) -> tuple[list[int | None], list[bool], list[bool], AnkiCallbackError | None]:
         result = _expect_exact_keys(
             payload,
             {"runId", "requestId", "results", "error"},
@@ -3352,7 +3370,8 @@ class AndroidAnkiAdapter:
 
         note_ids: list[int | None] = []
         successful: list[bool] = []
-        duplicates = 0
+        # Per row: True where the provider found the note a duplicate.
+        duplicates: list[bool] = []
         saw_terminal_failure = False
         saw_not_attempted = False
         saw_uncertain = False
@@ -3395,7 +3414,6 @@ class AndroidAnkiAdapter:
                 )
                 note_ids.append(None)
                 successful.append(False)
-                duplicates += 1
             elif status == "failed":
                 row = _expect_exact_keys(
                     row_value,
@@ -3451,6 +3469,7 @@ class AndroidAnkiAdapter:
                     "mismatched_callback_response",
                     "createNotes results are not request-aligned",
                 )
+            duplicates.append(status == "duplicate")
 
         raw_error = result["error"]
         error = None if raw_error is None else _expect_error_detail(raw_error, operation="createNotes")
@@ -3497,7 +3516,7 @@ class AndroidAnkiAdapter:
         notes: Sequence[_PendingNote],
         baseline_token: str,
         occurrences: Sequence[int],
-    ) -> tuple[list[int | None], list[bool], int, AnkiCallbackError | None]:
+    ) -> tuple[list[int | None], list[bool], list[bool], AnkiCallbackError | None]:
         if not notes or len(notes) > _BATCH_SIZE:
             _protocol_error(
                 "invalid_note",
@@ -3587,6 +3606,7 @@ class AndroidAnkiAdapter:
             self.last_created_lemmas = []
             self.last_skipped_duplicates = 0
             self.last_media_store_failures = 0
+            self.last_not_created = {}
             return []
 
         self.last_created_note_ids = []
@@ -3594,6 +3614,7 @@ class AndroidAnkiAdapter:
         self.last_created_lemmas = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
+        self.last_not_created = {}
         # Desktop deliberately renders HTTP(S) glossary images. Android strips
         # every auto-loading image except a renderer-marked private dictionary
         # asset before any note identity, media scan, or provider mutation.
@@ -3619,6 +3640,31 @@ class AndroidAnkiAdapter:
         admitted_keys: set[str] = set()
         failed_dictionary_sources: set[str] = set()
 
+        # Desktop's not_created, plus the notes a sub-call split skipped over a size limit.
+        planned = {id(payload) for sub_call in sub_calls for payload in sub_call.payloads}
+        not_created: dict[str, str] = {}
+
+        def record_not_created(payloads: Iterable[Any], state: str) -> None:
+            for payload in payloads:
+                if mined_form := _payload_mined_form(payload):
+                    not_created[mined_form] = state
+
+        record_not_created((payload for payload in word_data_list if id(payload) not in planned), "refused")
+        # The payloads of a createNotes request no validated answer has come back for.
+        in_flight: list[Any] = []
+
+        def probe_survivors(
+            notes: Sequence[_PendingNote], probes: Sequence[_DuplicateProbeResult]
+        ) -> list[tuple[_PendingNote, int]]:
+            """The notes the duplicate probe admits, with their occurrences; the rest are duplicates."""
+            survivors: list[tuple[_PendingNote, int]] = []
+            for pending, probe in zip(notes, probes, strict=True):
+                if allow_duplicates or not probe.is_duplicate:
+                    survivors.append((pending, probe.occurrence))
+                else:
+                    record_not_created([pending.payload], "duplicate")
+            return survivors
+
         from anki_miner.services.anki_note_builder import _strip_for_dedup, build_note
 
         try:
@@ -3629,11 +3675,13 @@ class AndroidAnkiAdapter:
                 preflight_plan = (
                     sub_call.plan if sub_call.plan is not None else self._preflight_create_call(sub_call.payloads)
                 )
-                skipped_duplicates += preflight_plan.skipped_outgoing_duplicates
+                skipped_duplicates += len(preflight_plan.skipped_outgoing_notes)
+                record_not_created((pending.payload for pending in preflight_plan.skipped_outgoing_notes), "duplicate")
                 pending_notes = preflight_plan.pending_notes
                 if allow_duplicates:
                     pending_notes, refused = self._admit_against_excluded_decks(pending_notes, admitted_keys)
-                    skipped_duplicates += refused
+                    skipped_duplicates += len(refused)
+                    record_not_created((pending.payload for pending in refused), "duplicate")
 
                 callback_batches = self._chunk_pending_notes(pending_notes)
                 # Outgoing duplicates were removed by structural preflight. Hash
@@ -3673,15 +3721,7 @@ class AndroidAnkiAdapter:
                     duplicate_probes, baseline_token = self._duplicate_first_fields(
                         [(pending.key, pending.first_field) for pending in original_batch]
                     )
-                    submissions = [
-                        (pending, probe.occurrence)
-                        for pending, probe in zip(
-                            original_batch,
-                            duplicate_probes,
-                            strict=True,
-                        )
-                        if allow_duplicates or not probe.is_duplicate
-                    ]
+                    submissions = probe_survivors(original_batch, duplicate_probes)
                     skipped_duplicates += len(original_batch) - len(submissions)
 
                     if submissions:
@@ -3792,26 +3832,20 @@ class AndroidAnkiAdapter:
                             duplicate_probes, baseline_token = self._duplicate_first_fields(
                                 [(pending.key, pending.first_field) for pending in submit_notes]
                             )
-                            rewritten_submissions = [
-                                (pending, probe.occurrence)
-                                for pending, probe in zip(
-                                    submit_notes,
-                                    duplicate_probes,
-                                    strict=True,
-                                )
-                                if allow_duplicates or not probe.is_duplicate
-                            ]
+                            rewritten_submissions = probe_survivors(submit_notes, duplicate_probes)
                             skipped_duplicates += len(submit_notes) - len(rewritten_submissions)
                             submit_notes = [pending for pending, _occurrence in rewritten_submissions]
                             occurrences = [occurrence for _pending, occurrence in rewritten_submissions]
 
                         if submit_notes:
-                            note_ids, successful, residual_duplicates, partial_error = self._create_note_batch(
+                            # Uncertain until an answer is validated: desktop's in_flight.
+                            in_flight = [pending.payload for pending in submit_notes]
+                            note_ids, successful, duplicate_rows, partial_error = self._create_note_batch(
                                 submit_notes,
                                 baseline_token,
                                 occurrences,
                             )
-                            skipped_duplicates += residual_duplicates
+                            skipped_duplicates += sum(duplicate_rows)
                             repeated_created_ids = set(all_created_ids).intersection(
                                 note_id for note_id in note_ids if note_id is not None
                             )
@@ -3821,6 +3855,12 @@ class AndroidAnkiAdapter:
                                     "invalid_anki_response",
                                     "createNotes reused a note ID from an earlier batch",
                                 )
+                            in_flight = []
+                            for pending, was_successful, duplicate in zip(
+                                submit_notes, successful, duplicate_rows, strict=True
+                            ):
+                                if not was_successful:
+                                    record_not_created([pending.payload], "duplicate" if duplicate else "refused")
                             total_created += sum(successful)
                             all_created_ids.extend(note_id for note_id in note_ids if note_id is not None)
                             confirmed_notes = [
@@ -3872,6 +3912,8 @@ class AndroidAnkiAdapter:
             # as the bridge-only BaseException.
             self._request_cancellation()
         finally:
+            record_not_created(in_flight, "uncertain")
+            self.last_not_created = not_created
             self.last_created_note_ids = all_created_ids
             self.last_created_mined_forms = created_mined_forms
             self.last_created_lemmas = created_lemmas
