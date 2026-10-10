@@ -457,6 +457,8 @@ def profile_payload(profile: Any) -> dict[str, object]:
                 "capability": spec.capability,
                 "placeholder": spec.placeholder,
                 "rawHtml": spec.raw_html,
+                # Other field names "Fill in automatically" maps to this key (he/de "POS").
+                "aliases": list(spec.aliases),
             }
             for spec in profile.extra_card_fields
         ],

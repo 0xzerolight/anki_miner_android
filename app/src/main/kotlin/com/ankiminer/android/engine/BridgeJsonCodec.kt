@@ -924,7 +924,13 @@ object BridgeJsonCodec {
             extraCardFields =
                 array(payload.getValue("extraCardFields"), "extra card fields").map { raw ->
                     val field = objectValue(raw, "extra card field")
-                    requireExact(field, setOf("key", "capability", "placeholder", "rawHtml"), "extra card field")
+                    // aliases is optional on the wire (absent = none); the bridge always sends it.
+                    requireExactWithOptional(
+                        field,
+                        setOf("key", "capability", "placeholder", "rawHtml"),
+                        setOf("aliases"),
+                        "extra card field",
+                    )
                     LanguageExtraCardField(
                         key = text(field.getValue("key"), "extra card field key").also {
                             if (!logicalFieldKeyPattern.matches(it)) fail(BridgeProtocolCategory.INVALID_VALUE, "extra card field key is invalid")
@@ -934,6 +940,10 @@ object BridgeJsonCodec {
                         },
                         placeholder = nonEmptyText(field.getValue("placeholder"), "extra card field placeholder"),
                         rawHtml = bool(field.getValue("rawHtml"), "extra card field rawHtml"),
+                        aliases =
+                            field["aliases"]?.let { uniqueStrings(it, "extra card field aliases") }.orEmpty().onEach {
+                                if (it.isEmpty()) fail(BridgeProtocolCategory.INVALID_VALUE, "extra card field alias is empty")
+                            },
                     )
                 },
         )

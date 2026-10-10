@@ -412,7 +412,12 @@ def test_hebrew_profile_entry_describes_an_rtl_language_with_its_own_card_fields
         "capability": "hebrew_transliteration",
         "placeholder": "Transliteration",
         "rawHtml": False,
+        "aliases": [],
     }
+    # Desktop's "Fill in automatically" also maps a field named POS (he's spelling
+    # before the Anki Miner Note rename) to the PartOfSpeech row.
+    pos = next(field for field in he["extraCardFields"] if field["key"] == "pos")
+    assert (pos["placeholder"], pos["aliases"]) == ("PartOfSpeech", ["POS"])
     defaults = he["scopedDefaults"]
     assert defaults["anki_note_type"] == ""
     assert defaults["dictionary_chain"] == []

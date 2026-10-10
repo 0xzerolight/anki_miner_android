@@ -1330,6 +1330,26 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `a profile card field carries the other field names that map to it`() {
+        val message =
+            fixtures("contracts/mining_protocol_v1.json", "valid").first { it.name == "language profiles result" }.message
+        val pos = """"key":"pos","capability":"pos_tag","placeholder":"POS","rawHtml":false"""
+        assertTrue(pos in message)
+        fun hebrew(raw: String) =
+            (BridgeJsonCodec.decode(raw) as BridgeMessage.LanguageProfilesResult).profiles.single { it.code == "he" }
+
+        val decoded = hebrew(message.replace(pos, "$pos,\"aliases\":[\"PartOfSpeech\"]"))
+        assertEquals(listOf("PartOfSpeech"), decoded.extraCardFields.single { it.key == "pos" }.aliases)
+        // Absent reads as none: the committed fixture predates the field.
+        assertEquals(emptyList<String>(), hebrew(message).extraCardFields.single { it.key == "pos" }.aliases)
+        listOf("[\"\"]", "[\"POS\",\"POS\"]", "\"POS\"", "[1]").forEach { aliases ->
+            assertThrows(BridgeProtocolException::class.java) {
+                BridgeJsonCodec.decode(message.replace(pos, "$pos,\"aliases\":$aliases"))
+            }
+        }
+    }
+
+    @Test
     fun `a language profile with an engine sentence for its reason fails closed`() {
         val fixture =
             fixtures("contracts/mining_protocol_v1.json", "invalid")

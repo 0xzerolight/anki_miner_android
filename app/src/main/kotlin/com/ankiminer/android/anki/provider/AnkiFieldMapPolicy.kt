@@ -242,8 +242,8 @@ internal object AnkiFieldMapPolicy {
 
     /**
      * Desktop `note_presets.auto_map_profile_fields`: each spec takes the first field, in
-     * [fieldNames] order, whose normalised name equals its placeholder's, unless [claimed] or an
-     * earlier spec holds it. A spec with no match is absent, never `""`.
+     * [fieldNames] order, whose normalised name equals its placeholder's or one of its aliases',
+     * unless [claimed] or an earlier spec holds it. A spec with no match is absent, never `""`.
      */
     fun autoMapProfileFields(
         fieldNames: List<String>,
@@ -253,9 +253,9 @@ internal object AnkiFieldMapPolicy {
         val taken = claimed.filterTo(mutableSetOf()) { it.isNotEmpty() }
         val mapping = linkedMapOf<String, String>()
         specs.forEach { spec ->
-            val placeholder = AnkiFieldAutoMap.normalize(spec.placeholder)
+            val spellings = (listOf(spec.placeholder) + spec.aliases).mapTo(mutableSetOf(), AnkiFieldAutoMap::normalize)
             fieldNames
-                .firstOrNull { it !in taken && AnkiFieldAutoMap.normalize(it) == placeholder }
+                .firstOrNull { it !in taken && AnkiFieldAutoMap.normalize(it) in spellings }
                 ?.let { match ->
                     mapping[spec.key] = match
                     taken += match

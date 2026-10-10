@@ -304,6 +304,30 @@ class AnkiFieldMapPolicyTest {
     }
 
     @Test
+    fun `a profile field also maps a note field spelled like one of its aliases`() {
+        val pos = LanguageExtraCardField("pos", "pos_tag", "PartOfSpeech", rawHtml = false, aliases = listOf("POS"))
+
+        assertEquals(
+            mapOf("pos" to "POS"),
+            AnkiFieldMapPolicy.autoMapProfileFields(listOf("Expression", "POS"), listOf(pos), emptySet()),
+        )
+    }
+
+    @Test
+    fun `the first field in field order wins between a placeholder and an alias`() {
+        val pos = LanguageExtraCardField("pos", "pos_tag", "PartOfSpeech", rawHtml = false, aliases = listOf("POS"))
+
+        assertEquals(
+            mapOf("pos" to "pos"),
+            AnkiFieldMapPolicy.autoMapProfileFields(listOf("Expression", "pos", "Part Of Speech"), listOf(pos), emptySet()),
+        )
+        assertEquals(
+            mapOf("pos" to "Part_Of_Speech"),
+            AnkiFieldMapPolicy.autoMapProfileFields(listOf("Expression", "Part_Of_Speech", "POS"), listOf(pos), emptySet()),
+        )
+    }
+
+    @Test
     fun `a profile field never takes a field another key already holds`() {
         val mapped =
             AnkiFieldMapPolicy.autoMapProfileFields(
