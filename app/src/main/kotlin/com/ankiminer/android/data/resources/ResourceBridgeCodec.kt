@@ -21,6 +21,10 @@ object ResourceBridgeCodec {
     private const val MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
     private const val MAX_TEXT_BYTES = 2 * 1024 * 1024
     private const val MAX_SOURCE_REVISION_BYTES = 4096
+
+    /** Mirrors `dictionary_updates._MAX_CHAIN_IDS` and `_MAX_WIRE_TEXT_BYTES`. */
+    private const val MAX_UPDATE_CHAIN_IDS = 128
+    private const val MAX_UPDATE_URL_BYTES = 4096
     private val operationId = Regex("[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
     private val slotId = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
     private val resourceId = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
@@ -391,6 +395,105 @@ object ResourceBridgeCodec {
         return encode("resource.operation.cancel") { generator ->
             generator.writeStringField("operationId", operation)
         }
+    }
+
+    /** `resource.updates.check`: each chain in order, at most [MAX_UPDATE_CHAIN_IDS] slots. */
+    fun encodeUpdatesCheckRequest(request: ResourceUpdateCheckRequest): String {
+        requireOperationId(request.operationId)
+        requireLanguage(request.language)
+        val chains =
+            listOf(
+                "dictionaryIds" to request.dictionaryIds,
+                "frequencyIds" to request.frequencyIds,
+                "pitchIds" to request.pitchIds,
+            )
+        chains.forEach { (_, ids) -> require(ids.size <= MAX_UPDATE_CHAIN_IDS && ids.all(slotId::matches)) }
+        return encode("resource.updates.check") { generator ->
+            generator.writeStringField("operationId", request.operationId)
+            generator.writeStringField("language", request.language)
+            chains.forEach { (name, ids) ->
+                generator.writeArrayFieldStart(name)
+                ids.forEach(generator::writeString)
+                generator.writeEndArray()
+            }
+        }
+    }
+
+    /**
+     * `resource.updates.checked`. Every update must already meet the install's contract: an https
+     * download URL, a title fit for `displayName`, and its family's archive cap.
+     */
+    fun decodeUpdatesChecked(raw: String): ResourceUpdateCheck {
+        val value = payload(raw, "resource.updates.checked")
+        exact(value, setOf("checked", "reached", "failedCount", "updates"), "update check")
+        val checked = nonNegative(value.getValue("checked"), "checked")
+        val failedCount = nonNegative(value.getValue("failedCount"), "failedCount")
+        val updates = array(value.getValue("updates"), "updates").map(::resourceUpdate)
+        // Each asked slot either failed, has an update, or is current.
+        if (checked > 3L * MAX_UPDATE_CHAIN_IDS || failedCount + updates.size > checked) {
+            invalid("Update check counts are inconsistent")
+        }
+        return ResourceUpdateCheck(
+            checked = checked.toInt(),
+            reached = bool(value.getValue("reached"), "reached"),
+            failedCount = failedCount.toInt(),
+            updates = updates,
+        )
+    }
+
+    /** `resource.update.install`: rebuild [update]'s slot in place from the archive at [sourcePath]. */
+    fun encodeUpdateInstallRequest(
+        operation: String,
+        update: ResourceUpdate,
+        sourcePath: String,
+        language: String,
+    ): String {
+        requireOperationId(operation)
+        requireLanguage(language)
+        require(slotId.matches(update.slotId))
+        requireAbsolutePath(sourcePath)
+        requireDisplayName(update.title)
+        return encode("resource.update.install") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("kind", update.kind.wireValue)
+            generator.writeStringField("slotId", update.slotId)
+            generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("displayName", update.title)
+            generator.writeStringField("language", language)
+        }
+    }
+
+    /** The slot an update rebuilt, read from its family's own import envelope. */
+    fun decodeInstalledUpdate(kind: ResourceUpdateKind, raw: String): String =
+        when (kind) {
+            ResourceUpdateKind.DICTIONARY -> decodeImportedDictionary(raw).slotId
+            ResourceUpdateKind.FREQUENCY -> decodeImportedFrequency(raw).sourceId
+            ResourceUpdateKind.PITCH -> decodeImportedPitch(raw).sourceId
+        }
+
+    private fun resourceUpdate(raw: BridgeJsonValue): ResourceUpdate {
+        val value = objectValue(raw, "update")
+        exact(
+            value,
+            setOf("kind", "slotId", "currentRevision", "latestRevision", "title", "downloadUrl", "maxArchiveBytes"),
+            "update",
+        )
+        val wireKind = text(value.getValue("kind"), "kind")
+        val kind = ResourceUpdateKind.entries.singleOrNull { it.wireValue == wireKind } ?: invalid("Update kind is invalid")
+        val maxArchiveBytes = positive(value.getValue("maxArchiveBytes"), "maxArchiveBytes")
+        if (maxArchiveBytes > kind.maxArchiveBytes) invalid("Update archive cap exceeds its family's")
+        val title = boundedText(value.getValue("title"), "title", 512)
+        if (title != title.trim() || title.any { it.code < 0x20 }) invalid("Update title is malformed")
+        return ResourceUpdate(
+            kind = kind,
+            slotId = requireSlotId(text(value.getValue("slotId"), "slotId")),
+            currentRevision =
+                boundedText(value.getValue("currentRevision"), "currentRevision", MAX_SOURCE_REVISION_BYTES, allowEmpty = true),
+            latestRevision = boundedText(value.getValue("latestRevision"), "latestRevision", MAX_SOURCE_REVISION_BYTES),
+            title = title,
+            downloadUrl = requireHttpsUrl(boundedText(value.getValue("downloadUrl"), "downloadUrl", MAX_UPDATE_URL_BYTES)),
+            maxArchiveBytes = maxArchiveBytes,
+        )
     }
 
     /** Every language's catalog, in the order Python lists them (Japanese first). */

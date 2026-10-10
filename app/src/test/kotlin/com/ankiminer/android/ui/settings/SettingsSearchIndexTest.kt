@@ -61,6 +61,16 @@ class SettingsSearchIndexTest {
     }
 
     @Test
+    fun `dictionary updates search lands on the dictionary panel that holds the Updates block`() {
+        val updates = SETTINGS_SEARCH_INDEX.single { it.id == "resources.dictionary_updates" }
+
+        assertEquals(SettingsCategory.RESOURCES, updates.category)
+        assertEquals("dictionary-sources", updates.cardKey)
+        assertEquals(R.string.dictionary_updates_automatic, updates.title)
+        assertEquals(R.string.dictionary_updates_help, updates.detail)
+    }
+
+    @Test
     fun `custom dictionary search has no removed slot-picker detail`() {
         val custom = SETTINGS_SEARCH_INDEX.single { it.id == "resources.dictionary_import" }
 

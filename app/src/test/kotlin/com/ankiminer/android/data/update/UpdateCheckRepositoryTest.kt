@@ -80,6 +80,31 @@ class UpdateCheckRepositoryTest {
             assertEquals(PREVIOUS_CHECK, repository.state.first().lastAutomaticAttemptAtMillis)
         }
 
+    @Test
+    fun `the dictionary update stamp is its own key beside the release check state`() =
+        runTest {
+            val dataStore = createDataStore(backgroundScope, "dictionary-stamp")
+            val repository = DataStoreUpdateCheckRepository(dataStore)
+            repository.recordCheck(PREVIOUS_CHECK, null)
+
+            assertEquals(null, repository.dictionaryUpdatesCheckedAt())
+            repository.recordDictionaryUpdatesChecked(NOW)
+
+            assertEquals(NOW, repository.dictionaryUpdatesCheckedAt())
+            assertEquals(NOW, dataStore.data.first()[DICTIONARY_UPDATES_CHECKED_AT])
+            assertEquals(PREVIOUS_CHECK, repository.state.first().lastCheckedAtMillis)
+        }
+
+    @Test
+    fun `an unreadable dictionary update stamp reads as never checked`() =
+        runTest {
+            val dataStore = createDataStore(backgroundScope, "dictionary-stamp-unreadable")
+            DataStoreUpdateCheckRepository(dataStore).recordDictionaryUpdatesChecked(NOW)
+            val repository = DataStoreUpdateCheckRepository(ReadFailureDataStore(dataStore))
+
+            assertEquals(null, repository.dictionaryUpdatesCheckedAt())
+        }
+
     private fun createDataStore(
         scope: CoroutineScope,
         name: String,
@@ -107,5 +132,6 @@ class UpdateCheckRepositoryTest {
         const val PREVIOUS_CHECK = NOW - 1_000L
         val UPDATE_CHECK_ENABLED = booleanPreferencesKey("update_check_enabled")
         val UPDATE_LAST_CHECKED_AT = longPreferencesKey("update_last_checked_at")
+        val DICTIONARY_UPDATES_CHECKED_AT = longPreferencesKey("dictionary_updates_checked_at")
     }
 }

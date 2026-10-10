@@ -675,6 +675,29 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `refresh skips recovery while a dictionary update check runs, and recovers after it`() =
+        runTest {
+            val resources = FakeResourceManager()
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources = resources)
+            advanceUntilIdle()
+            resources.updateCheckRunning = true
+
+            // resource.cleanup refuses while a check holds its Python operation: Settings opening
+            // mid-check must leave READY published, not start a recovery that would wait or fail.
+            model.refresh()
+            advanceUntilIdle()
+
+            assertEquals(0, resources.recoveries)
+            assertEquals(ResourceStartupReadiness.READY, resources.state.value.startupReadiness)
+
+            resources.updateCheckRunning = false
+            model.refresh()
+            advanceUntilIdle()
+
+            assertEquals(1, resources.recoveries)
+        }
+
+    @Test
     fun `same note type reselection performs no settings write or refresh`() =
         runTest(mainDispatcherRule.dispatcher) {
             val original = linkedMapOf("word" to "Expression", "sentence" to "Custom Sentence")
@@ -2328,7 +2351,15 @@ class SetupViewModelTest {
             importDocuments[uri] = ImportDocument(displayName, mimeType, leadingBytes)
         }
 
-        override suspend fun recoverAndRefresh() = Unit
+        var recoveries = 0
+            private set
+        var updateCheckRunning = false
+
+        override fun isUpdateCheckRunning(): Boolean = updateCheckRunning
+
+        override suspend fun recoverAndRefresh() {
+            recoveries += 1
+        }
 
         var uniDicInstalls = 0
         var uniDicInstallSucceeds = true

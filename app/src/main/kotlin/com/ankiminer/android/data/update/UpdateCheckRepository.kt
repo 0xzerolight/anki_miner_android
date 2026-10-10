@@ -7,9 +7,12 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -45,9 +48,21 @@ internal interface UpdateCheckRepository {
     suspend fun skip(version: String)
 }
 
+/**
+ * When the weekly dictionary-update run last ran its course: desktop's `resource_update_check`
+ * stamp. Device-local timing like the release check's, so it lives in the same store: out of
+ * backups and exports, and kept by every "Reset settings" action.
+ */
+internal interface DictionaryUpdateStamp {
+    /** Null when no run is recorded or the store cannot be read; either way the run is due. */
+    suspend fun dictionaryUpdatesCheckedAt(): Long?
+
+    suspend fun recordDictionaryUpdatesChecked(atMillis: Long)
+}
+
 internal class DataStoreUpdateCheckRepository internal constructor(
     private val store: DataStore<Preferences>,
-) : UpdateCheckRepository {
+) : UpdateCheckRepository, DictionaryUpdateStamp {
     constructor(context: Context) : this(context.applicationContext.ankiMinerUpdatesDataStore)
 
     override val state: Flow<UpdateCheckPreferences> =
@@ -96,6 +111,23 @@ internal class DataStoreUpdateCheckRepository internal constructor(
         }
     }
 
+    override suspend fun dictionaryUpdatesCheckedAt(): Long? =
+        try {
+            read(store.data.first(), DICTIONARY_UPDATES_CHECKED_AT)
+        } catch (failure: IOException) {
+            // Desktop's update_check_due treats an unreadable stamp as due.
+            AppLog.w(LogComponent.SETTINGS, "dictionary.update.stamp", failure, "outcome" to "fail")
+            null
+        }
+
+    override suspend fun recordDictionaryUpdatesChecked(atMillis: Long) {
+        store.updateData { preferences ->
+            preferences.toMutablePreferences().apply {
+                this[DICTIONARY_UPDATES_CHECKED_AT] = atMillis
+            }.toPreferences()
+        }
+    }
+
     override suspend fun skip(version: String) {
         store.updateData { preferences ->
             preferences.toMutablePreferences().apply {
@@ -112,6 +144,7 @@ internal class DataStoreUpdateCheckRepository internal constructor(
         val UPDATE_AVAILABLE_VERSION = stringPreferencesKey("update_available_version")
         val UPDATE_AVAILABLE_URL = stringPreferencesKey("update_available_url")
         val UPDATE_SKIPPED_VERSION = stringPreferencesKey("update_skipped_version")
+        val DICTIONARY_UPDATES_CHECKED_AT = longPreferencesKey("dictionary_updates_checked_at")
 
         fun decode(preferences: Preferences): UpdateCheckPreferences {
             val lastCheckedAtMillis = read(preferences, UPDATE_LAST_CHECKED_AT) ?: 0L
