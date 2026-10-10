@@ -24,6 +24,7 @@ _PROGRESS_HANDLERS = {
     "resource.pitch.import",
     "resource.dictionary.import",
     "resource.unidic.install",
+    "resource.update.install",
 }
 
 
@@ -84,6 +85,8 @@ def _dispatch_validated(
         "resource.operation.cancel",
         "resource.pitch.import",
         "resource.unidic.install",
+        "resource.update.install",
+        "resource.updates.check",
         "resource.wordlist.transcode",
         "tokenizer.configure",
         "dictionary.define",
@@ -145,6 +148,16 @@ def _dispatch_validated(
             from .word_lists import transcode_word_list
 
             return transcode_word_list(payload)
+
+        if request_type == "resource.updates.check":
+            from . import dictionary_updates
+
+            return dictionary_updates.check_updates(payload)
+
+        if request_type == "resource.update.install":
+            from . import dictionary_updates
+
+            return dictionary_updates.install_update(payload, callbacks=callbacks)
 
         handlers = {
             "resource.catalog.get": resources.catalog_response,

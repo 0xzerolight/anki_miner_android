@@ -593,7 +593,19 @@ def _frequency_import_options(
     return {**declared, **lemmatize_kwarg(lemmatize)}
 
 
-def import_frequency(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
+def import_frequency(
+    payload: Mapping[str, object],
+    *,
+    callbacks: object | None = None,
+    publisher_update: bool = False,
+) -> str:
+    """``resource.frequency.import``; also the in-place install behind ``resource.update.install``.
+
+    ``publisher_update`` is set only by that install (``dictionary_updates``),
+    never from the wire: the publisher's new list is built the way the slot's
+    was (desktop ``UpdatableResource.lemmatised``), as a rebuild is.
+    """
+
     core._exact(
         without_language(payload),
         {
@@ -615,7 +627,7 @@ def import_frequency(payload: Mapping[str, object], *, callbacks: object | None 
     home = Path(require_initialized())
     slot = _frequency_root(home) / source_id
     language = _import_language(payload, source, slot)
-    rebuild_slot = slot if _rebuild_slot(source, slot) else None
+    rebuild_slot = slot if publisher_update or _rebuild_slot(source, slot) else None
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
