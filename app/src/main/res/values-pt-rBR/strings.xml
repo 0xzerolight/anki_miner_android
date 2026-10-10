@@ -730,7 +730,7 @@
     <string name="settings_exclude_hanja">Excluir palavras com hanja</string>
     <string name="settings_exclude_hanja_help">Ignorar palavras que contenham algum caractere hanja, mantendo no baralho vocabulário só em hangul.</string>
     <string name="settings_skip_names">Ignorar nomes de pessoas, lugares e empresas</string>
-    <string name="settings_skip_names_help">Exclui da mineração as listas incluídas de nomes de pessoas, lugares e empresas japoneses. Nomes na whitelist ainda são minerados.</string>
+    <string name="settings_skip_names_help">Exclui da mineração as listas incluídas de nomes de pessoas, lugares e empresas japoneses. Nomes na lista de permissões ainda são minerados.</string>
     <string name="settings_subtitle_cleanup">Remover nomes de falantes, efeitos sonoros e notas musicais</string>
     <string name="settings_subtitle_cleanup_help">Remove (notas), [efeitos sonoros], ♪ música e travessões de diálogo de cada linha de legenda antes da mineração, além dos rótulos de falantes quando o sistema de escrita os marca. Marcado pela metade significa que seu próprio padrão está em uso: toque para acrescentar a ele todas as limpezas internas.</string>
     <string name="settings_subtitle_edit_pattern">Editar o padrão (avançado)</string>
@@ -739,8 +739,8 @@
     <string name="settings_sentence_rule_all">Minerar todas as palavras desconhecidas</string>
     <string name="settings_sentence_rule_dedup">Um cartão por frase</string>
     <string name="settings_sentence_rule_i_plus_one">Somente frases i+1 (exatamente uma palavra desconhecida)</string>
-    <string name="settings_sentence_rule_dedup_help">Minera no máximo uma palavra por frase de exemplo — a primeira encontrada nessa frase. Todas as outras palavras dessa mesma frase são ignoradas. Palavras na whitelist ainda são mineradas.</string>
-    <string name="settings_sentence_rule_i_plus_one_help">Minera somente palavras de frases com exatamente uma palavra desconhecida (i+1). Palavras na whitelist ainda são mineradas.</string>
+    <string name="settings_sentence_rule_dedup_help">Minera no máximo uma palavra por frase de exemplo — a primeira encontrada nessa frase. Todas as outras palavras dessa mesma frase são ignoradas. Palavras na lista de permissões ainda são mineradas.</string>
+    <string name="settings_sentence_rule_i_plus_one_help">Minera somente palavras de frases com exatamente uma palavra desconhecida (i+1). Palavras na lista de permissões ainda são mineradas.</string>
     <string name="settings_pitch_format_help">O romaji corresponde ao CSS do Yomitan/Lapis; o japonês é para notas antigas.</string>
     <string name="anki_card_type_markers">Personalizar nomes dos campos marcadores</string>
     <string name="settings_subtitle_offset">Deslocamento padrão de tempo das legendas</string>

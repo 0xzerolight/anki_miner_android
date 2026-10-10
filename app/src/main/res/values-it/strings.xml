@@ -217,7 +217,7 @@
     <string name="result_not_mined_reason_frequency">Fuori dalla fascia di frequenza scelta — Impostazioni → Filtri delle parole</string>
     <string name="result_not_mined_reason_blacklist">Nella lista nera — Impostazioni → Filtri delle parole</string>
     <string name="result_not_mined_reason_script_filter">Escluse per tipo di scrittura — Impostazioni → Filtri delle parole</string>
-    <string name="result_not_mined_reason_name_list">In un insieme di nomi — Impostazioni → Filtri delle parole</string>
+    <string name="result_not_mined_reason_name_list">In un elenco di nomi — Impostazioni → Filtri delle parole</string>
     <string name="result_not_mined_reason_occurrence">Compaiono meno volte del minimo impostato — Impostazioni → Filtri delle parole</string>
     <string name="result_not_mined_reason_one_per_sentence">Carta assegnata a un\'altra parola della stessa frase — Impostazioni → Frasi</string>
     <string name="result_not_mined_reason_i_plus_one">Nessuna frase in cui sia l\'unica parola sconosciuta — Impostazioni → Frasi</string>
@@ -730,7 +730,7 @@
     <string name="settings_exclude_hanja">Escludi parole contenenti hanja</string>
     <string name="settings_exclude_hanja_help">Salta le parole che contengono un carattere hanja, mantenendo nel mazzo il lessico in solo hangul.</string>
     <string name="settings_skip_names">Salta nomi di persone, luoghi e aziende</string>
-    <string name="settings_skip_names_help">Esclude dal mining gli elenchi inclusi di nomi di persone, luoghi e aziende giapponesi. I nomi in whitelist vengono comunque estratti.</string>
+    <string name="settings_skip_names_help">Esclude dal mining gli elenchi inclusi di nomi di persone, luoghi e aziende giapponesi. I nomi nella lista bianca vengono comunque estratti.</string>
     <string name="settings_subtitle_cleanup">Rimuovi nomi dei parlanti, effetti sonori e note musicali</string>
     <string name="settings_subtitle_cleanup_help">Rimuove (note), [effetti sonori], ♪ musica e trattini di dialogo da ogni riga dei sottotitoli prima del mining, oltre alle etichette dei parlanti dove la scrittura le contrassegna. Una spunta parziale indica che è in uso un pattern personalizzato: tocca per aggiungervi tutte le pulizie integrate.</string>
     <string name="settings_subtitle_edit_pattern">Modifica il pattern (avanzato)</string>
@@ -739,8 +739,8 @@
     <string name="settings_sentence_rule_all">Estrai ogni parola sconosciuta</string>
     <string name="settings_sentence_rule_dedup">Una carta per frase</string>
     <string name="settings_sentence_rule_i_plus_one">Solo frasi i+1 (esattamente una parola sconosciuta)</string>
-    <string name="settings_sentence_rule_dedup_help">Estrae al massimo una parola per frase di esempio — la prima trovata in quella frase. Ogni altra parola della stessa frase viene saltata. Le parole in whitelist vengono comunque estratte.</string>
-    <string name="settings_sentence_rule_i_plus_one_help">Estrae solo le parole in frasi con esattamente una parola sconosciuta (i+1). Le parole in whitelist vengono comunque estratte.</string>
+    <string name="settings_sentence_rule_dedup_help">Estrae al massimo una parola per frase di esempio — la prima trovata in quella frase. Ogni altra parola della stessa frase viene saltata. Le parole nella lista bianca vengono comunque estratte.</string>
+    <string name="settings_sentence_rule_i_plus_one_help">Estrae solo le parole in frasi con esattamente una parola sconosciuta (i+1). Le parole nella lista bianca vengono comunque estratte.</string>
     <string name="settings_pitch_format_help">Il romaji corrisponde al CSS di Yomitan/Lapis; il giapponese è per le note meno recenti.</string>
     <string name="anki_card_type_markers">Personalizza i nomi dei campi marcatore</string>
     <string name="settings_subtitle_offset">Sfasamento predefinito dei sottotitoli</string>
@@ -974,7 +974,7 @@
     <string name="language_regional_variety">Varietà regionale</string>
     <string name="language_variety_br">Portoghese brasiliano</string>
     <string name="language_variety_pt">Portoghese europeo</string>
-    <string name="settings_reading_tone_color">Colorare la lettura in base al tono</string>
+    <string name="settings_reading_tone_color">Colora la lettura in base al tono</string>
     <string name="mining_failure_language_unavailable">Questa lingua di mining richiede i suoi dati linguistici. Scaricali in Impostazioni → Lingua.</string>
     <string name="mining_failure_unsupported_language">Questa versione non può fare mining nella lingua scelta. Scegline un’altra in Impostazioni → Lingua.</string>
     <string name="resource_panel_other_language_slots">Installato per altre lingue di mining, non usato qui: %1$s</string>

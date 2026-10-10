@@ -691,7 +691,7 @@
     <string name="settings_animated_screenshots_webp_only">此裝置會將片段儲存為 WebP。</string>
     <string name="settings_animated_match_audio">與句子音訊相同</string>
     <string name="settings_animated_clip_duration">片段長度</string>
-    <string name="settings_animated_clip_duration_help">動畫片段的長度，不超過字幕的持續時間。「與句子音訊相同」則涵蓋整個句子音訊片段。</string>
+    <string name="settings_animated_clip_duration_help">動態片段的長度，不超過字幕的持續時間。「與句子音訊相同」則涵蓋整個句子音訊片段。</string>
     <string name="settings_animated_quality_help">動態片段的影格速率、高度與畫質。</string>
     <string name="settings_media_sentence_audio">句子音訊</string>
     <string name="settings_media_screenshot">螢幕截圖</string>
