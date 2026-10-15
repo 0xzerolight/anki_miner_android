@@ -78,6 +78,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **The APK is about twice the size, roughly 110 MB.** The new languages' tokenizers ship in the app; their models and dictionaries still download only for the language you pick.
 - **The setup wizard has desktop's four pages: Language, Downloads, AnkiDroid and Ready.** One tap on Downloads fetches UniDic and the dictionaries, the AnkiDroid page connects and picks the deck and note type, and Back is the arrow at the top.
 - **Video, Audio and Reading keep their inputs on one screen.** Mine, or the progress bar and Cancel, sits in a bar at the bottom; the result line and Undo appear under the inputs, and Mine starts the next run.
+- **The subtitle timing offset and Test timing appear once a subtitle is picked, and Audio tracks once a video is (Video and Audio tabs).** Test timing sits beside the offset field instead of as a full-width button further down; with nothing picked, one line says which files to choose.
 - **Results lead with how many notes were added to which deck, then Undo.** The rest is under Details.
 - **Curation has one header row with a select-all checkbox and the run's total.** Candidates sit as flush rows, and the open row shows the sentence and definition first, with the frame or page inline.
 - **Fresh installs follow the system light or dark mode (Settings -> UI).** A theme you already chose stays.
@@ -94,6 +95,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 - **The "Limit sentence length" switch.** The two caps under Settings -> Sentences apply on their own, and 0 means no limit. Caps the switch kept off are reset to 0 on upgrade and when an older settings backup is imported, so what gets mined does not change.
 - **The Jisho online definition lookup, as on desktop 3.8.0.** Definitions come only from installed dictionaries, so no word you look up leaves the device. A saved Jisho setting is dropped on upgrade, and backups that carry it still import.
+- **The "Local import complete" card (Settings -> Word filters).** It kept showing the counts from the last frequency, pitch, audio-pack or known-words import; each resource's own row already shows them.
 
 ### Fixed
 
@@ -140,6 +142,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Rotating the phone or switching tabs no longer scrolls curation, or a finished run's result, back to the top.**
 - **In landscape, Test timing keeps Apply, Cancel and the cue list on screen (Video tab).**
 - **The file rows wait while Audio tracks loads instead of silently dropping a file picked meanwhile (Video tab).**
+- **Loading Audio tracks or the Test timing preview no longer shows the notice that a run is active (Video and Audio tabs).** The tab's own loading counted as another run; its button spinner already says it is busy.
 - **The Audio tab accepts audio files whose names lack an extension, such as those from the picker's Audio section.**
 - **A link in an imported dictionary can no longer open an outside website from a card.**
 - **The diagnostics bundle no longer names the dictionary images on your cards (Settings -> Diagnostics).**
