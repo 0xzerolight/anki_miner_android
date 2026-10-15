@@ -102,7 +102,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **A run stopped by a resource that needs re-importing says so in your language and names Settings -> Resources.** It used to show English text pointing at desktop menus.
 - **The update check's status no longer goes stale (Settings -> Diagnostics).** A rare race could show the check running after it finished, keeping Check now disabled, or idle while it ran.
 - **A word whose only card is in an excluded deck gets a new card (Settings -> Word filters).** It used to reach curation and then be skipped as already in Anki. As on desktop, a word is now skipped only when a deck outside the exclusions knows it.
-- **Known words come from the word field of note types that do not start with it, such as Migaku (sentence first) and Core 2k/6k (index first).** Each note type's first 200 notes decide which field holds the word, as on desktop. The scan used to read every note type's first field, so Migaku sentences counted as known and its target words never did.
+- **Known words come from the word field of note types that do not start with it, such as Migaku and Core 2k/6k.** Migaku puts the sentence first and Core 2k/6k an index. Each note type's first 200 notes decide which field holds the word, as on desktop. The scan used to read every note type's first field, so Migaku sentences counted as known and its target words never did.
 - **After a permanent AnkiDroid permission denial, setup offers Allow in Android settings.** It used to keep asking through a dialog Android no longer shows.
 - **AnkiDroid setup says what to do in one plain sentence instead of the raw provider error.**
 - **A setup failure's snackbar shows once, and not on a screen that already shows the failure.**
