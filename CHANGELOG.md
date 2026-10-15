@@ -10,7 +10,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 - **Korean mining.** The Kiwi tokenizer ships in the app; its 88 MB model and the recommended KRDICT Korean-English dictionary download for the language.
 - **Translation subtitles (Video tab).** With Settings -> Sentences -> Secondary subtitles on, a second subtitle file and its timing offset fill the Sentence translation field mapped under Settings -> Cards & Anki.
-- **Frequency band minimum (Settings -> Word filters).** "Minimum frequency rank" skips words more common than it, and "Include words missing from the frequency list" keeps unranked words while either end is set.
+- **"Minimum frequency rank" (Settings -> Word filters).** It skips words more common than it, and "Include words missing from the frequency list" keeps unranked words while either end is set.
 - **"Treat kana spellings of known words as known" (Settings -> Word filters).** On by default, as before; it can now be turned off.
 - **"Mine full sentences across subtitle lines" (Settings -> Sentences).** Joins subtitle lines that do not end a sentence, so the card gets the whole sentence. Off by default; Reading sources ignore it.
 - **"Create cards in order of appearance" (Settings -> Cards & Anki).** Cards follow the order the words first appear even with "Always mine whitelisted words" on, which otherwise puts whitelisted words first.
@@ -26,7 +26,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **The words a run did not mine, and why (run result -> Details).** They are grouped by reason, such as already known or no dictionary entry, and, where a setting decides it, the setting to change. A search finds one word.
 - **"Fill in automatically" recognises Lapis, Kiku, Senren and Anki Miner Note (Settings -> Cards & Anki, setup wizard).** The button, formerly "Fill mappings from field names", fills every field and the pitch category format, plus the card type marker when a card type is chosen; Lapis, Kiku and Senren only when mining Japanese. The wizard also links Anki Miner Note for anyone without a note type.
 - **A Language row in the field map (Settings -> Cards & Anki).** It writes the card's language code, such as ja, and a note field named Language or Lang is picked for it automatically.
-- **Dictionary updates (Settings -> Resources -> Dictionaries).** Dictionaries, frequency lists and pitch-accent sources whose publisher posts updates, such as Jitendex, JMdict and Wiktionary, are downloaded again from that publisher over HTTPS, without a hash check, and keep their order, on/off state and attribution. It is on for everyone, including after an upgrade, and runs about once a week while Anki Miner is open; automatic downloads wait for Wi-Fi or another unmetered network, Update Now does not. Turn off "Update automatically once a week" there to stop it. The app gains the network-state permission, granted at install, to tell Wi-Fi from mobile data.
+- **Dictionary updates (Settings -> Resources).** Dictionaries, frequency lists and pitch-accent sources whose publisher posts updates, such as Jitendex, JMdict and Wiktionary, are downloaded again from that publisher over HTTPS, without a hash check, and keep their order, on/off state and attribution. It is on for everyone, including after an upgrade, and runs about once a week while Anki Miner is open; automatic downloads wait for Wi-Fi or another unmetered network, Update Now does not. Turn off "Update automatically once a week" there to stop it. The app gains the network-state permission, granted at install, to tell Wi-Fi from mobile data.
 - **"Exclude hangul-only words" and "Exclude words containing hanja" for Korean (Settings -> Word filters).**
 - **Animated screenshot format and size (Settings -> Media).** Format picks AVIF or WebP, and Size (Small, Balanced, High) replaces the quality field; Clip length's lowest step is "Same as sentence audio".
 
@@ -142,7 +142,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Rotating the phone or switching tabs no longer scrolls curation, or a finished run's result, back to the top.**
 - **In landscape, Test timing keeps Apply, Cancel and the cue list on screen (Video tab).**
 - **The file rows wait while Audio tracks loads instead of silently dropping a file picked meanwhile (Video tab).**
-- **Loading Audio tracks or the Test timing preview no longer shows the notice that a run is active (Video and Audio tabs).** The tab's own loading counted as another run; its button spinner already says it is busy.
+- **Loading Audio tracks or the Test timing preview no longer shows the notice that a run is active (Video and Audio tabs).** The tab's own loading counted as another run; Audio tracks shows a spinner and Test timing is disabled while they load.
 - **The Audio tab accepts audio files whose names lack an extension, such as those from the picker's Audio section.**
 - **A link in an imported dictionary can no longer open an outside website from a card.**
 - **The diagnostics bundle no longer names the dictionary images on your cards (Settings -> Diagnostics).**
