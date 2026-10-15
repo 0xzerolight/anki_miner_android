@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-15
+
 ### Added
 
 - **Korean mining.** The Kiwi tokenizer ships in the app; its 88 MB model and the recommended KRDICT Korean-English dictionary download for the language.
