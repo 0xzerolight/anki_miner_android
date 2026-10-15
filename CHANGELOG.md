@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-15
+
 ### Added
 
 - **Korean mining.** The Kiwi tokenizer ships in the app; its 88 MB model and the recommended KRDICT Korean-English dictionary download for the language.
@@ -76,6 +78,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **The APK is about twice the size, roughly 110 MB.** The new languages' tokenizers ship in the app; their models and dictionaries still download only for the language you pick.
 - **The setup wizard has desktop's four pages: Language, Downloads, AnkiDroid and Ready.** One tap on Downloads fetches UniDic and the dictionaries, the AnkiDroid page connects and picks the deck and note type, and Back is the arrow at the top.
 - **Video, Audio and Reading keep their inputs on one screen.** Mine, or the progress bar and Cancel, sits in a bar at the bottom; the result line and Undo appear under the inputs, and Mine starts the next run.
+- **The subtitle timing offset and Test timing appear once a subtitle is picked, and Audio tracks once a video is (Video and Audio tabs).** Test timing sits beside the offset field instead of as a full-width button further down; with nothing picked, one line says which files to choose.
 - **Results lead with how many notes were added to which deck, then Undo.** The rest is under Details.
 - **Curation has one header row with a select-all checkbox and the run's total.** Candidates sit as flush rows, and the open row shows the sentence and definition first, with the frame or page inline.
 - **Fresh installs follow the system light or dark mode (Settings -> UI).** A theme you already chose stays.
@@ -92,6 +95,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 - **The "Limit sentence length" switch.** The two caps under Settings -> Sentences apply on their own, and 0 means no limit. Caps the switch kept off are reset to 0 on upgrade and when an older settings backup is imported, so what gets mined does not change.
 - **The Jisho online definition lookup, as on desktop 3.8.0.** Definitions come only from installed dictionaries, so no word you look up leaves the device. A saved Jisho setting is dropped on upgrade, and backups that carry it still import.
+- **The "Local import complete" card (Settings -> Word filters).** It kept showing the counts from the last frequency, pitch, audio-pack or known-words import; each resource's own row already shows them.
 
 ### Fixed
 
@@ -100,7 +104,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **A run stopped by a resource that needs re-importing says so in your language and names Settings -> Resources.** It used to show English text pointing at desktop menus.
 - **The update check's status no longer goes stale (Settings -> Diagnostics).** A rare race could show the check running after it finished, keeping Check now disabled, or idle while it ran.
 - **A word whose only card is in an excluded deck gets a new card (Settings -> Word filters).** It used to reach curation and then be skipped as already in Anki. As on desktop, a word is now skipped only when a deck outside the exclusions knows it.
-- **Known words come from the word field of note types that do not start with it, such as Migaku (sentence first) and Core 2k/6k (index first).** Each note type's first 200 notes decide which field holds the word, as on desktop. The scan used to read every note type's first field, so Migaku sentences counted as known and its target words never did.
+- **Known words come from the word field of note types that do not start with it, such as Migaku and Core 2k/6k.** Migaku puts the sentence first and Core 2k/6k an index. Each note type's first 200 notes decide which field holds the word, as on desktop. The scan used to read every note type's first field, so Migaku sentences counted as known and its target words never did.
 - **After a permanent AnkiDroid permission denial, setup offers Allow in Android settings.** It used to keep asking through a dialog Android no longer shows.
 - **AnkiDroid setup says what to do in one plain sentence instead of the raw provider error.**
 - **A setup failure's snackbar shows once, and not on a screen that already shows the failure.**
@@ -138,6 +142,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Rotating the phone or switching tabs no longer scrolls curation, or a finished run's result, back to the top.**
 - **In landscape, Test timing keeps Apply, Cancel and the cue list on screen (Video tab).**
 - **The file rows wait while Audio tracks loads instead of silently dropping a file picked meanwhile (Video tab).**
+- **Loading Audio tracks or the Test timing preview no longer shows the notice that a run is active (Video and Audio tabs).** The tab's own loading counted as another run; its button spinner already says it is busy.
 - **The Audio tab accepts audio files whose names lack an extension, such as those from the picker's Audio section.**
 - **A link in an imported dictionary can no longer open an outside website from a card.**
 - **The diagnostics bundle no longer names the dictionary images on your cards (Settings -> Diagnostics).**
