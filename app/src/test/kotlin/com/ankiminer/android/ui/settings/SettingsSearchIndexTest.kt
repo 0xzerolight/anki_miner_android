@@ -119,7 +119,9 @@ class SettingsSearchIndexTest {
                 "sentences.subtitle_replacement",
                 "sentences.use_subtitle_regex",
                 "sentences.subtitle_presets",
+                "sentences.skip_opening_ending",
                 "sentences.sentence_rule",
+                "sentences.pick_best_sentence",
                 "sentences.max_duration",
                 "sentences.max_characters",
                 "sentences.secondary_subtitle",
@@ -141,6 +143,7 @@ class SettingsSearchIndexTest {
                 "word_filters.frequency_keep_unranked",
                 "word_filters.kana_variants",
                 "word_filters.excluded_decks",
+                "word_filters.known_from_reviewed_cards",
             ),
         )
         assertEntriesOn(SettingsCategory.ANKI, listOf("anki.strict_card_order"))
@@ -159,9 +162,11 @@ class SettingsSearchIndexTest {
                 "media.audio_format" to "media-sentence-audio",
                 "media.audio_bitrate" to "media-sentence-audio",
                 "media.audio_padding" to "media-sentence-audio",
+                "media.normalize_audio_loudness" to "media-sentence-audio",
                 "media.reading_tts" to "media-sentence-audio",
                 "media.subtitle_offset" to "media-sentence-audio",
                 "media.screenshot_offset" to "media-screenshot",
+                "media.crop_manga_to_text" to "media-screenshot",
                 "media.animated_screenshots" to "media-screenshot",
                 "media.animated_format" to "media-screenshot",
                 "media.animated_clip_duration" to "media-screenshot",
@@ -196,6 +201,39 @@ class SettingsSearchIndexTest {
             setOf(MINING_LANGUAGE_KEY, LANGUAGE_VARIANT_KEY),
             SETTINGS_CARD_KEYS.getValue(SettingsCategory.LANGUAGE),
         )
+    }
+
+    @Test
+    fun `desktop's feature-batch switches are found with their help and desktop's keywords`() {
+        val byId = SETTINGS_SEARCH_INDEX.associateBy { it.id }
+
+        assertEquals(
+            mapOf(
+                "media.normalize_audio_loudness" to
+                    (R.string.settings_normalize_audio_loudness to R.string.settings_normalize_audio_loudness_help),
+                "media.crop_manga_to_text" to
+                    (R.string.settings_crop_manga_to_text to R.string.settings_crop_manga_to_text_help),
+                "sentences.skip_opening_ending" to
+                    (R.string.settings_skip_opening_ending to R.string.settings_skip_opening_ending_help),
+                "sentences.pick_best_sentence" to
+                    (R.string.settings_pick_best_sentence to R.string.settings_pick_best_sentence_help),
+                "word_filters.known_from_reviewed_cards" to
+                    (R.string.settings_known_from_reviewed_cards to R.string.settings_known_from_reviewed_cards_help),
+            ),
+            listOf(
+                "media.normalize_audio_loudness",
+                "media.crop_manga_to_text",
+                "sentences.skip_opening_ending",
+                "sentences.pick_best_sentence",
+                "word_filters.known_from_reviewed_cards",
+            ).associateWith { byId.getValue(it).title to byId.getValue(it).detail },
+        )
+        assertEquals("subtitle-text", byId.getValue("sentences.skip_opening_ending").cardKey)
+        assertEquals("sentence-options", byId.getValue("sentences.pick_best_sentence").cardKey)
+        assertEquals("filtering-options", byId.getValue("word_filters.known_from_reviewed_cards").cardKey)
+        assertTrue(byId.getValue("sentences.skip_opening_ending").keywords.containsAll(listOf("OP", "ED", "karaoke")))
+        assertTrue("best sentence" in byId.getValue("sentences.pick_best_sentence").keywords)
+        assertEquals(R.string.settings_audio_bitrate_help, byId.getValue("media.audio_bitrate").detail)
     }
 
     @Test

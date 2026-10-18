@@ -5,6 +5,7 @@ import androidx.compose.ui.state.ToggleableState
 import com.ankiminer.android.R
 import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
+import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.LanguageDefaults
 import com.ankiminer.android.engine.LanguageProfileInfo
@@ -230,6 +231,13 @@ internal fun nameWordsetsAfterClick(
     catalog: List<String>,
 ): List<String> =
     if (nameWordsetsState(enabled, catalog) == ToggleableState.On) emptyList() else catalog
+
+/**
+ * Desktop's AnkiMobile warning (CC-21), shown only while Opus is the format a run uses: no Opus
+ * container plays in AnkiMobile, AnkiDroid and Anki desktop alike.
+ */
+internal val SettingsDraft.showsOpusWarning: Boolean
+    get() = (audioFormat ?: EngineDefaults.AUDIO_FORMAT) == AudioFormat.OPUS
 
 /**
  * Desktop's `builtin_cleanup_pieces`: a language that ships its own pattern (ko, th, the spaced

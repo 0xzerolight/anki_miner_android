@@ -4,6 +4,7 @@ import androidx.compose.ui.state.ToggleableState
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
@@ -351,6 +352,15 @@ class SettingsChoiceMappingsTest {
         assertEquals("", ticked.subtitleRegex)
         assertFalse(subtitlePatternIsCustom(ticked.effectiveSubtitleRegex(korean), subtitleCleanupPieces("x")))
         assertTrue(subtitlePatternIsCustom("x|y", subtitleCleanupPieces("x")))
+    }
+
+    // Sentence audio format.
+
+    @Test
+    fun `the AnkiMobile warning shows only while Opus is the format in force`() {
+        assertFalse(draft().showsOpusWarning)
+        assertFalse(draft().copy(audioFormat = AudioFormat.MP3).showsOpusWarning)
+        assertTrue(draft().copy(audioFormat = AudioFormat.OPUS).showsOpusWarning)
     }
 
     // Card type (desktop "Default Card Type" + "Customize marker field names").
