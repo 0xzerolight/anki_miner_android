@@ -272,13 +272,20 @@ internal class AnkiProviderReadService(
         scope: KnownVocabularyScope,
     ): KnownVocabularyResult {
         val cancellation = registry.cancellation(owner)
-        val traversalScope = KnownTraversalScope(excludedDecks = scope.excludedDecks, fieldOrdinals = scope.fieldOrdinals)
+        val traversalScope =
+            KnownTraversalScope(
+                excludedDecks = scope.excludedDecks,
+                fieldOrdinals = scope.fieldOrdinals,
+                markReviewed = scope.markReviewed,
+            )
         val lease =
             if (scope.cursor == null) {
                 val initialization = registry.beginKnownTraversal(owner, traversalScope)
                 try {
-                    val excluded = excludedNoteIds(traversalScope, cancellation)
-                    registry.finishKnownTraversalInitialization(owner, initialization, excluded)
+                    val excludedScopes = existingExcludedScopes(traversalScope, cancellation)
+                    val excluded = excludedNoteIds(excludedScopes, cancellation)
+                    val reviewed = if (traversalScope.markReviewed) reviewedNoteIds(excludedScopes, cancellation) else null
+                    registry.finishKnownTraversalInitialization(owner, initialization, excluded, reviewed)
                 } catch (error: RuntimeException) {
                     registry.abortKnownTraversalInitialization(owner, initialization)
                     throw error
@@ -288,7 +295,7 @@ internal class AnkiProviderReadService(
             }
         try {
             val projections = scope.fieldOrdinals.associate { it.modelId to it.ordinals }
-            val page = readKnownPageAfter(lease.fromId, lease.excludedNoteIds, projections, cancellation)
+            val page = readKnownPageAfter(lease.fromId, lease.excludedNoteIds, lease.reviewedNoteIds, projections, cancellation)
             val nextToken =
                 if (page.observation.hasMoreAfterPage) tokenFactory.nextToken(KNOWN_CURSOR_PREFIX) else null
             val expectedNextCursor =
@@ -315,13 +322,19 @@ internal class AnkiProviderReadService(
         }
     }
 
-    private fun excludedNoteIds(
+    /** The excluded decks that exist, each subsumed child dropped: a `deck:"X"` search covers it. */
+    private fun existingExcludedScopes(
         scope: KnownTraversalScope,
         cancellation: AnkiCancellation,
+    ): List<String> {
+        if (scope.excludedDecks.isEmpty()) return emptyList()
+        return minimalExistingDeckScopes(scope.excludedDecks, targets.readAllDeckNames(cancellation))
+    }
+
+    private fun excludedNoteIds(
+        minimalScopes: List<String>,
+        cancellation: AnkiCancellation,
     ): Set<Long> {
-        if (scope.excludedDecks.isEmpty()) return emptySet()
-        val existingNames = targets.readAllDeckNames(cancellation)
-        val minimalScopes = minimalExistingDeckScopes(scope.excludedDecks, existingNames)
         if (minimalScopes.isEmpty()) return emptySet()
         val excluded = HashSet<Long>()
         for (deckName in minimalScopes) {
@@ -358,6 +371,36 @@ internal class AnkiProviderReadService(
         }
         removeNotesWithCardsOutside(excluded, minimalScopes, cancellation)
         return excluded
+    }
+
+    /**
+     * The notes the reviewed marks are true for, read once when a marking walk starts: desktop's
+     * `deck:* -deck:"X" -is:new`, so a note counts only through a card that is not new and sits
+     * outside every exclusion. The walk holds one ID per reviewed note until it ends.
+     */
+    private fun reviewedNoteIds(
+        excludedScopes: List<String>,
+        cancellation: AnkiCancellation,
+    ): Set<Long> {
+        ensureActive(cancellation)
+        val query =
+            ProviderQuery(
+                endpoint = ProviderEndpoint.NOTES_BROWSER,
+                projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                selection = ProviderSelection.ReviewedNotes(excludedScopes),
+                deadline = ProviderReadDeadline.BULK,
+            )
+        // A null cursor is AnkiDroid's zero-match answer: nothing has been reviewed yet.
+        val browserCursor = provider.queryOptional(query, cancellation) ?: return emptySet()
+        val reviewed = HashSet<Long>()
+        browserCursor.use { cursor ->
+            requireProjection(cursor, query)
+            while (cursor.moveToNext()) {
+                ensureActive(cancellation)
+                reviewed.add(cursor.positiveLong(ProviderColumn.NOTE_ID))
+            }
+        }
+        return reviewed
     }
 
     /**
@@ -408,6 +451,7 @@ internal class AnkiProviderReadService(
     private fun readKnownPageAfter(
         fromId: Long,
         excludedNoteIds: Set<Long>,
+        reviewedNoteIds: Set<Long>?,
         projections: Map<Long, List<Int>>,
         cancellation: AnkiCancellation,
     ): KnownPage {
@@ -485,7 +529,7 @@ internal class AnkiProviderReadService(
                 lastId = id
                 scannedNotes += 1
                 totalBytes = pageBytes
-                notes += KnownNote(modelId, values)
+                notes += KnownNote(modelId, values, reviewedNoteIds?.contains(id))
             }
         }
         return KnownPage(notes, scannedNotes, KnownPageObservation(lastId, hasMoreAfterPage))

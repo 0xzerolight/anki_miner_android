@@ -125,7 +125,7 @@ def _schema_category(error: ValidationError) -> str:
         pending.extend(current.context)
         if current.validator == "const" and "limits" in current.absolute_path:
             return "limit_mismatch"
-        if current.validator == "const" and "deckCreated" in current.absolute_path:
+        if current.validator == "const" and {"deckCreated", "markReviewed"} & set(current.absolute_path):
             return "invalid_value"
         if current.validator in {"pattern", "minimum", "maximum", "uniqueItems"}:
             return "invalid_value"

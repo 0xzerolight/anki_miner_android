@@ -105,6 +105,8 @@ private class CanonicalRequestWriter {
                     stringField("token", scope.cursor.token, leadingComma = true)
                     ascii("}")
                 }
+                // Written only when on, so an unmarked scan keeps the digest it always had.
+                if (scope.markReviewed) ascii(",\"markReviewed\":true")
             }
 
             NoteTypesScope -> stringField("kind", "noteTypes")
