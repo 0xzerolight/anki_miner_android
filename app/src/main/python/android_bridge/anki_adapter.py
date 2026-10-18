@@ -40,6 +40,7 @@ from .unicode_contract import (
 logger = logging.getLogger(__name__)
 
 _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]")
+_TRAILING_COLONS_RE = re.compile(r":+\Z")
 # What desktop's ``AnkiService._build_note`` hands ``build_note`` for a ja profile.
 # AnkiService derives the five from the profile; ja declares no extra card field,
 # is left-to-right and tags no card language, so they behave like the builder's
@@ -492,6 +493,20 @@ def _strict_utf8_bytes(value: str, *, context: str, code: str) -> bytes:
         return value.encode("utf-8")
     except UnicodeEncodeError as exc:
         raise BridgeProtocolError(code, f"{context} contains an invalid Unicode scalar") from exc
+
+
+def _fit_tag(tag: str) -> str:
+    """*tag* cut at a character boundary to the tag byte limit, without a dangling ``:``.
+
+    A cut on the ``::`` separator would leave an empty hierarchy component,
+    which ``render_card_tags`` never emits either. A regex rather than
+    ``str.rstrip``: this module calls no strip method (test_config_map).
+    """
+
+    encoded = _strict_utf8_bytes(tag, context="Anki tag", code="invalid_note")
+    if len(encoded) <= _MAX_TAG_UTF8_BYTES:
+        return tag
+    return _TRAILING_COLONS_RE.sub("", encoded[:_MAX_TAG_UTF8_BYTES].decode("utf-8", "ignore"))
 
 
 def _expect_exact_keys(value: object, required: set[str], *, context: str) -> dict[str, Any]:
@@ -2529,6 +2544,24 @@ class AndroidAnkiAdapter:
                 )
         return total
 
+    def _build_note(self, payload: Any, stored_files: set[str]) -> Any:
+        """Desktop's ``build_note``, with each rendered source tag cut to the tag byte limit.
+
+        A ``{series}``, ``{episode}`` or ``{volume}`` value is a file or book
+        title, which can run past AnkiDroid's 256-byte tag limit where a typed
+        tag cannot (Settings refuses a longer one). Such a tag is cut to fit
+        rather than failing the run; a tag the user typed without a token keeps
+        the ``note_too_large`` check in ``_validated_note_content``.
+        """
+
+        from anki_miner.services.anki_note_builder import build_note, has_tag_tokens
+
+        built = build_note(payload, self.config, stored_files, **self._note_builder_kwargs)
+        typed = {tag for tag in self.config.anki_tags.split() if not has_tag_tokens(tag)}
+        fitted = (tag if tag in typed else _fit_tag(tag) for tag in built.note["tags"])
+        built.note["tags"] = [tag for tag in fitted if tag]
+        return built
+
     @staticmethod
     def _validated_note_content(
         note: Mapping[str, Any],
@@ -2784,13 +2817,11 @@ class AndroidAnkiAdapter:
         # Validate the exact current note graph before running a regex over
         # marked dictionary HTML or touching media on disk. This makes a
         # single oversized definition/glossary fail without a scan or upload.
-        from anki_miner.services.anki_note_builder import build_note
-
         built_notes: list[dict[str, Any]] = []
         built_fields: list[dict[str, str]] = []
         note_utf8_bytes = 0
         for payload in word_data_list:
-            built = build_note(payload, self.config, intended_stored_files, **self._note_builder_kwargs)
+            built = self._build_note(payload, intended_stored_files)
             fields, tags, content_bytes = self._validated_note_content(built.note)
             built_notes.append({"fields": fields, "tags": tags})
             built_fields.append(fields)
@@ -3777,7 +3808,7 @@ class AndroidAnkiAdapter:
                     record_not_created([pending.payload], "duplicate")
             return survivors
 
-        from anki_miner.services.anki_note_builder import _strip_for_dedup, build_note
+        from anki_miner.services.anki_note_builder import _strip_for_dedup
 
         try:
             progress_reported = 0
@@ -3912,12 +3943,7 @@ class AndroidAnkiAdapter:
                             stored_dictionary_batch.payloads,
                             strict=True,
                         ):
-                            built = build_note(
-                                item,
-                                self.config,
-                                stored_card_filenames,
-                                **self._note_builder_kwargs,
-                            )
+                            built = self._build_note(item, stored_card_filenames)
                             if built.used_precomputed_bold:
                                 bold_used += 1
                             if built.used_bold_fallback:

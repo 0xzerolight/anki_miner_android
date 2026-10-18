@@ -3830,6 +3830,51 @@ def test_exact_tag_count_and_aggregate_utf8_boundary_is_accepted(
     assert sum(len(tag.encode("utf-8")) for tag in request_tags) == (_MAX_NOTE_TAGS_UTF8_BYTES)
 
 
+def _tagged_card(card_tags: str) -> Any:
+    """A card carrying the tag string phase 5 rendered for its source."""
+
+    from anki_miner.services.anki_note_builder import CARD_TAGS_KEY
+
+    return replace(_card("猫"), extra_fields={CARD_TAGS_KEY: card_tags})
+
+
+@pytest.mark.parametrize(
+    ("rendered", "expected"),
+    [
+        # A four-byte character straddling the limit is dropped whole.
+        ("mined::" + "a" * 247 + "🐱b", "mined::" + "a" * 247),
+        # A cut that ends on the "::" separator leaves no empty component behind.
+        ("mined::" + "a" * 247 + "::episode", "mined::" + "a" * 247),
+    ],
+    ids=["character-boundary", "separator"],
+)
+def test_a_rendered_tag_past_the_byte_limit_is_cut_to_fit(
+    rendered: str,
+    expected: str,
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    config = _config(initialized_bridge_home, anki_tags="mine mined::{series}::{episode}")
+
+    assert len(_adapter(config, kotlin).create_cards_batch([_tagged_card(f"mine {rendered}")])) == 1
+    request_tags = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["tags"]
+    assert request_tags == ["mine", expected]
+
+
+def test_a_template_tag_past_the_byte_limit_still_fails_beside_rendered_tokens(
+    initialized_bridge_home: Path,
+) -> None:
+    long_tag = "x" * (_MAX_TAG_UTF8_BYTES + 1)
+    kotlin = FakeKotlinAnki()
+    config = _config(initialized_bridge_home, anki_tags=f"{long_tag} mined::{{series}}")
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(config, kotlin).create_cards_batch([_tagged_card(f"{long_tag} mined::Show")])
+
+    assert exc_info.value.code == "note_too_large"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
 def test_json_escaping_drives_exact_envelope_batching(
     initialized_bridge_home: Path,
 ) -> None:
