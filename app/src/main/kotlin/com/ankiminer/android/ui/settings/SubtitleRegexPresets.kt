@@ -8,7 +8,8 @@ import com.ankiminer.android.R
  *
  * Patterns are copied verbatim from desktop `SUBTITLE_REGEX_PRESETS`
  * (`gui/widgets/panels/sentences_settings_panel.py`) and are pinned by `SubtitleRegexPresetsTest`.
- * They are also the pieces the cleanup box adds for a language without a pattern of its own.
+ * They are the same patterns as `EngineDefaults.SUBTITLE_CLEANUP_PIECES`, the pieces the cleanup box
+ * adds for ja, zh, yue and any language without a pattern of its own.
  * They are Python `re` source, so they must not be rewritten into `java.util.regex` idioms.
  */
 internal data class SubtitleRegexPreset(
