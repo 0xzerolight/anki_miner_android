@@ -362,7 +362,7 @@ internal object SettingsBackupCodec {
                 if (name in effectiveValues) effectiveValues[name] = RejectedValue
             }
         }
-        val legacySwitches =
+        val legacyAdded =
             if (keepsLegacyEngineDefaults) {
                 keepLegacyEngineDefaults(effectiveValues, targetLanguage.takeUnless { languageRejected })
             } else {
@@ -390,9 +390,9 @@ internal object SettingsBackupCodec {
                 val rejectedKeys = effectiveValues.keys.filter { it in rejectedNames }
                 return AppliedSettingsBackup(
                     settings = settings,
-                    // The switches the file predates were set for it, not loaded from it.
+                    // The keys the file predates were set for it, not loaded from it.
                     appliedCount =
-                        effectiveValues.size - rejectedKeys.size - legacySwitches.count { it !in rejectedNames },
+                        effectiveValues.size - rejectedKeys.size - legacyAdded.count { it !in rejectedNames },
                     ignoredKeys = ignoredKeys,
                     rejectedKeys = rejectedKeys,
                     unknownLanguage = requestedLanguage?.takeIf { it != settings.language },
@@ -406,16 +406,17 @@ internal object SettingsBackupCodec {
 
     /**
      * The store's schema 4 migration for a file from before it: each [LegacyEngineDefaults.GLOBAL]
-     * setting the file exported as unset (`null`) arrives as desktop v3.8.0's value, a feature switch
-     * it predates arrives off, and where the file's settings belong to [language] (null when they
-     * were refused) a cleanup it left unset arrives switched off. Other absent keys keep the current
-     * value, as in any import. Returns the switches added for the file.
+     * setting the file exported as unset (`null`), or lacks because its app never exported it
+     * ([LegacyEngineDefaults.UNSET_WHEN_ABSENT]), arrives as desktop v3.8.0's value, and where the
+     * file's settings belong to [language] (null when they were refused) a cleanup it left unset
+     * arrives switched off. Other absent keys keep the current value, as in any import. Returns the
+     * keys added for the file.
      */
     private fun keepLegacyEngineDefaults(
         values: MutableMap<String, Any>,
         language: String?,
     ): Set<String> {
-        val added = LegacyEngineDefaults.FEATURE_SWITCHES.filterTo(linkedSetOf()) { it !in values }
+        val added = LegacyEngineDefaults.UNSET_WHEN_ABSENT.filterTo(linkedSetOf()) { it !in values }
         LegacyEngineDefaults.GLOBAL.forEach { (name, legacy) ->
             if (name in added || values[name] === ClearedValue) values[name] = legacy
         }

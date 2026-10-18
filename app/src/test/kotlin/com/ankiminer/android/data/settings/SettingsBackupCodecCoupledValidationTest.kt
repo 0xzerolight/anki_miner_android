@@ -38,9 +38,13 @@ class SettingsBackupCodecCoupledValidationTest {
         assertEquals(current.withPreUpgradeSwitches(), applied.settings)
     }
 
-    /** Both files predate the feature batch, so its four switches arrive off with them. */
+    /**
+     * Both files predate the feature batch and strict card order, so its four switches and the
+     * order arrive off with them.
+     */
     private fun AppSettings.withPreUpgradeSwitches() =
         copy(
+            strictCardOrder = false,
             pickBestSentence = false,
             skipOpeningEnding = false,
             normalizeAudioLoudness = false,
