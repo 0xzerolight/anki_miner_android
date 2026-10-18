@@ -98,11 +98,13 @@ def _run(
     curate: Any = None,
     config_changes: dict[str, object] | None = None,
     line_index: list[Any] | None = None,
+    episode_name: str = "Episode 1",
 ) -> tuple[Any, FakeKotlinAnki, Any]:
     """Run the fixture; the optional doubles default to one 猫 card and a fresh Kotlin.
 
     ``config_changes`` overrides the mapped engine config last; ``line_index`` is the parse's
-    per-line lemma index, which the fixture otherwise leaves empty.
+    per-line lemma index, which the fixture otherwise leaves empty. ``episode_name`` is the
+    label Kotlin derives from the video's display name.
     """
 
     for module in ("pysubs2", "charset_normalizer", "requests"):
@@ -129,7 +131,7 @@ def _run(
         {
             "videoPath": str(job / "input.mkv"),
             "subtitlePath": str(primary),
-            "episodeName": "Episode 1",
+            "episodeName": episode_name,
             "seriesName": "Local video",
             "sourceLabel": None,
             "audioTrackOverride": None,
