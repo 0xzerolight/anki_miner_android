@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-18
+
 ### Added
 
 - **"Pick the clearest sentence for each word" (Settings -> Sentences).** When a word appears on several lines, its card uses the line with the fewest unknown words and a comfortable length instead of the first one. Curation still lists every line.
@@ -25,6 +27,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **The Source field leaves out release groups and resolutions.** `[SubsPlease] Frieren - 01 (1080p)` reads `Frieren - 01`.
 - **Everyday Japanese words such as 魔王 are no longer skipped as names, and 思わず, 実は and similar words are mined whole.** Plain 知らせる is mined as itself, and 彼の方 joins only when the line reads it as one word.
 - **EPUB copyright, contents and index pages are no longer mined (Reading tab).**
+- **A run warns when its subtitles or text look like another language (run result).** The check reads the first 200 content words against the language's dictionaries; the run still goes ahead, and the check is skipped when the language has no dictionary installed. The warning is in English.
 
 ### Fixed
 
