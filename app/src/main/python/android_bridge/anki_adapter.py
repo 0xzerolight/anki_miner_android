@@ -932,6 +932,8 @@ class AndroidAnkiAdapter:
         # Desktop F-01: the same scan narrowed to notes with a reviewed card. It only scores
         # text (i+1, the curator's unknowns); the set above stays the mining exclusion.
         self._reviewed_vocab_cache: set[str] | None = None
+        # Set when the marked walk failed: get_reviewed_vocabulary raises it until invalidation.
+        self._reviewed_vocab_error: Exception | None = None
         self._dict_media_uploaded: set[str] = set()
         self._dict_media_missing_sources: set[str] = set()
         self._dict_media_actual_names: dict[str, str] = {}
@@ -989,6 +991,7 @@ class AndroidAnkiAdapter:
             self._outstanding_baseline_token = None
             self._existing_vocab_cache = None
             self._reviewed_vocab_cache = None
+            self._reviewed_vocab_error = None
             self._dict_media_uploaded.clear()
             self._dict_media_missing_sources.clear()
             self._dict_media_actual_names.clear()
@@ -1429,17 +1432,43 @@ class AndroidAnkiAdapter:
 
         With ``known_from_reviewed_cards`` on, the same walk marks each note
         reviewed or not, so the ``get_reviewed_vocabulary`` call phase 2 makes
-        next is answered from it.
+        next is answered from it. If that marked walk fails with
+        ``AnkiConnectionError``, this walks again unmarked and
+        ``get_reviewed_vocabulary`` raises the failure, which the engine scores
+        past with every card, as desktop does when its reviewed query fails.
         """
 
         self._raise_if_cancelled("scanFirstFields")
         if self._existing_vocab_cache is not None:
             return self._existing_vocab_cache
-        mark_reviewed = self.config.known_from_reviewed_cards
-        existing, reviewed = self._scan_known_vocabulary(mark_reviewed=mark_reviewed)
-        self._existing_vocab_cache = existing
-        if mark_reviewed:
+        if not self.config.known_from_reviewed_cards:
+            existing, _reviewed = self._scan_known_vocabulary(mark_reviewed=False)
+            self._existing_vocab_cache = existing
+            return existing
+
+        # Function-local by design: bootstrap.py must set ANKI_MINER_HOME first.
+        from anki_miner.exceptions import AnkiConnectionError
+        from anki_miner.utils.logging_ext import log_summary
+
+        try:
+            existing, reviewed = self._scan_known_vocabulary(mark_reviewed=True)
+        except AnkiConnectionError as error:
+            # The -is:new search is a provider query of its own: it can fail, or outrun the bulk
+            # deadline, where the page reads would not. Only the marks are lost.
+            log_summary(
+                logger,
+                "Anki reviewed marks unavailable",
+                level=logging.WARNING,
+                outcome="fail",
+                fallback="unmarked_walk",
+                exc_type=type(error).__name__,
+                error=str(error),
+            )
+            self._reviewed_vocab_error = error
+            existing, _reviewed = self._scan_known_vocabulary(mark_reviewed=False)
+        else:
             self._reviewed_vocab_cache = reviewed
+        self._existing_vocab_cache = existing
         return existing
 
     def get_reviewed_vocabulary(self) -> set[str]:
@@ -1459,6 +1488,11 @@ class AndroidAnkiAdapter:
         """
 
         self._raise_if_cancelled("scanFirstFields")
+        if self._reviewed_vocab_error is not None:
+            # This run's marked walk already failed; walking again would repeat the failing search.
+            from anki_miner.exceptions import AnkiConnectionError
+
+            raise AnkiConnectionError(str(self._reviewed_vocab_error)) from self._reviewed_vocab_error
         if self._reviewed_vocab_cache is None:
             existing, reviewed = self._scan_known_vocabulary(mark_reviewed=True)
             if self._existing_vocab_cache is None:
@@ -1554,6 +1588,7 @@ class AndroidAnkiAdapter:
         """Forget both vocabulary sets; the next read walks the collection again (desktop parity)."""
         self._existing_vocab_cache = None
         self._reviewed_vocab_cache = None
+        self._reviewed_vocab_error = None
 
     def _parse_store_media_result(self, payload: dict[str, Any], assets: Sequence[_MediaAsset]) -> _StoreAssetsOutcome:
         result = _expect_exact_keys(

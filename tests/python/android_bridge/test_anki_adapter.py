@@ -944,6 +944,30 @@ class FakeKotlinAnki:
         return [envelope for name, envelope in self.requests if name == method]
 
 
+class MarkedScanFailingKotlin(FakeKotlinAnki):
+    """Fails every known-vocabulary scan that asks for reviewed marks; unmarked scans succeed.
+
+    The reviewed-marks search (`-is:new`) is a provider query of its own, so it can fail, or outrun
+    the bulk deadline, while the page reads would not.
+    """
+
+    def ankiScanFirstFields(self, raw: str) -> str:
+        if not json.loads(raw)["payload"]["scope"].get("markReviewed"):
+            return super().ankiScanFirstFields(raw)
+        request = self._request("ankiScanFirstFields", raw)
+        return encode_message(
+            "anki.error",
+            {
+                "runId": request["runId"],
+                "requestId": request["requestId"],
+                "operation": "scanFirstFields",
+                "code": "query_failed",
+                "message": "reviewed search failed",
+                "retryable": False,
+            },
+        )
+
+
 def _config(home: Path, **changes: object) -> Any:
     from anki_miner.config import AnkiMinerConfig
 
@@ -2364,6 +2388,40 @@ def test_reviewed_vocabulary_failure_degrades_to_every_card(
         None, replace(config, known_from_reviewed_cards=True), existing, adapter.get_reviewed_vocabulary
     )
     assert knowledge == {"猫", "犬"}
+
+
+def test_failed_reviewed_marks_fall_back_to_an_unmarked_walk(
+    initialized_bridge_home: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+    from anki_miner.services.known_word_db import collect_knowledge_forms
+
+    # With the setting on, phase 2's every-card read is the marked walk. Its reviewed search
+    # failing must not fail the run: desktop degrades only the reviewed query.
+    kotlin = MarkedScanFailingKotlin()
+    kotlin.known_fields = ["猫", "犬"]
+    kotlin.known_note_reviewed = [True, False]
+    config = _reviewed_config(initialized_bridge_home)
+    adapter = _adapter(config, kotlin)
+
+    with caplog.at_level(logging.WARNING, logger=anki_adapter_module.logger.name):
+        existing = adapter.get_existing_vocabulary()
+
+    assert existing == {"猫", "犬"}
+    assert ["markReviewed" in scope for scope in _known_scopes(kotlin)] == [True, False]
+    assert len([record for record in caplog.records if "Anki reviewed marks unavailable" in record.getMessage()]) == 1
+    # The failure is remembered, not retried: the engine gets AnkiConnectionError at once and
+    # scores against every card.
+    requests = len(kotlin.requests)
+    with pytest.raises(AnkiConnectionError, match="reviewed search failed"):
+        adapter.get_reviewed_vocabulary()
+    assert len(kotlin.requests) == requests
+    assert collect_knowledge_forms(None, config, existing, adapter.get_reviewed_vocabulary) == {"猫", "犬"}
+    # Invalidation forgets the failure along with the sets, so the next read tries marks again.
+    adapter.invalidate_existing_vocabulary_cache()
+    adapter.get_existing_vocabulary()
+    assert ["markReviewed" in scope for scope in _known_scopes(kotlin)] == [True, False, True, False]
 
 
 @pytest.mark.parametrize(
