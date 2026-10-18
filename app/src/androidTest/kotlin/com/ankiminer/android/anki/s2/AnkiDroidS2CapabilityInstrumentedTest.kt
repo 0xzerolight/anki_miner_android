@@ -120,7 +120,7 @@ class AnkiDroidS2CapabilityInstrumentedTest {
                         ).toString(),
                 )
 
-            assertEquals(1, summary.getInt("created"))
+            assertEquals(1, summary.getJSONArray("created").length())
             val noteIds = summary.getJSONArray("noteIds")
             assertEquals(1, noteIds.length())
             val adapterNoteId = noteIds.getLong(0)
