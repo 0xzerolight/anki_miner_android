@@ -1,4 +1,4 @@
-"""Load one subtitle file (.srt/.ass/.ssa/.vtt) into per-cue reading units.
+"""Load one subtitle file (.srt/.ass/.ssa/.vtt/.smi/.lrc) into per-cue reading units.
 
 Each surviving cue becomes one :class:`ReadingUnit` — the same sentence
 granularity the video pipeline mines from the same file — with the cue's
@@ -32,11 +32,18 @@ from anki_miner.models.reading import (
     ReadingSourceRef,
     ReadingUnit,
 )
+from anki_miner.services.lrc_format import register_lrc_format
 from anki_miner.services.reading._util import READING_CANCELLED, _decode
+from anki_miner.services.subtitle_cleaner import mining_events
 from anki_miner.utils.logging_ext import log_summary
 from anki_miner.utils.text_utils import clean_subtitle_text
 
 logger = logging.getLogger(__name__)
+
+# ``.lrc`` lyrics parse through pysubs2 only once the format is registered
+# (``get_format_identifier`` below); the parser module does it too, but this
+# loader must not depend on that import having happened first.
+register_lrc_format()
 
 # The two over-cap SetupErrors below name this in MB ("over 32 MB"); change both
 # if this changes.
@@ -62,6 +69,7 @@ def load(
     script_check: Callable[[str], bool] | None = None,
     normalize: Callable[[str], str] | None = None,
     has_target_script: Callable[[str], bool] | None = None,
+    skip_non_dialogue: bool = False,
 ) -> ReadingDocument:
     """Load a subtitle file into a per-cue :class:`ReadingDocument`.
 
@@ -73,6 +81,8 @@ def load(
     exactly as the parser cleans a subtitle line (``None`` = the Japanese pair).
     ``has_target_script`` is that parser's bilingual-cue line gate — a different
     job from ``script_check``, which judges a decode, not a cue line.
+    ``skip_non_dialogue`` is the F-08 switch: song, sign and drawing lines are
+    left out. Karaoke and animated-sign bursts always collapse to one cue (MS-12).
 
     Raises:
         SetupError: unreadable file or unparseable subtitle content.
@@ -106,6 +116,10 @@ def load(
         logger.debug("Subtitle parse failed: file=%s error=%s", path, type(e).__name__)
         raise SetupError(f"Cannot parse subtitle file '{path.name}'.") from e
     raise_if_cancelled(cancel_check, READING_CANCELLED)
+
+    # The same event pass mining and Condense read (L3b): bursts collapse, and
+    # with the switch on, songs, signs and drawings go.
+    subs.events = mining_events(subs.events, skip_non_dialogue=skip_non_dialogue)
 
     units: list[ReadingUnit] = []
     for event in subs:

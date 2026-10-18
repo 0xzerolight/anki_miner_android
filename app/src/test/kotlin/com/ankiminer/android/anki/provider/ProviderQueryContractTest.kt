@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.diagnostics.log.LogContext
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -212,6 +213,26 @@ class ProviderQueryContractTest {
                 checksumColumn = "csum",
             ),
         )
+        // Desktop's reviewed set is `deck:* -deck:"X" -is:new`: a note with any card that is not
+        // new and sits outside every exclusion.
+        listOf(
+            emptyList<String>() to "-is:new",
+            listOf("Core_2k", "Quote \" deck") to "-is:new -deck:\"Core\\_2k\" -deck:\"Quote \\\" deck\"",
+        ).forEach { (deckNames, expected) ->
+            assertEquals(
+                CompiledProviderSelection(expected, null),
+                compileProviderSelection(
+                    ProviderQuery(
+                        endpoint = ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection = ProviderSelection.ReviewedNotes(deckNames),
+                    ),
+                    noteIdColumn = "_id",
+                    modelIdColumn = "mid",
+                    checksumColumn = "csum",
+                ),
+            )
+        }
     }
 
     @Test
@@ -230,6 +251,19 @@ class ProviderQueryContractTest {
                         ProviderSelection.NotesOutsideDecks(
                             listOf("Mining"),
                             (1L..ProviderQueryShapes.NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS).toList(),
+                        ),
+                ),
+                ProviderQuery(
+                    ProviderEndpoint.NOTES_BROWSER,
+                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    selection = ProviderSelection.ReviewedNotes(emptyList()),
+                ),
+                ProviderQuery(
+                    ProviderEndpoint.NOTES_BROWSER,
+                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    selection =
+                        ProviderSelection.ReviewedNotes(
+                            List(AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT) { index -> "Deck $index" },
                         ),
                 ),
                 ProviderQuery(
@@ -294,7 +328,7 @@ class ProviderQueryContractTest {
                 ),
             )
 
-        assertEquals(14, legal.size)
+        assertEquals(16, legal.size)
         assertTrue(legal.all(ProviderQueryShapes::isAllowed))
     }
 
@@ -360,6 +394,30 @@ class ProviderQueryContractTest {
                         ProviderEndpoint.NOTES_V2,
                         projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
                         selection = ProviderSelection.NotesOutsideDecks(listOf("Mining"), listOf(1L)),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_V2,
+                        projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                        selection = ProviderSelection.ReviewedNotes(emptyList()),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection = ProviderSelection.ReviewedNotes(listOf("\uD800")),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection =
+                            ProviderSelection.ReviewedNotes(
+                                List(AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT + 1) { index -> "Deck $index" },
+                            ),
                     )
                 },
                 {

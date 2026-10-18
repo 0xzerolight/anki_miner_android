@@ -581,33 +581,37 @@ def test_a_japanese_reading_run_keeps_the_pre_transition_loader_call(tmp_path: P
         assert reading_mining._reading_loader_kwargs(config, source_kind) == {}
 
 
-def _indonesian_config(tmp_path: Path) -> object:
+def _language_config(tmp_path: Path, language: str) -> object:
     paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
-    return map_config_settings({"language": "id", "anki_note_type": "Basic"}, paths).engine_config
+    return map_config_settings({"language": language, "anki_note_type": "Basic"}, paths).engine_config
 
 
 def test_a_mokuro_volume_is_gated_on_the_mining_languages_script(tmp_path: Path) -> None:
     """Desktop ``load_reading_source``: a volume's blocks pass the language's script gate.
 
     Indonesian's parser keeps every line (no bilingual-cue gate), the case where
-    the loader otherwise falls back to its Japanese block check. Only the mokuro
-    kind changes; an EPUB keeps the parser's seams.
+    the loader otherwise falls back to its Japanese block check. Indonesian now
+    offers Manga OCR through a recogniser (``ocr_recognizer``) that reads its own
+    script; only manga-ocr's own language keeps the loader's gate (German, which
+    needs its model, is proven in ``languages/test_de.py``). Only the mokuro kind
+    changes; an EPUB keeps the parser's seams.
     """
     _runtime_lane()
     import android_bridge.reading_mining as reading_mining
     from anki_miner.languages.registry import get_profile
 
-    config = _indonesian_config(tmp_path)
+    profile = get_profile("id")
+    assert "manga_ocr" in profile.capabilities and profile.ocr_recognizer
+    config = _language_config(tmp_path, "id")
     mokuro = reading_mining._reading_loader_kwargs(config, "mokuro")
     epub = reading_mining._reading_loader_kwargs(config, "epub")
 
-    assert mokuro["has_target_script"] == get_profile("id").script.contains_target_script
+    assert mokuro["has_target_script"] == profile.script.contains_target_script
     assert "has_target_script" not in epub
     assert {key: value for key, value in mokuro.items() if key != "has_target_script"} == epub
 
 
-def test_an_indonesian_mokuro_volume_yields_its_own_lines_and_drops_untouched_sfx(tmp_path: Path) -> None:
-    _runtime_lane()
+def _mokuro_request(tmp_path: Path, language: str, title: str, volume: str, blocks: list[object]) -> object:
     import json
 
     import android_bridge.reading_mining as reading_mining
@@ -616,21 +620,16 @@ def test_an_indonesian_mokuro_volume_yields_its_own_lines_and_drops_untouched_sf
     job = tmp_path / "reading-job-v1-a"
     job.mkdir()
     source = job / "volume.mokuro"
-    blocks = [
-        {"box": [1, 2, 30, 40], "lines": ["Saya suka", "kucing."]},
-        # A translated volume's sound effect, left in Japanese.
-        {"box": [5, 6, 35, 46], "lines": ["ドドド"]},
-    ]
-    volume = {
+    sidecar = {
         "version": "0.2.4",
-        "title": "Komik",
+        "title": title,
         "title_uuid": "title-fixture",
-        "volume": "Jilid 1",
+        "volume": volume,
         "volume_uuid": "volume-fixture",
         "pages": [{"version": "0.2.4", "img_width": 1, "img_height": 1, "img_path": "001.png", "blocks": blocks}],
     }
-    source.write_text(json.dumps(volume, ensure_ascii=False), encoding="utf-8")
-    request = reading_mining._parse_request(
+    source.write_text(json.dumps(sidecar, ensure_ascii=False), encoding="utf-8")
+    return reading_mining._parse_request(
         encode_message(
             "mining.reading.run",
             {
@@ -641,16 +640,100 @@ def test_an_indonesian_mokuro_volume_yields_its_own_lines_and_drops_untouched_sf
                 "stagingRoot": str(tmp_path),
                 "cacheDir": str(tmp_path),
                 "nativeLibraryDir": "/native",
-                "configSnapshot": {"settings": {"language": "id", "anki_note_type": "Basic"}},
+                "configSnapshot": {"settings": {"language": language, "anki_note_type": "Basic"}},
             },
         )
     )
-    loader_kwargs = reading_mining._reading_loader_kwargs(_indonesian_config(tmp_path), "mokuro")
+
+
+def test_an_indonesian_mokuro_volume_yields_its_own_lines_and_drops_untouched_sfx(tmp_path: Path) -> None:
+    _runtime_lane()
+    import android_bridge.reading_mining as reading_mining
+
+    blocks = [
+        {"box": [1, 2, 30, 40], "lines": ["Saya suka", "kucing."]},
+        # A translated volume's sound effect, left in Japanese.
+        {"box": [5, 6, 35, 46], "lines": ["ドドド"]},
+    ]
+    request = _mokuro_request(tmp_path, "id", "Komik", "Jilid 1", blocks)
+    loader_kwargs = reading_mining._reading_loader_kwargs(_language_config(tmp_path, "id"), "mokuro")
 
     document = reading_mining._load_document(request, lambda: False, loader_kwargs=loader_kwargs)
 
     # The balloon's OCR lines join with one space, as a space-delimited language's do.
     assert [unit.text for unit in document.units] == ["Saya suka kucing."]
+
+
+@pytest.mark.parametrize("language", ["ja", "id"])
+def test_a_subtitle_source_skips_non_dialogue_while_the_switch_resolves_on(tmp_path: Path, language: str) -> None:
+    """Desktop ``load_reading_source``: F-08 reaches Reading's subtitle files as it reaches Video."""
+    _runtime_lane()
+    from dataclasses import replace
+
+    import android_bridge.reading_mining as reading_mining
+
+    config = _language_config(tmp_path, language)
+    # Unset on Android until the setting lands, so the engine default decides.
+    assert config.skip_opening_ending is True
+    assert reading_mining._reading_loader_kwargs(config, "subtitle")["skip_non_dialogue"] is True
+    for source_kind in ("txt", "text", "epub", "mokuro"):
+        assert "skip_non_dialogue" not in reading_mining._reading_loader_kwargs(config, source_kind)
+
+    switched_off = replace(config, skip_opening_ending=False)
+    assert "skip_non_dialogue" not in reading_mining._reading_loader_kwargs(switched_off, "subtitle")
+
+
+_ASS_WITH_AN_OPENING = """\
+[Script Info]
+ScriptType: v4.00+
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:03.00,OP,,0,0,0,,空に歌う
+Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,猫を見る。
+Dialogue: 0,0:00:07.00,0:00:09.00,Default,,0,0,0,,犬もいる。
+"""
+
+
+def test_a_japanese_subtitle_source_drops_its_opening_song(tmp_path: Path) -> None:
+    _runtime_lane()
+    from dataclasses import replace
+
+    import android_bridge.reading_mining as reading_mining
+    from android_bridge.protocol import encode_message
+
+    job = tmp_path / "reading-job-v1-a"
+    job.mkdir()
+    source = job / "episode.ass"
+    source.write_text(_ASS_WITH_AN_OPENING, encoding="utf-8")
+    request = reading_mining._parse_request(
+        encode_message(
+            "mining.reading.run",
+            {
+                "sourceKind": "subtitle",
+                "sourcePath": str(source),
+                "imageArchivePath": None,
+                "seriesName": "Show",
+                "stagingRoot": str(tmp_path),
+                "cacheDir": str(tmp_path),
+                "nativeLibraryDir": "/native",
+                "configSnapshot": {"settings": {"anki_note_type": "Basic"}},
+            },
+        )
+    )
+    config = _language_config(tmp_path, "ja")
+
+    skipped = reading_mining._load_document(
+        request, lambda: False, loader_kwargs=reading_mining._reading_loader_kwargs(config, "subtitle")
+    )
+    kept = reading_mining._load_document(
+        request,
+        lambda: False,
+        loader_kwargs=reading_mining._reading_loader_kwargs(replace(config, skip_opening_ending=False), "subtitle"),
+    )
+
+    assert [unit.text for unit in skipped.units] == ["猫を見る。", "犬もいる。"]
+    assert [unit.text for unit in kept.units] == ["空に歌う", "猫を見る。", "犬もいる。"]
 
 
 # ---------------------------------------------------------------- subtitle cues
@@ -835,6 +918,19 @@ def test_every_profiles_synthetic_default_becomes_the_device_voice(tmp_path: Pat
     }
     assert {"he", "tr", "en", "pt", "sl", "ko", "vi", "yue", "zh"} <= set(chains)
     assert chains == {language: (AudioSourceEntry(kind="android_tts"),) for language in chains}
+
+
+def test_a_wikimedia_first_default_chain_keeps_only_the_device_voice(tmp_path: Path) -> None:
+    """Desktop's default chain leads with Wikimedia Commons, a network source Android cuts."""
+    _runtime_lane()
+    from android_bridge.languages import base_config
+    from anki_miner.config import AudioSourceEntry
+
+    assert [entry.kind for entry in base_config("de").expression_audio_chain] == ["wikimedia", "googletts"]
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    mapped = map_config_settings({"language": "de", "anki_note_type": "Basic"}, paths).engine_config
+
+    assert mapped.expression_audio_chain == (AudioSourceEntry(kind="android_tts"),)
 
 
 @pytest.mark.parametrize(

@@ -23,6 +23,14 @@ detection order:
   (Migaku removed its built-in export).
 - Migaku legacy add-on backup ``[[word, int], …]`` (2 = known, 1 = learning):
   raetsel migration walkthrough + Migaku-legacy-guides repo.
+- Kindle Vocabulary Builder ``vocab.db``: ``WORDS(word, stem, lang, category)``,
+  category 100 = mastered; schema per WordDumb's docs/contributing/
+  vocabulary_builder.rst (github.com/xxyzz/WordDumb).
+- Lute term export: header ``term,parent,translation,language,tags,added,
+  status,link_status,pronunciation``, status 1-5 / 98 ignored / 99 well known,
+  ``W``/``I`` accepted on import (lute/term/routes.py, lute/termimport/
+  service.py @ github.com/LuteOrg/lute-v3). LWT's term columns are WoText /
+  WoStatus / LgName.
 
 Stored form is the written form as exported (食べる), matching the
 ``mined_form`` keying convention — never re-lemmatized here.
@@ -40,7 +48,9 @@ import csv
 import json
 import logging
 import re
+import sqlite3
 from collections.abc import Callable, Iterable, Iterator
+from contextlib import closing
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
@@ -54,13 +64,35 @@ logger = logging.getLogger(__name__)
 
 # Stable keys the dialog maps to translated display labels; keep the dialog's
 # mapping in lockstep (a unit test asserts completeness on both sides).
-FORMAT_KEYS = ("jpdb", "migaku_json", "migaku_legacy", "ankimorphs", "migaku_csv", "generic")
+FORMAT_KEYS = (
+    "jpdb",
+    "migaku_json",
+    "migaku_legacy",
+    "ankimorphs",
+    "migaku_csv",
+    "kindle_vocab",
+    "lute_csv",
+    "generic",
+)
 
 # jpdb grades whose *latest* occurrence disqualifies a card. Everything else
 # (okay/easy/hard/pass/known + future positive states) counts as known.
 _JPDB_EXCLUDED_GRADES = frozenset({"nothing", "something", "fail", "unknown"})
+
 _MIGAKU_CSV_HEADER = ("word", "reading", "language", "status")
 _ANKIMORPHS_LEMMA_HEADER = "morph-lemma"
+
+# SK-09 (owner ruling R24). A Kindle vocab.db is SQLite: read as a database,
+# never decoded as text.
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+_KINDLE_MASTERED = 100
+
+# Lute / LWT term tables (R24): status 5 (learned) and 99 / W (well known)
+# import; 1-4 (learning) and 98 / I (ignored) do not.
+_TERM_HEADERS = ("term", "wotext")
+_STATUS_HEADERS = ("status", "wostatus")
+_LANGUAGE_HEADERS = ("language", "lgname")
+_TERM_KNOWN_STATUSES = frozenset({"5", "99", "w"})
 
 # Known-word exports are tiny (a jpdb/AnkiMorphs dump is well under a MB); the
 # "All Files (*)" dialog filter lets a user mis-pick a large file, so cap the
@@ -85,19 +117,22 @@ class KnownWordsImportError(Exception):
     file is stat-ed, never opened), ``"unreadable"`` (an ``OSError`` opening
     or reading it), ``"undecodable"`` (bytes read fine, every encoding in the
     ladder failed). Then ``"unrecognized"`` (format not matched — including
-    valid JSON matching no known signature) and ``"no_known_words"`` (format
+    valid JSON matching no known signature), ``"no_known_words"`` (format
     matched but zero entries qualified; ``format_key`` carries the detected
-    format in that case).
+    format in that case) and ``"other_language"`` (a Lute/LWT file whose
+    language column never names the mining language; ``languages`` lists the
+    names it does hold, so the dialog can say why nothing came in).
 
     Android bounded imports can additionally raise ``"limit_exceeded"`` when
     a supplied word or the distinct-word set exceeds its limit, or
     ``"cancelled"`` when ``cancel_check`` requests cancellation.
     """
 
-    def __init__(self, reason: str, format_key: str | None = None):
+    def __init__(self, reason: str, format_key: str | None = None, *, languages: tuple[str, ...] = ()):
         super().__init__(reason)
         self.reason = reason
         self.format_key = format_key
+        self.languages = languages
 
 
 @dataclass(frozen=True)
@@ -115,13 +150,15 @@ def parse_known_words_file(
     *,
     encodings: tuple[str, ...] | None = None,
     script_check: Callable[[str], bool] | None = None,
+    language: str | None = None,
     max_words: int | None = None,
     max_word_bytes: int | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> KnownWordsImportResult:
     """Detect the export format of ``path`` and extract its known words.
 
-    Content is tried as JSON first; valid JSON that matches no known JSON
+    A SQLite file is a Kindle Vocabulary Builder database or nothing. Other
+    content is tried as JSON first; valid JSON that matches no known JSON
     signature raises ``unrecognized`` rather than falling through to the line
     reader (which would ingest syntax fragments as words). ``.json`` files
     are never read as generic word lists for the same reason.
@@ -131,11 +168,18 @@ def parse_known_words_file(
     two-leg Japanese default; ``()`` would be an EMPTY ladder, so never pass
     it as the "use the default" sentinel. *script_check* validates a
     single-byte leg (``utils.subtitle_encoding.script_check_kwarg``).
+    *language* is the mining-language code: Kindle and Lute/LWT files hold
+    every language the user studies, and only this one's rows import.
+    ``None`` keeps them all.
 
     ``max_words`` and ``max_word_bytes`` are Android-only allocation guards.
     When any bounded option is supplied, the decoded text is parsed
     incrementally: delimited, text, and structured JSON arrays are walked one
     line or one array item at a time, and the word set is checked as it grows.
+    The bounded path is dispatched before the Kindle SQLite sniff and keeps the
+    pre-Kindle/Lute formats only, so a ``vocab.db`` or a Lute/LWT export reads
+    there as plain text, never as ``kindle_vocab``/``lute_csv``, and
+    *language* has no effect on it.
 
     Omitting all Android-only options follows the pinned desktop materialized
     parsing path unchanged.
@@ -154,7 +198,7 @@ def parse_known_words_file(
             max_word_bytes=max_word_bytes,
             cancel_check=cancel_check,
         )
-    return _parse_materialized(path, encodings=encodings, script_check=script_check)
+    return _parse_materialized(path, encodings=encodings, script_check=script_check, language=language)
 
 
 def _parse_materialized(
@@ -162,6 +206,7 @@ def _parse_materialized(
     *,
     encodings: tuple[str, ...] | None,
     script_check: Callable[[str], bool] | None,
+    language: str | None,
 ) -> KnownWordsImportResult:
     try:
         if path.stat().st_size > _MAX_IMPORT_BYTES:
@@ -169,16 +214,20 @@ def _parse_materialized(
         raw = path.read_bytes()
     except OSError as exc:
         raise KnownWordsImportError("unreadable") from exc
-    text, encoding = _decode(raw, encodings, script_check)
 
-    try:
-        data = json.loads(text)
-    except ValueError:
-        if path.suffix.lower() == ".json":
-            raise KnownWordsImportError("unrecognized") from None
-        result = _parse_delimited_or_text(text)
+    encoding = "-"
+    if raw.startswith(_SQLITE_MAGIC):
+        result = _parse_kindle_vocab(path, language)
     else:
-        result = _parse_json(data)
+        text, encoding = _decode(raw, encodings, script_check)
+        try:
+            data = json.loads(text)
+        except ValueError:
+            if path.suffix.lower() == ".json":
+                raise KnownWordsImportError("unrecognized") from None
+            result = _parse_delimited_or_text(text, language)
+        else:
+            result = _parse_json(data)
     _log_import(path, result, encoding)
     return result
 
@@ -244,12 +293,7 @@ def _parse_bounded(
     return result
 
 
-def _result(
-    format_key: str,
-    words: set[str],
-    total: int,
-    skipped_malformed: int = 0,
-) -> KnownWordsImportResult:
+def _result(format_key: str, words: set[str], total: int, skipped_malformed: int = 0) -> KnownWordsImportResult:
     if not words:
         raise KnownWordsImportError("no_known_words", format_key=format_key)
     return KnownWordsImportResult(
@@ -646,11 +690,51 @@ def _parse_jpdb(cards: list[Any]) -> KnownWordsImportResult:
 
 
 # ----------------------------------------------------------------------
+# Kindle Vocabulary Builder (SQLite)
+# ----------------------------------------------------------------------
+
+
+def _parse_kindle_vocab(path: Path, language: str | None) -> KnownWordsImportResult:
+    """Kindle ``vocab.db``: words marked mastered (category 100) are known (R24).
+
+    The form is Kindle's ``stem`` (its dictionary form, the card-front
+    convention) and else the looked-up ``word``. Opened read-only.
+    """
+    try:
+        with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as conn:
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            if "WORDS" not in tables:
+                raise KnownWordsImportError("unrecognized")
+            rows = conn.execute("SELECT word, stem, lang, category FROM WORDS").fetchall()
+    except sqlite3.Error as exc:
+        raise KnownWordsImportError("unreadable") from exc
+    words: set[str] = set()
+    total = 0
+    skipped_malformed = 0
+    for word, stem, lang, category in rows:
+        form = _clean(stem) or _clean(word)
+        if not form:
+            skipped_malformed += 1
+            continue
+        if language is not None and _kindle_language(lang) != language:
+            continue
+        total += 1
+        if category == _KINDLE_MASTERED:
+            words.add(form)
+    return _result("kindle_vocab", words, total, skipped_malformed)
+
+
+def _kindle_language(value: Any) -> str:
+    """Kindle's ``lang`` (``ja``, ``ja-JP``, ``pt_BR``) as a bare lowercase code."""
+    return _clean(value).replace("_", "-").split("-")[0].lower()
+
+
+# ----------------------------------------------------------------------
 # Delimited / plain-text formats
 # ----------------------------------------------------------------------
 
 
-def _parse_delimited_or_text(text: str) -> KnownWordsImportResult:
+def _parse_delimited_or_text(text: str, language: str | None = None) -> KnownWordsImportResult:
     rows = list(csv.reader(text.splitlines()))
     header = tuple(cell.strip().lower() for cell in rows[0]) if rows else ()
 
@@ -666,7 +750,74 @@ def _parse_delimited_or_text(text: str) -> KnownWordsImportResult:
         words = {row[0].strip() for row in entries}
         return _result("ankimorphs", words, len(entries))
 
+    terms = _parse_term_status_table(text, language)
+    if terms is not None:
+        return terms
     return _parse_generic(text)
+
+
+def _parse_term_status_table(text: str, language: str | None) -> KnownWordsImportResult | None:
+    """A Lute or LWT term export, or ``None`` when the header is not one (R24).
+
+    Lute's header names ``term`` and ``status``; LWT's columns are ``WoText``
+    and ``WoStatus``. A language column (``language`` / ``LgName``) narrows
+    the rows to the mining language when one is given; a file that never
+    names it imports nothing rather than another language's words, and says
+    which languages it holds (ruling C3). Lute joins the words of a
+    multi-word term with zero-width spaces; they are removed.
+    """
+    lines = text.splitlines()
+    if not lines:
+        return None
+    delimiter = "\t" if "\t" in lines[0] else ","
+    rows = list(csv.reader(lines, delimiter=delimiter))
+    header = [cell.strip().lower() for cell in rows[0]]
+    term_at = _first_index(header, _TERM_HEADERS)
+    status_at = _first_index(header, _STATUS_HEADERS)
+    if term_at is None or status_at is None:
+        return None
+    language_at = _first_index(header, _LANGUAGE_HEADERS)
+    needed = max(term_at, status_at)
+    entries: list[list[str]] = []
+    skipped_malformed = 0
+    for row in rows[1:]:
+        if not row:
+            continue
+        if len(row) <= needed or not _clean(row[term_at]):
+            skipped_malformed += 1
+            continue
+        entries.append(row)
+    if language is not None and language_at is not None:
+        names = _language_names(language)
+        named = [row[language_at].strip() if len(row) > language_at else "" for row in entries]
+        in_language = [row for row, name in zip(entries, named, strict=True) if name.casefold() in names]
+        found = sorted({name for name in named if name})
+        if not in_language and found:
+            raise KnownWordsImportError("other_language", format_key="lute_csv", languages=tuple(found))
+        entries = in_language
+    words = {
+        row[term_at].replace("\u200b", "").strip()
+        for row in entries
+        if row[status_at].strip().casefold() in _TERM_KNOWN_STATUSES
+    }
+    return _result("lute_csv", words, len(entries), skipped_malformed)
+
+
+def _first_index(header: list[str], names: tuple[str, ...]) -> int | None:
+    """Position of the first column whose name is one of ``names``."""
+    for name in names:
+        if name in header:
+            return header.index(name)
+    return None
+
+
+def _language_names(code: str) -> frozenset[str]:
+    """What a Lute/LWT language column may call the mining language: code, English and native name."""
+    # Function-local: languages.profile imports services (the subtitle_parser note).
+    from anki_miner.languages.registry import get_profile
+
+    profile = get_profile(code)
+    return frozenset(name.strip().casefold() for name in (code, profile.english_name, profile.display_name) if name)
 
 
 def _parse_generic(text: str) -> KnownWordsImportResult:

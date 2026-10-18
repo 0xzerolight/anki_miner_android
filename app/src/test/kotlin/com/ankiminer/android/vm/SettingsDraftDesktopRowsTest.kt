@@ -55,6 +55,38 @@ class SettingsDraftDesktopRowsTest {
     }
 
     @Test
+    fun featureBatchSwitchesRoundTripAndSaveImmediately() {
+        val base =
+            AppSettings(
+                pickBestSentence = false,
+                skipOpeningEnding = false,
+                normalizeAudioLoudness = false,
+                cropMangaToText = false,
+                knownFromReviewedCards = true,
+            )
+        val before = draft()
+
+        assertEquals(base, draft(base).toSettings(base))
+        assertEquals(
+            base,
+            before
+                .copy(
+                    pickBestSentence = false,
+                    skipOpeningEnding = false,
+                    normalizeAudioLoudness = false,
+                    cropMangaToText = false,
+                    knownFromReviewedCards = true,
+                ).toSettings(AppSettings()),
+        )
+        // Null stays null: an untouched switch keeps following the engine default.
+        assertEquals(AppSettings(), before.toSettings(AppSettings()))
+        assertEquals(
+            SettingsWriteCadence.IMMEDIATE,
+            settingsWriteCadence(before, before.copy(pickBestSentence = false)),
+        )
+    }
+
+    @Test
     fun aNegativeMinimumIsReportedOnItsOwnField() {
         val edited = draft().copy(minFrequency = "-1")
 

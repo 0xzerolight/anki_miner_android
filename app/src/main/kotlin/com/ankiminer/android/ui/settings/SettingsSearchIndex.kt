@@ -124,8 +124,21 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
 
         // Media: Sentence audio
         entry("media.audio_format", SettingsCategory.MEDIA, MEDIA_SENTENCE_AUDIO_KEY, R.string.settings_audio_format),
-        entry("media.audio_bitrate", SettingsCategory.MEDIA, MEDIA_SENTENCE_AUDIO_KEY, R.string.settings_audio_bitrate),
+        entry(
+            "media.audio_bitrate",
+            SettingsCategory.MEDIA,
+            MEDIA_SENTENCE_AUDIO_KEY,
+            R.string.settings_audio_bitrate,
+            R.string.settings_audio_bitrate_help,
+        ),
         entry("media.audio_padding", SettingsCategory.MEDIA, MEDIA_SENTENCE_AUDIO_KEY, R.string.settings_audio_padding),
+        entry(
+            "media.normalize_audio_loudness",
+            SettingsCategory.MEDIA,
+            MEDIA_SENTENCE_AUDIO_KEY,
+            R.string.settings_normalize_audio_loudness,
+            R.string.settings_normalize_audio_loudness_help,
+        ),
         entry(
             "media.reading_tts",
             SettingsCategory.MEDIA,
@@ -148,6 +161,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             SettingsCategory.MEDIA,
             MEDIA_SCREENSHOT_KEY,
             R.string.settings_screenshot_offset,
+        ),
+        entry(
+            "media.crop_manga_to_text",
+            SettingsCategory.MEDIA,
+            MEDIA_SCREENSHOT_KEY,
+            R.string.settings_crop_manga_to_text,
+            R.string.settings_crop_manga_to_text_help,
         ),
         entry(
             "media.animated_screenshots",
@@ -285,6 +305,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_frequency_keep_unranked,
         ),
         entry(
+            "word_filters.known_from_reviewed_cards",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_known_from_reviewed_cards,
+            R.string.settings_known_from_reviewed_cards_help,
+        ),
+        entry(
             "word_filters.known_words_db",
             SettingsCategory.WORD_FILTERS,
             "filtering-options",
@@ -412,11 +439,27 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_subtitle_presets,
         ),
         entry(
+            "sentences.skip_opening_ending",
+            SettingsCategory.SENTENCES,
+            "subtitle-text",
+            R.string.settings_skip_opening_ending,
+            R.string.settings_skip_opening_ending_help,
+            keywords = listOf("OP", "ED", "OP/ED", "opening", "ending", "karaoke", "signs", "chapters", "lyrics"),
+        ),
+        entry(
             "sentences.sentence_rule",
             SettingsCategory.SENTENCES,
             "sentence-options",
             R.string.settings_sentence_rule,
             keywords = listOf("dedup", "deduplicate", "i+1", "one card per sentence"),
+        ),
+        entry(
+            "sentences.pick_best_sentence",
+            SettingsCategory.SENTENCES,
+            "sentence-options",
+            R.string.settings_pick_best_sentence,
+            R.string.settings_pick_best_sentence_help,
+            keywords = listOf("best sentence", "clearest sentence", "shortest sentence"),
         ),
         entry(
             "sentences.max_duration",

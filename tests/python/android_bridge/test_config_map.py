@@ -82,7 +82,7 @@ def test_an_empty_snapshot_is_refused_because_the_desktop_note_type_is_blank(tmp
     assert str(error.value).startswith("anki_note_type:")
 
 
-def test_a_note_type_alone_keeps_all_134_desktop_defaults_except_targeted_android_overrides(
+def test_a_note_type_alone_keeps_all_140_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
     from anki_miner.config import AnkiMinerConfig
@@ -103,7 +103,7 @@ def test_a_note_type_alone_keeps_all_134_desktop_defaults_except_targeted_androi
     )
 
     desktop_fields = fields(AnkiMinerConfig)
-    assert len(desktop_fields) == 134
+    assert len(desktop_fields) == 140
     assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
         field.name: getattr(expected, field.name) for field in desktop_fields
     }
@@ -200,11 +200,15 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
     assert config.anki_fields["word"] == "Expression"
 
 
-@pytest.mark.parametrize("kind", ["jpod101", "googletts", "custom", "custom_json"])
-def test_network_expression_audio_kinds_are_rejected(kind: str, tmp_path: Path) -> None:
+# Wikimedia Commons word audio (desktop F-12) is a network source Android does not port.
+@pytest.mark.parametrize("kind", ["jpod101", "googletts", "custom", "custom_json", "wikimedia"])
+@pytest.mark.parametrize("language", ["ja", "de"])
+def test_network_expression_audio_kinds_are_rejected(kind: str, language: str, tmp_path: Path) -> None:
+    if language != "ja":
+        pytest.importorskip("pysubs2", reason="runtime dependency lane: the profile registry imports the parser")
     with pytest.raises(BridgeProtocolError) as error:
         map_config_settings(
-            {"expression_audio_chain": [{"kind": kind, "pack_id": None}]},
+            {"language": language, "expression_audio_chain": [{"kind": kind, "pack_id": None}]},
             _paths(tmp_path),
         )
     assert error.value.code == "unsupported_audio_source"
@@ -348,11 +352,13 @@ def test_legacy_sentence_length_toggle_is_an_unknown_field(toggle: bool, tmp_pat
     assert error.value.code == "unknown_config_field"
 
 
-# A.5's wave-B rows: engine fields Android now sets. ``secondary_subtitle_enabled``
-# is the sixth wave-B row and stays Kotlin-only: the engine never reads it.
+# A.5's wave-B rows: engine fields Android now sets, each to a non-default value.
+# ``secondary_subtitle_enabled`` is the sixth wave-B row and stays Kotlin-only: the
+# engine now reads it (F-04 picks a translation track itself, through the deferred
+# audio_condenser), so the bridge must never map it.
 _WAVE_B_FIELDS = {
     "merge_incomplete_cues": True,
-    "strict_card_order": True,
+    "strict_card_order": False,
     "min_frequency_rank": 500,
     "frequency_keep_unranked": True,
     "known_words_match_kana_variants": False,
@@ -365,6 +371,7 @@ def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
     exposed = exposed_config_fields()
     assert set(_WAVE_B_FIELDS) <= exposed
     assert "secondary_subtitle_enabled" not in exposed
+    assert "sync_anki_after_run" not in exposed
     assert "use_sentence_length_filter" not in exposed
     # 49 after Wave B, plus Wave C's language, script_variant and reading_tone_color,
     # minus jisho_delay (desktop v3.8.0 removed Jisho), plus the animated Size pair.
@@ -372,8 +379,35 @@ def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
     assert {"screenshot_animated_fps", "screenshot_animated_height"} <= exposed
     assert "language_stash" not in exposed
     assert "jisho_delay" not in exposed
-    assert len(exposed) == 53
+    # Plus the 2026-10 feature batch's five switches (_FEATURE_BATCH_FIELDS).
+    assert set(_FEATURE_BATCH_FIELDS) <= exposed
+    assert len(exposed) == 58
     assert exposed <= {field.name for field in fields(AnkiMinerConfig)}
+
+
+# Desktop's 2026-10 feature batch, each set to its non-default value. Four default on for a fresh
+# install; Kotlin stores them off for an upgrader, so the snapshot carries an explicit False.
+# ``known_from_reviewed_cards`` reads AndroidAnkiAdapter.get_reviewed_vocabulary.
+_FEATURE_BATCH_FIELDS = {
+    "pick_best_sentence": False,
+    "skip_opening_ending": False,
+    "normalize_audio_loudness": False,
+    "crop_manga_to_text": False,
+    "known_from_reviewed_cards": True,
+}
+
+
+def test_feature_batch_fields_reach_the_engine_config(tmp_path: Path) -> None:
+    from anki_miner.config import AnkiMinerConfig
+
+    defaults = AnkiMinerConfig()
+    assert {name: getattr(defaults, name) for name in _FEATURE_BATCH_FIELDS} == {
+        name: not value for name, value in _FEATURE_BATCH_FIELDS.items()
+    }
+
+    mapped = map_config_settings({**_NOTE_TYPE, **_FEATURE_BATCH_FIELDS}, _paths(tmp_path))
+
+    assert {name: getattr(mapped.engine_config, name) for name in _FEATURE_BATCH_FIELDS} == _FEATURE_BATCH_FIELDS
 
 
 def test_wave_b_fields_reach_the_engine_config(tmp_path: Path) -> None:
@@ -382,7 +416,7 @@ def test_wave_b_fields_reach_the_engine_config(tmp_path: Path) -> None:
     defaults = AnkiMinerConfig()
     assert {name: getattr(defaults, name) for name in _WAVE_B_FIELDS} == {
         "merge_incomplete_cues": False,
-        "strict_card_order": False,
+        "strict_card_order": True,
         "min_frequency_rank": 0,
         "frequency_keep_unranked": False,
         "known_words_match_kana_variants": True,
@@ -453,7 +487,12 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
         ({"strict_card_order": "true"}, "invalid_config_field"),
         ({"frequency_keep_unranked": None}, "invalid_config_field"),
         ({"known_words_match_kana_variants": 0}, "invalid_config_field"),
+        ({"pick_best_sentence": "false"}, "invalid_config_field"),
+        ({"known_from_reviewed_cards": 1}, "invalid_config_field"),
         ({"secondary_subtitle_enabled": True}, "unknown_config_field"),
+        # Desktop's AnkiConnect sync after a run (AI-03) is not ported.
+        ({"sync_anki_after_run": True}, "unknown_config_field"),
+        ({"sync_anki_after_run": False}, "unknown_config_field"),
     ],
 )
 def test_unknown_or_wrongly_typed_settings_fail_closed(

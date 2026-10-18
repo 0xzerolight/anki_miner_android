@@ -302,11 +302,16 @@ def _scan_scope(value: object) -> _Object:
         )
         return _Object((("kind", "noteTypes"),))
     if kind == "knownVocabulary":
+        # markReviewed is absent when off and the constant true when on.
+        mark_reviewed = "markReviewed" in value
         scope = _mapping(
             value,
-            {"kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"},
+            {"kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"}
+            | ({"markReviewed"} if mark_reviewed else set()),
             "known-vocabulary scope",
         )
+        if mark_reviewed and _boolean(scope["markReviewed"], "markReviewed") is not True:
+            _invalid("markReviewed must be true when present")
         cursor_value = scope["cursor"]
         scan_limits = ANKI_LIMITS_V1["scanFirstFields"]
         _constant_limits(
@@ -344,6 +349,7 @@ def _scan_scope(value: object) -> _Object:
                 ("excludedDecks", _string_list(scope["excludedDecks"], "excludedDecks")),
                 ("fieldOrdinals", field_ordinals),
                 ("cursor", cursor),
+                *((("markReviewed", True),) if mark_reviewed else ()),
             )
         )
     if kind == "duplicates":

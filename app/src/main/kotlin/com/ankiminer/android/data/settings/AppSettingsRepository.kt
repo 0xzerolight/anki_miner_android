@@ -106,10 +106,16 @@ class DataStoreAppSettingsRepository internal constructor(
     }
 
     internal companion object {
-        const val CURRENT_SCHEMA_VERSION = 3
+        const val CURRENT_SCHEMA_VERSION = 4
 
         /** The first schema whose sentence-length caps stand alone, without a toggle. */
         private const val CAPS_ONLY_SENTENCE_LENGTH_SCHEMA = 3
+
+        /**
+         * The first schema whose unset settings follow the engine defaults desktop `6ca809fe`
+         * introduced. An older store keeps desktop v3.8.0's; see [LegacyEngineDefaults].
+         */
+        const val NEW_ENGINE_DEFAULTS_SCHEMA = 4
 
         private const val FRESH_WORDSET_POLICY = "fresh-defaults-v1"
         private const val PRESERVED_WORDSET_POLICY = "preserved-existing-v1"
@@ -157,6 +163,11 @@ class DataStoreAppSettingsRepository internal constructor(
                         Keys.schemaVersion !in decoded.invalidKeys &&
                             (decoded.schemaVersion ?: 0) < CAPS_ONLY_SENTENCE_LENGTH_SCHEMA
                     )
+            // The same era rule. An empty store is a fresh install, which takes the new defaults.
+            val keepLegacyDefaults =
+                !freshStore &&
+                    Keys.schemaVersion !in decoded.invalidKeys &&
+                    (decoded.schemaVersion ?: 0) < NEW_ENGINE_DEFAULTS_SCHEMA
             return stagePreferenceWrite(preferences) { candidate ->
                 decoded.invalidKeys.forEach { candidate -= it }
                 candidate -= Keys.legacyAllowDuplicateCards
@@ -169,6 +180,7 @@ class DataStoreAppSettingsRepository internal constructor(
                     candidate -= Keys.legacyExcludedWordsets
                 }
                 if (foldSentenceLength) foldSentenceLengthToggle(preferences, candidate)
+                if (keepLegacyDefaults) keepLegacyEngineDefaults(decoded.settings, candidate)
                 if (decoded.schemaVersion == null || decoded.schemaVersion < CURRENT_SCHEMA_VERSION) {
                     candidate[Keys.schemaVersion] = CURRENT_SCHEMA_VERSION
                 }
@@ -196,6 +208,38 @@ class DataStoreAppSettingsRepository internal constructor(
                 if (Keys.maxSentenceCharacters in candidate) candidate[Keys.maxSentenceCharacters] = 0
             }
             candidate -= Keys.legacyUseSentenceLength
+        }
+
+        /**
+         * Write [LegacyEngineDefaults] wherever [settings] leaves them unset, in the active language
+         * and in every parked one, so an upgrade changes no mining output until the user opts in.
+         */
+        private fun keepLegacyEngineDefaults(
+            settings: AppSettings,
+            candidate: MutablePreferences,
+        ) {
+            val stored = encodePreferences(settings, emptyPreferences()).asMap().mapKeys { it.key.name }
+            LegacyEngineDefaults.GLOBAL.forEach { (name, legacy) ->
+                if (stored[name] == null) candidate.setByName(name, legacy)
+            }
+            if (LegacyEngineDefaults.pinsCleanupOff(settings.language) { stored[it] == null }) {
+                candidate.setByName(
+                    LegacyEngineDefaults.USE_SUBTITLE_REGEX_FILTER_KEY,
+                    LegacyEngineDefaults.USE_SUBTITLE_REGEX_FILTER,
+                )
+            }
+            val stash =
+                settings.languageStash.mapValues { (code, parked) ->
+                    if (LegacyEngineDefaults.pinsCleanupOff(code) { parked[it] == null }) {
+                        parked +
+                            (LegacyEngineDefaults.USE_SUBTITLE_REGEX_FILTER_KEY to LegacyEngineDefaults.USE_SUBTITLE_REGEX_FILTER)
+                    } else {
+                        parked
+                    }
+                }
+            if (stash != settings.languageStash) {
+                candidate[Keys.languageStash] = checkNotNull(LanguageStashPreferenceCodec.encode(stash))
+            }
         }
 
         internal fun migrationRequired(preferences: Preferences): Boolean {
@@ -284,6 +328,11 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.readingToneColor, value.readingToneColor)
                 candidate.setOrRemove(Keys.strictCardOrder, value.strictCardOrder)
                 candidate.setOrRemove(Keys.mergeIncompleteCues, value.mergeIncompleteCues)
+                candidate.setOrRemove(Keys.pickBestSentence, value.pickBestSentence)
+                candidate.setOrRemove(Keys.skipOpeningEnding, value.skipOpeningEnding)
+                candidate.setOrRemove(Keys.normalizeAudioLoudness, value.normalizeAudioLoudness)
+                candidate.setOrRemove(Keys.cropMangaToText, value.cropMangaToText)
+                candidate.setOrRemove(Keys.knownFromReviewedCards, value.knownFromReviewedCards)
                 candidate[Keys.secondarySubtitleEnabled] = value.secondarySubtitleEnabled
                 candidate.setOrRemove(Keys.pitchCategoryFormat, value.pitchCategoryFormat?.wireValue)
                 candidate.setOrRemove(Keys.maxParallelWorkers, value.maxParallelWorkers)
@@ -522,6 +571,11 @@ class DataStoreAppSettingsRepository internal constructor(
                     readingToneColor = decoder.read(Keys.readingToneColor, null, { it }),
                     strictCardOrder = decoder.read(Keys.strictCardOrder, null, { it }),
                     mergeIncompleteCues = decoder.read(Keys.mergeIncompleteCues, null, { it }),
+                    pickBestSentence = decoder.read(Keys.pickBestSentence, null, { it }),
+                    skipOpeningEnding = decoder.read(Keys.skipOpeningEnding, null, { it }),
+                    normalizeAudioLoudness = decoder.read(Keys.normalizeAudioLoudness, null, { it }),
+                    cropMangaToText = decoder.read(Keys.cropMangaToText, null, { it }),
+                    knownFromReviewedCards = decoder.read(Keys.knownFromReviewedCards, null, { it }),
                     secondarySubtitleEnabled =
                         decoder.read(Keys.secondarySubtitleEnabled, false, { it }),
                     pitchCategoryFormat =
@@ -620,6 +674,14 @@ class DataStoreAppSettingsRepository internal constructor(
                 }
             AppSettingsValidator.validate(AppSettings(enabledWordsets = decoded))
             return decoded
+        }
+
+        private fun MutablePreferences.setByName(
+            name: String,
+            value: Any,
+        ) {
+            @Suppress("UNCHECKED_CAST")
+            this[Keys.byName.getValue(name) as Preferences.Key<Any>] = value
         }
 
         private fun <T : Any> MutablePreferences.setOrRemove(
@@ -730,6 +792,11 @@ class DataStoreAppSettingsRepository internal constructor(
             val readingToneColor = register(booleanPreferencesKey("reading_tone_color"))
             val strictCardOrder = register(booleanPreferencesKey("strict_card_order"))
             val mergeIncompleteCues = register(booleanPreferencesKey("merge_incomplete_cues"))
+            val pickBestSentence = register(booleanPreferencesKey("pick_best_sentence"))
+            val skipOpeningEnding = register(booleanPreferencesKey("skip_opening_ending"))
+            val normalizeAudioLoudness = register(booleanPreferencesKey("normalize_audio_loudness"))
+            val cropMangaToText = register(booleanPreferencesKey("crop_manga_to_text"))
+            val knownFromReviewedCards = register(booleanPreferencesKey("known_from_reviewed_cards"))
             val secondarySubtitleEnabled =
                 register(booleanPreferencesKey("secondary_subtitle_enabled"))
             val pitchCategoryFormat = register(stringPreferencesKey("pitch_category_format"))

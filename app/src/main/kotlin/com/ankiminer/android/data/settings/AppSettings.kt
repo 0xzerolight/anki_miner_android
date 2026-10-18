@@ -176,8 +176,20 @@ data class AppSettings(
     val strictCardOrder: Boolean? = null,
     val mergeIncompleteCues: Boolean? = null,
     /**
-     * Shows the Video tab's second subtitle picker. Kotlin-only: the engine never reads its own
-     * `secondary_subtitle_enabled`, so the snapshot mapper never emits it.
+     * Desktop's 2026-10 feature batch, portable and global. Null takes the engine default: on for
+     * the first four ([EngineDefaults.PICK_BEST_SENTENCE] and its neighbours), off for
+     * [knownFromReviewedCards]. A store from before them is migrated to an explicit `false`, as
+     * desktop's `keep_legacy_feature_switches` keeps an existing install's behaviour.
+     */
+    val pickBestSentence: Boolean? = null,
+    val skipOpeningEnding: Boolean? = null,
+    val normalizeAudioLoudness: Boolean? = null,
+    val cropMangaToText: Boolean? = null,
+    val knownFromReviewedCards: Boolean? = null,
+    /**
+     * Shows the Video tab's second subtitle picker. Kotlin-only: the engine now reads its own
+     * `secondary_subtitle_enabled` to pick a translation track itself (through the deferred
+     * `audio_condenser`), so the snapshot mapper must never emit it; `test_config_map.py` pins it.
      */
     val secondarySubtitleEnabled: Boolean = false,
     val pitchCategoryFormat: PitchCategoryFormat? = null,
@@ -242,6 +254,11 @@ data class AppSettings(
             readingToneColor = null,
             strictCardOrder = null,
             mergeIncompleteCues = null,
+            pickBestSentence = null,
+            skipOpeningEnding = null,
+            normalizeAudioLoudness = null,
+            cropMangaToText = null,
+            knownFromReviewedCards = null,
             secondarySubtitleEnabled = false,
             pitchCategoryFormat = null,
             maxParallelWorkers = null,
@@ -861,6 +878,11 @@ internal object EngineSettingsSnapshotMapper {
         settings.readingToneColor?.let { values["reading_tone_color"] = bool(it) }
         settings.strictCardOrder?.let { values["strict_card_order"] = bool(it) }
         settings.mergeIncompleteCues?.let { values["merge_incomplete_cues"] = bool(it) }
+        settings.pickBestSentence?.let { values["pick_best_sentence"] = bool(it) }
+        settings.skipOpeningEnding?.let { values["skip_opening_ending"] = bool(it) }
+        settings.normalizeAudioLoudness?.let { values["normalize_audio_loudness"] = bool(it) }
+        settings.cropMangaToText?.let { values["crop_manga_to_text"] = bool(it) }
+        settings.knownFromReviewedCards?.let { values["known_from_reviewed_cards"] = bool(it) }
         // secondarySubtitleEnabled is deliberately absent: it only gates the Video tab's picker.
         settings.pitchCategoryFormat?.let { values["pitch_category_format"] = text(it.wireValue) }
         settings.maxParallelWorkers?.let { values["max_parallel_workers"] = integer(it) }

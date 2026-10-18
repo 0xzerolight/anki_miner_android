@@ -19,6 +19,8 @@ _KINDS = {"dict": "yomitan-dictionary", "freq": "frequency", "pitch": "pitch"}
 _NOT_DESKTOP_ROWS = frozenset({"unidic", "language-data"})
 #: Every exclusion that only waits for the per-language pinning task.
 PENDING_PIN = "not pinned yet: the per-language fan-out (C.7) pins it"
+#: Desktop's FreeDict rows are StarDict books, read only by ``import_stardict``.
+STARDICT_NOT_VENDORED = "StarDict importer not vendored"
 
 
 def assert_catalog_complete(

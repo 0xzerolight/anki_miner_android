@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -141,5 +142,21 @@ class WordFilterAndSentenceSettingsTest {
         composeRule.onNodeWithText("Secondary subtitles").performClick()
 
         composeRule.runOnIdle { assertTrue(latest.secondarySubtitleEnabled) }
+    }
+
+    /** Unset shows the engine's default (on); a click stores the user's own value in the draft. */
+    @Test
+    fun theBestSentenceRowShowsTheEngineDefaultAndWritesItsField() {
+        val row = "Pick the clearest sentence for each word"
+        setContent { draft, recorder, onChange ->
+            recorder.begin(SettingsCategory.SENTENCES)
+            sentencesSettings(draft, recorder, onChange)
+        }
+
+        scrollTo(hasText(row))
+        composeRule.onNodeWithText(row).assertIsOn()
+        composeRule.onNodeWithText(row).performClick()
+
+        composeRule.runOnIdle { assertEquals(false, latest.pickBestSentence) }
     }
 }

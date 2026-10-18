@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from catalog_completeness import assert_catalog_complete
+from catalog_completeness import STARDICT_NOT_VENDORED, assert_catalog_complete
 from language_data_fixtures import (
     assert_tagger_matches,
     install_language_data,
@@ -143,7 +143,7 @@ def test_every_desktop_catalog_row_is_pinned_or_excluded(initialized_bridge_home
             "wty-sh-en": "wty-sh-en-2026.09.20",
             "opensubtitles-hr": "opensubtitles-hr-2018",
         },
-        excluded={},
+        excluded={"freedict-hrv-eng": STARDICT_NOT_VENDORED},
     )
 
 

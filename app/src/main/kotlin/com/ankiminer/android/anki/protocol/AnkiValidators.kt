@@ -131,6 +131,9 @@ internal object AnkiValidators {
                     if (note.fields.size != (projected[note.modelId] ?: 1)) {
                         failValue("known-vocabulary note does not match its field projection")
                     }
+                    if ((note.reviewed != null) != request.scope.markReviewed) {
+                        failValue("known-vocabulary reviewed marks do not match the request")
+                    }
                 }
             }
             request is ScanFirstFieldsRequest && request.scope is KnownVocabularyScope ->

@@ -174,6 +174,11 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "max_sentence_duration_seconds": 12.0,
         "max_sentence_chars": 80,
         "merge_incomplete_cues": True,
+        "pick_best_sentence": True,
+        "skip_opening_ending": True,
+        "normalize_audio_loudness": True,
+        "crop_manga_to_text": True,
+        "known_from_reviewed_cards": False,
         "reading_min_occurrence": 2,
         "max_parallel_workers": 4,
         "language": "ja",
@@ -2497,6 +2502,75 @@ def test_verify_target_result_rejects_deck_created_true(
     ],
 )
 def test_anki_callback_schema_is_closed(schemas: dict[str, dict[str, Any]], payload: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["anki"]).validate(payload)
+
+
+# Reviewed marks on the known-vocabulary scan (desktop F-01): the request opts in with the constant
+# markReviewed, absent when off, and every returned note then says whether it has a reviewed card.
+def _marked_known_scan(**scope: object) -> dict[str, Any]:
+    return {
+        "runId": "run_" + "a" * 32,
+        "requestId": "anki_" + "b" * 32,
+        "scope": {
+            "kind": "knownVocabulary",
+            "excludedDecks": [],
+            "fieldOrdinals": [],
+            "cursor": None,
+            "limits": {
+                "maxScannedNotes": 256,
+                "maxItems": 256,
+                "maxItemUtf8Bytes": 65536,
+                "maxTotalUtf8Bytes": 262144,
+            },
+            "markReviewed": True,
+            **scope,
+        },
+    }
+
+
+def _marked_known_page(*notes: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "runId": "run_" + "a" * 32,
+        "requestId": "anki_" + "b" * 32,
+        "notes": list(notes),
+        "scannedNotes": len(notes),
+        "nextCursor": None,
+    }
+
+
+def test_known_scan_reviewed_marks_validate(schemas: dict[str, dict[str, Any]]) -> None:
+    validator = Draft202012Validator(schemas["anki"])
+
+    validator.validate(_marked_known_scan())
+    validator.validate(
+        _marked_known_page(
+            {"modelId": 1, "fields": ["猫"], "reviewed": True},
+            {"modelId": 1, "fields": ["犬"], "reviewed": False},
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _marked_known_scan(markReviewed=False),
+        _marked_known_scan(markReviewed="true"),
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "scope": {
+                "kind": "noteTypes",
+                "limits": {"maxItems": 1024, "maxTotalUtf8Bytes": 524288},
+                "markReviewed": True,
+            },
+        },
+        _marked_known_page({"modelId": 1, "fields": ["猫"], "reviewed": 1}),
+        _marked_known_page({"modelId": 1, "fields": ["猫"], "reviewed": None}),
+    ],
+    ids=["mark-false", "mark-string", "mark-on-note-types", "reviewed-integer", "reviewed-null"],
+)
+def test_known_scan_reviewed_marks_are_strict(schemas: dict[str, dict[str, Any]], payload: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         Draft202012Validator(schemas["anki"]).validate(payload)
 

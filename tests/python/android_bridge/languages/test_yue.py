@@ -133,14 +133,17 @@ def test_tokens_match_the_desktop_fixture(
 def test_switching_to_cantonese_applies_its_scoped_defaults(initialized_bridge_home: Path) -> None:
     del initialized_bridge_home
     from anki_miner.config import AnkiMinerConfig
+    from anki_miner.config.config import DEFAULT_SUBTITLE_CLEANUP_PATTERN
     from anki_miner.languages.switching import LANGUAGE_SCOPED_FIELDS, switch_language
     from anki_miner.languages.yue.pos import YUE_ALLOWED_POS, YUE_EXCLUDED_SUBTYPES
 
-    ja = replace(AnkiMinerConfig(), use_subtitle_regex_filter=True, subtitle_regex_filter="ja-only")
+    ja = replace(AnkiMinerConfig(), use_subtitle_regex_filter=False, subtitle_regex_filter="ja-only")
     cantonese = switch_language(ja, "yue")
 
     assert cantonese.language == "yue"
-    assert cantonese.use_subtitle_regex_filter is False
+    # The built-in cleanup, on for yue as for ja and zh.
+    assert cantonese.use_subtitle_regex_filter is True
+    assert cantonese.subtitle_regex_filter == DEFAULT_SUBTITLE_CLEANUP_PATTERN
     assert cantonese.allowed_pos == YUE_ALLOWED_POS == ("NOUN", "VERB", "ADJ", "ADV")
     assert cantonese.excluded_subtypes == YUE_EXCLUDED_SUBTYPES
     assert cantonese.reading_tone_color is True

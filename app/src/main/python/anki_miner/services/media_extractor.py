@@ -46,6 +46,39 @@ _RESOLVE: Any = object()
 #: negative-length ffmpeg ``-t`` if a bound ever arrives unclamped.
 MIN_CLIP_SECONDS = 0.2
 
+#: Tallest static card picture when the caller names no height. Matches the
+#: animated picture's default; a shorter source is never enlarged.
+STILL_MAX_HEIGHT = 720
+
+#: libopus's bitrate ceiling for one channel; card clips are mono.
+OPUS_MONO_MAX_KBPS = 256
+
+#: F-02 (R1): one loudness target for every sentence clip and condensed track,
+#: EBU R128 in a single pass. Fixed in code on purpose: there is no dB setting.
+LOUDNORM_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11"
+
+#: loudnorm upsamples to 192 kHz internally, so the output rate is pinned back
+#: to one that libmp3lame and libopus both take.
+LOUDNORM_SAMPLE_RATE = "48000"
+
+#: CC-07: the fade at each end of a clip, so a cut mid-waveform does not click.
+#: It follows the loudness switch, so a switched-off clip stays byte-identical.
+CLIP_FADE_SECONDS = 0.03
+
+
+def clip_audio_filter(duration: float) -> str:
+    """The ``-af`` chain for a normalised sentence clip ``duration`` seconds long.
+
+    Loudness first, then the fades, so the fades act on the final level. The
+    clip's own clock starts at 0 (``-ss`` sits before ``-i``), so the fade-out
+    starts ``CLIP_FADE_SECONDS`` before the end of the window the cut was given.
+    """
+    fade_out_start = max(duration - CLIP_FADE_SECONDS, 0.0)
+    return (
+        f"{LOUDNORM_FILTER},afade=t=in:d={CLIP_FADE_SECONDS},"
+        f"afade=t=out:st={fade_out_start:.3f}:d={CLIP_FADE_SECONDS}"
+    )
+
 
 def resolve_audio_window(word: TokenizedWord, padding: float) -> tuple[float, float]:
     """Return ``(start, duration)`` in seconds for ``word``'s audio clip.
@@ -175,8 +208,8 @@ class MediaExtractorService:
         Args:
             config: Configuration for media extraction
             still_height: Scale the static picture to this height in pixels
-                (the ``--api media`` call's key); ``None`` keeps the video's
-                own size, as cards always have.
+                (the ``--api media`` call's key); ``None`` caps it at
+                ``STILL_MAX_HEIGHT`` without enlarging a shorter video.
         """
         self.config = config
         self._still_height = still_height
@@ -1086,7 +1119,12 @@ class MediaExtractorService:
         if screenshot_time is None:
             screenshot_time = resolve_screenshot_time(None, start_time, duration, self.config.screenshot_offset)
 
-        scale = ["-vf", f"scale=-2:{self._still_height}"] if self._still_height else []
+        # The quotes are filtergraph quoting for the comma inside min(); ffmpeg
+        # reads them itself, so they belong in the argv element.
+        scale = [
+            "-vf",
+            (f"scale=-2:{self._still_height}" if self._still_height else f"scale=-2:'min({STILL_MAX_HEIGHT},ih)'"),
+        ]
         cmd = [
             resolve_ffmpeg(self.config),
             "-y",  # Overwrite output
@@ -1561,23 +1599,30 @@ class MediaExtractorService:
             cmd.extend(["-map", "0:a:0"])  # First audio stream
             self._warn_no_japanese_audio_once(video_file)
 
+        # libopus takes at most 256 kbps per channel, so a mono opus clip caps
+        # there; a saved 272-320 kbps opus setting would otherwise fail every cut.
+        bitrate = self.config.audio_bitrate
+        if encoder == "libopus":
+            bitrate = min(bitrate, OPUS_MONO_MAX_KBPS)
         cmd.extend(
             [
                 "-vn",  # No video
                 "-acodec",
                 encoder,
                 "-b:a",
-                f"{self.config.audio_bitrate}k",
+                f"{bitrate}k",
             ]
         )
 
-        # libopus rejects multi-channel input (e.g. 5.1 surround eac3 common in
-        # anime BD/WEB-DL releases) without an explicit channel mapping. Downmix
-        # to stereo — Anki flashcards play through headphones/laptop speakers,
-        # surround serves no purpose. MP3 (libmp3lame) tolerates 5.1 natively so
-        # we leave its channel layout alone to preserve existing behavior.
-        if self.config.audio_format == "opus":
-            cmd.extend(["-ac", "2"])
+        # Mono for every codec: a dialogue clip gains nothing from stereo, so the
+        # bitrate all goes to one channel. -ac also downmixes 5.1 (common in anime
+        # BD/WEB-DL releases), which libopus rejects without a channel mapping.
+        cmd.extend(["-ac", "1"])
+
+        # F-02 + CC-07 (R1): one switch covers the loudness filter and the fade.
+        # Off, the command stays byte-identical to the cut before the switch.
+        if self.config.normalize_audio_loudness:
+            cmd.extend(["-af", clip_audio_filter(audio_duration), "-ar", LOUDNORM_SAMPLE_RATE])
 
         cmd.append(str(output_path))
 

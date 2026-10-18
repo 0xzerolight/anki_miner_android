@@ -62,6 +62,11 @@ MIRRORED_FIELDS = {
     "READING_MINIMUM_OCCURRENCE": "reading_min_occurrence",
     "MAX_PARALLEL_WORKERS": "max_parallel_workers",
     "PITCH_CATEGORY_FORMAT": "pitch_category_format",
+    "PICK_BEST_SENTENCE": "pick_best_sentence",
+    "SKIP_OPENING_ENDING": "skip_opening_ending",
+    "NORMALIZE_AUDIO_LOUDNESS": "normalize_audio_loudness",
+    "CROP_MANGA_TO_TEXT": "crop_manga_to_text",
+    "KNOWN_FROM_REVIEWED_CARDS": "known_from_reviewed_cards",
 }
 
 # Kotlin enum entry -> the wire string the engine stores. Keeps the two enum-valued mirrors
@@ -77,11 +82,50 @@ _KOTLIN_CONST = re.compile(
     r"^\s*(?:const\s+)?val\s+(?P<name>[A-Z][A-Z0-9_]*)\s*:\s*\w+\s*=\s*(?P<value>.+?)\s*$",
     re.MULTILINE,
 )
+# ``val NAME: List<String> = listOf(...)`` whose items are raw strings: the one list-valued mirror.
+_KOTLIN_STRING_LIST = re.compile(
+    r"^\s*val\s+(?P<name>[A-Z][A-Z0-9_]*)\s*:\s*List<String>\s*=\s*listOf\((?P<items>.*?)\)\s*$",
+    re.MULTILINE | re.DOTALL,
+)
+_KOTLIN_RAW_STRING = re.compile(r'"""(.*?)"""', re.DOTALL)
+
+# Kotlin list constant -> the module-level engine constant it mirrors.
+MIRRORED_LISTS = {"SUBTITLE_CLEANUP_PIECES": "SUBTITLE_CLEANUP_PIECES"}
+
+
+def _engine_constants(tree: ast.Module) -> dict[str, object]:
+    """The module-level constants a dataclass default names: the built-in subtitle cleanup.
+
+    ``DEFAULT_SUBTITLE_CLEANUP_PATTERN`` is ``"|".join(SUBTITLE_CLEANUP_PIECES)``; any other shape
+    fails here rather than being guessed at.
+    """
+    found: dict[str, object] = {}
+    for node in tree.body:
+        target = node.target if isinstance(node, ast.AnnAssign) else None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+        if not isinstance(target, ast.Name) or node.value is None:
+            continue
+        if target.id == "SUBTITLE_CLEANUP_PIECES":
+            found[target.id] = ast.literal_eval(node.value)
+        elif target.id == "DEFAULT_SUBTITLE_CLEANUP_PATTERN":
+            value = node.value
+            if not (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Attribute)
+                and value.func.attr == "join"
+                and isinstance(value.func.value, ast.Constant)
+                and [ast.unparse(argument) for argument in value.args] == ["SUBTITLE_CLEANUP_PIECES"]
+            ):
+                raise AssertionError(f"DEFAULT_SUBTITLE_CLEANUP_PATTERN changed shape: {ast.unparse(value)}")
+            found[target.id] = value.func.value.value.join(found["SUBTITLE_CLEANUP_PIECES"])
+    return found
 
 
 def _engine_defaults() -> dict[str, object]:
-    """Every ``AnkiMinerConfig`` field that has a literal default."""
+    """Every ``AnkiMinerConfig`` field whose default is a literal or names a resolved constant."""
     tree = ast.parse(CONFIG_PY.read_text(encoding="utf-8"))
+    constants = _engine_constants(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == "AnkiMinerConfig":
             found: dict[str, object] = {}
@@ -89,6 +133,9 @@ def _engine_defaults() -> dict[str, object]:
                 if not isinstance(statement, ast.AnnAssign):
                     continue
                 if not isinstance(statement.target, ast.Name) or statement.value is None:
+                    continue
+                if isinstance(statement.value, ast.Name) and statement.value.id in constants:
+                    found[statement.target.id] = constants[statement.value.id]
                     continue
                 try:
                     found[statement.target.id] = ast.literal_eval(statement.value)
@@ -108,6 +155,8 @@ def _kotlin_defaults() -> dict[str, object]:
             value: object = KOTLIN_ENUM_WIRE_VALUES[raw]
         elif raw in ("true", "false"):
             value = raw == "true"
+        elif raw.startswith('"""') and raw.endswith('"""') and len(raw) >= 6:
+            value = raw[3:-3]
         elif raw.startswith('"') and raw.endswith('"'):
             value = raw[1:-1]
         else:
@@ -120,6 +169,13 @@ def _kotlin_defaults() -> dict[str, object]:
                 ) from None
         found[match.group("name")] = value
     return found
+
+
+def _kotlin_lists() -> dict[str, list[str]]:
+    return {
+        match.group("name"): _KOTLIN_RAW_STRING.findall(match.group("items"))
+        for match in _KOTLIN_STRING_LIST.finditer(DEFAULTS_KT.read_text(encoding="utf-8"))
+    }
 
 
 class EngineDefaultsMirrorTests(unittest.TestCase):
@@ -146,9 +202,23 @@ class EngineDefaultsMirrorTests(unittest.TestCase):
             + "\n".join(mismatches),
         )
 
+    def test_the_built_in_subtitle_cleanup_matches_the_engine(self) -> None:
+        """The pieces the Sentences cleanup box toggles, and the default pattern they join into."""
+        constants = _engine_constants(ast.parse(CONFIG_PY.read_text(encoding="utf-8")))
+        kotlin = _kotlin_lists()
+        for constant, engine_name in MIRRORED_LISTS.items():
+            self.assertIn(constant, kotlin, f"EngineDefaults.kt is missing {constant}")
+            self.assertEqual(list(constants[engine_name]), kotlin[constant])
+        self.assertEqual(
+            constants["DEFAULT_SUBTITLE_CLEANUP_PATTERN"],
+            _kotlin_defaults()["SUBTITLE_REGEX_FILTER"],
+        )
+        self.assertEqual("|".join(kotlin["SUBTITLE_CLEANUP_PIECES"]), _kotlin_defaults()["SUBTITLE_REGEX_FILTER"])
+
     def test_mirror_declares_nothing_the_map_does_not_cover(self) -> None:
         """A new constant must be mapped, or it is guarded by nothing."""
         unmapped = sorted(set(_kotlin_defaults()) - set(MIRRORED_FIELDS))
+        self.assertEqual([], sorted(set(_kotlin_lists()) - set(MIRRORED_LISTS)))
         self.assertEqual(
             [],
             unmapped,

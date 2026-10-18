@@ -182,6 +182,9 @@ def isolated_services_namespace(initialized_bridge_home: Path) -> Iterator[None]
     # anki_service also imports the response validator now. Nothing can reach it
     # while both posters are hard failures, so it gets the same guard.
     ankiconnect._expect_list = unexpected_http  # type: ignore[attr-defined]
+    # And the deck-name escaper for excluded-deck search clauses. The parity
+    # tests here exclude no deck, so it is never called either.
+    ankiconnect.escape_anki_search = unexpected_http  # type: ignore[attr-defined]
     sys.modules[ankiconnect.__name__] = ankiconnect
     reading_images = types.ModuleType(f"{prefix}.reading.images")
     reading_images.prepare_card_image = unexpected_http  # type: ignore[attr-defined]
@@ -212,6 +215,10 @@ class FakeKotlinAnki:
         self.known_notes: list[tuple[int, list[str]]] | None = None
         self.known_note_types: list[dict[str, Any]] = []
         self.known_note_decks: list[set[str]] = []
+        # Index-aligned with the known rows: whether the note has a reviewed card outside the
+        # excluded decks. Sent only to a scan that asks for reviewed marks.
+        self.known_note_reviewed: list[bool] = []
+        self.raw_requests: list[tuple[str, str]] = []
         self.duplicate_fields: list[str] = []
         self.duplicate_note_ids: dict[int, int] = {}
         self.errors: dict[str, tuple[str, str, bool]] = {}
@@ -483,6 +490,7 @@ class FakeKotlinAnki:
         return "released"
 
     def _request(self, method: str, raw: str) -> dict[str, Any]:
+        self.raw_requests.append((method, raw))
         envelope = json.loads(raw)
         _ANKI_VALIDATOR.validate(envelope["payload"])
         if method == "ankiStoreMedia":
@@ -596,6 +604,7 @@ class FakeKotlinAnki:
             scope = request["scope"]
             cursor = scope["cursor"]
             field_ordinals = tuple((entry["modelId"], tuple(entry["ordinals"])) for entry in scope["fieldOrdinals"])
+            mark_reviewed = scope.get("markReviewed", False)
             if cursor is None:
                 start = 0
                 next_ordinal = 1
@@ -605,6 +614,7 @@ class FakeKotlinAnki:
                 assert cursor_state["runId"] == request["runId"]
                 assert cursor_state["excludedDecks"] == tuple(scope["excludedDecks"])
                 assert cursor_state["fieldOrdinals"] == field_ordinals
+                assert cursor_state["markReviewed"] == mark_reviewed
                 assert cursor_state["ordinal"] == cursor["ordinal"]
                 start = cursor_state["start"]
                 scanned_before = cursor_state["scannedNotes"]
@@ -638,7 +648,10 @@ class FakeKotlinAnki:
                     break
                 scanned_notes += 1
                 if not note_is_excluded:
-                    page_notes.append({"modelId": model_id, "fields": values})
+                    note: dict[str, object] = {"modelId": model_id, "fields": values}
+                    if mark_reviewed:
+                        note["reviewed"] = index < len(self.known_note_reviewed) and self.known_note_reviewed[index]
+                    page_notes.append(note)
                     page_utf8_bytes += note_bytes
             next_index = start + scanned_notes
             total_scanned = scanned_before + scanned_notes
@@ -649,6 +662,7 @@ class FakeKotlinAnki:
                     "runId": request["runId"],
                     "excludedDecks": tuple(scope["excludedDecks"]),
                     "fieldOrdinals": field_ordinals,
+                    "markReviewed": mark_reviewed,
                     "ordinal": next_ordinal,
                     "start": next_index,
                     "scannedNotes": total_scanned,
@@ -928,6 +942,30 @@ class FakeKotlinAnki:
 
     def requests_for(self, method: str) -> list[dict[str, Any]]:
         return [envelope for name, envelope in self.requests if name == method]
+
+
+class MarkedScanFailingKotlin(FakeKotlinAnki):
+    """Fails every known-vocabulary scan that asks for reviewed marks; unmarked scans succeed.
+
+    The reviewed-marks search (`-is:new`) is a provider query of its own, so it can fail, or outrun
+    the bulk deadline, while the page reads would not.
+    """
+
+    def ankiScanFirstFields(self, raw: str) -> str:
+        if not json.loads(raw)["payload"]["scope"].get("markReviewed"):
+            return super().ankiScanFirstFields(raw)
+        request = self._request("ankiScanFirstFields", raw)
+        return encode_message(
+            "anki.error",
+            {
+                "runId": request["runId"],
+                "requestId": request["requestId"],
+                "operation": "scanFirstFields",
+                "code": "query_failed",
+                "message": "reviewed search failed",
+                "retryable": False,
+            },
+        )
 
 
 def _config(home: Path, **changes: object) -> Any:
@@ -2173,6 +2211,256 @@ def test_adapter_carries_the_anki_service_surface_the_engine_now_calls(
     assert vocabulary["allow_degraded"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
+# Count a word as known only after its card has been reviewed (desktop F-01). Phase 2 asks for
+# every card first and then for the reviewed ones; with the setting on, one walk marks each note and
+# the adapter keeps both sets, which it clears together.
+
+
+def _reviewed_config(home: Path, **changes: object) -> Any:
+    return _config(home, known_from_reviewed_cards=True, **changes)
+
+
+def test_reviewed_vocabulary_holds_only_notes_with_a_reviewed_card(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫", "<b>犬</b>", "鳥", "plain English"]
+    kotlin.known_note_reviewed = [True, True, False, True]
+    adapter = _adapter(_reviewed_config(initialized_bridge_home), kotlin)
+
+    existing = adapter.get_existing_vocabulary()
+    reviewed = adapter.get_reviewed_vocabulary()
+
+    assert existing == {"猫", "犬", "鳥"}
+    assert reviewed == {"猫", "犬"}
+    assert adapter.get_reviewed_vocabulary() is reviewed
+    # The reviewed set came out of the walk that answered get_existing_vocabulary.
+    assert _known_scopes(kotlin) == [
+        {
+            "kind": "knownVocabulary",
+            "excludedDecks": [],
+            "fieldOrdinals": [],
+            "cursor": None,
+            "limits": _KNOWN_VOCABULARY_LIMITS,
+            "markReviewed": True,
+        }
+    ]
+
+
+def test_reviewed_vocabulary_leaves_out_excluded_decks(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["親", "子", "採用", "新"]
+    kotlin.known_note_decks = [{"Ignored"}, {"Ignored::Child"}, {"Included"}, {"Included"}]
+    kotlin.known_note_reviewed = [True, True, True, False]
+    adapter = _adapter(_reviewed_config(initialized_bridge_home, excluded_decks=("Ignored",)), kotlin)
+
+    assert adapter.get_reviewed_vocabulary() == {"採用"}
+    # Asked first, the reviewed set's walk answers the every-card question too.
+    assert adapter.get_existing_vocabulary() == {"採用", "新"}
+    (scope,) = _known_scopes(kotlin)
+    assert scope["excludedDecks"] == ["Ignored"]
+    assert scope["markReviewed"] is True
+
+
+def test_reviewed_vocabulary_spans_every_page(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = [f"語{index}" for index in range(513)]
+    kotlin.known_note_reviewed = [index % 2 == 0 for index in range(513)]
+    adapter = _adapter(_reviewed_config(initialized_bridge_home), kotlin)
+
+    assert adapter.get_reviewed_vocabulary() == {f"語{index}" for index in range(0, 513, 2)}
+    assert adapter.get_existing_vocabulary() == set(kotlin.known_fields)
+    scopes = _known_scopes(kotlin)
+    assert [scope["cursor"] is None for scope in scopes] == [True, False, False]
+    assert all(scope["markReviewed"] is True for scope in scopes)
+
+
+def test_reviewed_marks_travel_with_notes_the_resolver_buffers(
+    initialized_bridge_home: Path,
+) -> None:
+    # Every shared-deck note type is still being sampled when the walk ends, so each note comes
+    # back out of the resolver at flush, behind its whole note type, and must keep its own mark.
+    kotlin = FakeKotlinAnki()
+    kotlin.known_note_types = _SHARED_DECK_NOTE_TYPES
+    kotlin.known_notes = _shared_deck_notes()
+    kotlin.known_note_reviewed = [index in {0, 5, 8, 12} for index in range(len(kotlin.known_notes))]
+    adapter = _adapter(_reviewed_config(initialized_bridge_home), kotlin)
+
+    assert adapter.get_existing_vocabulary() == _SHARED_DECK_KNOWN_WORDS
+    assert adapter.get_reviewed_vocabulary() == {"猫", "人", "家族", "明日は晴れるでしょう。"}
+
+
+def test_reviewed_setting_off_sends_the_known_scan_bytes_unchanged(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import android_bridge.callbacks as callbacks_module
+
+    monkeypatch.setattr(callbacks_module, "uuid4", lambda: types.SimpleNamespace(hex="b" * 32))
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫"]
+    adapter = _adapter(_config(initialized_bridge_home, excluded_decks=("Ignored",)), kotlin)
+
+    adapter.get_existing_vocabulary()
+
+    raws = [raw for method, raw in kotlin.raw_requests if method == "ankiScanFirstFields"]
+    assert raws[1] == (
+        '{"schemaVersion":1,"type":"anki.scanfirstfields.request","payload":{"scope":{"kind":"knownVocabulary",'
+        '"excludedDecks":["Ignored"],"fieldOrdinals":[],"cursor":null,"limits":{"maxScannedNotes":256,'
+        '"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}},'
+        '"runId":"run_' + "a" * 32 + '","requestId":"anki_' + "b" * 32 + '"}}'
+    )
+
+
+def test_reviewed_vocabulary_marks_its_own_walk_when_the_setting_is_off(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫", "犬"]
+    kotlin.known_note_reviewed = [True, False]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    existing = adapter.get_existing_vocabulary()
+
+    assert adapter.get_reviewed_vocabulary() == {"猫"}
+    assert adapter.get_existing_vocabulary() is existing
+    assert ["markReviewed" in scope for scope in _known_scopes(kotlin)] == [False, True]
+
+
+def test_invalidation_and_close_clear_the_reviewed_cache(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫", "犬"]
+    kotlin.known_note_reviewed = [False, False]
+    adapter = _adapter(_reviewed_config(initialized_bridge_home), kotlin)
+    assert adapter.get_reviewed_vocabulary() == set()
+
+    kotlin.known_note_reviewed = [True, False]
+    assert adapter.get_reviewed_vocabulary() == set()
+    adapter.invalidate_existing_vocabulary_cache()
+    assert adapter.get_reviewed_vocabulary() == {"猫"}
+    assert len(_known_scopes(kotlin)) == 2
+
+    adapter.close()
+    assert adapter._reviewed_vocab_cache is None
+
+
+def test_created_cards_join_every_card_but_not_the_reviewed_set(
+    initialized_bridge_home: Path,
+) -> None:
+    # A card made this run is new. Desktop adds it to the every-card cache only.
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["犬"]
+    kotlin.known_note_reviewed = [True]
+    adapter = _adapter(_reviewed_config(initialized_bridge_home), kotlin)
+    adapter.get_existing_vocabulary()
+
+    adapter.create_cards_batch([_card("猫")])
+
+    assert adapter.get_existing_vocabulary() == {"犬", "猫"}
+    assert adapter.get_reviewed_vocabulary() == {"犬"}
+    assert len(_known_scopes(kotlin)) == 1
+
+
+def test_reviewed_vocabulary_failure_degrades_to_every_card(
+    initialized_bridge_home: Path,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+    from anki_miner.services.known_word_db import collect_knowledge_forms
+
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫", "犬"]
+    config = _config(initialized_bridge_home)
+    adapter = _adapter(config, kotlin)
+    existing = adapter.get_existing_vocabulary()
+    kotlin.errors["scanFirstFields"] = ("query_failed", "reviewed search failed", False)
+
+    with pytest.raises(AnkiConnectionError, match="reviewed search failed"):
+        adapter.get_reviewed_vocabulary()
+    assert adapter._reviewed_vocab_cache is None
+    # The engine's fallback: a failed review query counts every card, never nothing.
+    knowledge = collect_knowledge_forms(
+        None, replace(config, known_from_reviewed_cards=True), existing, adapter.get_reviewed_vocabulary
+    )
+    assert knowledge == {"猫", "犬"}
+
+
+def test_failed_reviewed_marks_fall_back_to_an_unmarked_walk(
+    initialized_bridge_home: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+    from anki_miner.services.known_word_db import collect_knowledge_forms
+
+    # With the setting on, phase 2's every-card read is the marked walk. Its reviewed search
+    # failing must not fail the run: desktop degrades only the reviewed query.
+    kotlin = MarkedScanFailingKotlin()
+    kotlin.known_fields = ["猫", "犬"]
+    kotlin.known_note_reviewed = [True, False]
+    config = _reviewed_config(initialized_bridge_home)
+    adapter = _adapter(config, kotlin)
+
+    with caplog.at_level(logging.WARNING, logger=anki_adapter_module.logger.name):
+        existing = adapter.get_existing_vocabulary()
+
+    assert existing == {"猫", "犬"}
+    assert ["markReviewed" in scope for scope in _known_scopes(kotlin)] == [True, False]
+    assert len([record for record in caplog.records if "Anki reviewed marks unavailable" in record.getMessage()]) == 1
+    # The failure is remembered, not retried: the engine gets AnkiConnectionError at once and
+    # scores against every card.
+    requests = len(kotlin.requests)
+    with pytest.raises(AnkiConnectionError, match="reviewed search failed"):
+        adapter.get_reviewed_vocabulary()
+    assert len(kotlin.requests) == requests
+    assert collect_knowledge_forms(None, config, existing, adapter.get_reviewed_vocabulary) == {"猫", "犬"}
+    # Invalidation forgets the failure along with the sets, so the next read tries marks again.
+    adapter.invalidate_existing_vocabulary_cache()
+    adapter.get_existing_vocabulary()
+    assert ["markReviewed" in scope for scope in _known_scopes(kotlin)] == [True, False, True, False]
+
+
+@pytest.mark.parametrize(
+    ("mark_reviewed", "note"),
+    [
+        (True, {"modelId": 1, "fields": ["猫"]}),
+        (True, {"modelId": 1, "fields": ["猫"], "reviewed": 1}),
+        (False, {"modelId": 1, "fields": ["猫"], "reviewed": True}),
+    ],
+    ids=["mark-missing", "mark-not-boolean", "mark-unrequested"],
+)
+def test_reviewed_marks_must_answer_the_request_exactly(
+    initialized_bridge_home: Path,
+    mark_reviewed: bool,
+    note: dict[str, Any],
+) -> None:
+    class OneNoteKotlin(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            if request["scope"]["kind"] == "noteTypes":
+                return self._note_types_result(request)
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "notes": [note],
+                    "scannedNotes": 1,
+                    "nextCursor": None,
+                },
+            )
+
+    config = _config(initialized_bridge_home, known_from_reviewed_cards=mark_reviewed)
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(config, OneNoteKotlin()).get_existing_vocabulary()
+    assert exc_info.value.code == "invalid_anki_response"
+
+
 def test_created_mined_forms_record_only_notes_anki_confirmed(
     initialized_bridge_home: Path,
 ) -> None:
@@ -2297,6 +2585,19 @@ def test_create_cards_batch_leaves_a_non_matching_source_alone(
 
     assert len(adapter.create_cards_batch([card])) == 1
     assert _source_field(kotlin) == "漫画作品 — 第一巻 @ p.1"
+
+
+def test_create_cards_batch_trims_the_space_a_blank_source_label_leaves(
+    initialized_bridge_home: Path,
+) -> None:
+    # The Video and Audio lanes hand the engine a blank series, so a file with no
+    # usable name composes an empty label and the field opens " @ ".
+    kotlin = FakeKotlinAnki()
+    card = replace(_card("猫"), extra_fields={"source": " @ 00:12:34"})
+    adapter = _adapter(_source_config(initialized_bridge_home), kotlin)
+
+    assert len(adapter.create_cards_batch([card])) == 1
+    assert _source_field(kotlin) == "@ 00:12:34"
 
 
 def test_create_cards_batch_without_a_source_prefix_is_unchanged(
@@ -3527,6 +3828,51 @@ def test_exact_tag_count_and_aggregate_utf8_boundary_is_accepted(
     request_tags = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["tags"]
     assert len(request_tags) == _MAX_NOTE_TAGS
     assert sum(len(tag.encode("utf-8")) for tag in request_tags) == (_MAX_NOTE_TAGS_UTF8_BYTES)
+
+
+def _tagged_card(card_tags: str) -> Any:
+    """A card carrying the tag string phase 5 rendered for its source."""
+
+    from anki_miner.services.anki_note_builder import CARD_TAGS_KEY
+
+    return replace(_card("猫"), extra_fields={CARD_TAGS_KEY: card_tags})
+
+
+@pytest.mark.parametrize(
+    ("rendered", "expected"),
+    [
+        # A four-byte character straddling the limit is dropped whole.
+        ("mined::" + "a" * 247 + "🐱b", "mined::" + "a" * 247),
+        # A cut that ends on the "::" separator leaves no empty component behind.
+        ("mined::" + "a" * 247 + "::episode", "mined::" + "a" * 247),
+    ],
+    ids=["character-boundary", "separator"],
+)
+def test_a_rendered_tag_past_the_byte_limit_is_cut_to_fit(
+    rendered: str,
+    expected: str,
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    config = _config(initialized_bridge_home, anki_tags="mine mined::{series}::{episode}")
+
+    assert len(_adapter(config, kotlin).create_cards_batch([_tagged_card(f"mine {rendered}")])) == 1
+    request_tags = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["tags"]
+    assert request_tags == ["mine", expected]
+
+
+def test_a_template_tag_past_the_byte_limit_still_fails_beside_rendered_tokens(
+    initialized_bridge_home: Path,
+) -> None:
+    long_tag = "x" * (_MAX_TAG_UTF8_BYTES + 1)
+    kotlin = FakeKotlinAnki()
+    config = _config(initialized_bridge_home, anki_tags=f"{long_tag} mined::{{series}}")
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(config, kotlin).create_cards_batch([_tagged_card(f"{long_tag} mined::Show")])
+
+    assert exc_info.value.code == "note_too_large"
+    assert not kotlin.requests_for("ankiCreateNotes")
 
 
 def test_json_escaping_drives_exact_envelope_batching(

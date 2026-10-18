@@ -23,6 +23,14 @@ FORMATS_KT = REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/settings/
 
 WIRE_VALUE = re.compile(r'^\s*[A-Z_]+\("(?P<wire>[a-z_]+)",\s*R\.string\.', re.MULTILINE)
 
+# Engine formats the Android import can never report, so they carry no Kotlin label. Kotlin
+# imports through the bounded parser, which reads the generic/Migaku shapes only: a Kindle
+# vocab.db or Lute CSV parses as undecodable or generic (test_resources.py pins this).
+DESKTOP_ONLY_FORMATS = {
+    "kindle_vocab": "Kindle import is desktop-only; the bounded Android parser never yields it",
+    "lute_csv": "Lute import is desktop-only; the bounded Android parser never yields it",
+}
+
 
 def _engine_format_keys() -> set[str]:
     module = ast.parse(IMPORT_PY.read_text(encoding="utf-8"))
@@ -38,7 +46,10 @@ class KnownWordsFormatLabelMirrorTest(unittest.TestCase):
     def test_every_format_key_has_a_kotlin_label(self) -> None:
         kotlin = {match.group("wire") for match in WIRE_VALUE.finditer(FORMATS_KT.read_text(encoding="utf-8"))}
         self.assertTrue(kotlin, "no wire values parsed from KnownWordsImportFormat.kt")
-        self.assertEqual(_engine_format_keys(), kotlin)
+        engine = _engine_format_keys()
+        self.assertLessEqual(set(DESKTOP_ONLY_FORMATS), engine, "a desktop-only exclusion names no engine format")
+        self.assertFalse(set(DESKTOP_ONLY_FORMATS) & kotlin, "a desktop-only format has a Kotlin label")
+        self.assertEqual(engine - set(DESKTOP_ONLY_FORMATS), kotlin)
 
 
 if __name__ == "__main__":

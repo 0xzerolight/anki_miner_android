@@ -96,8 +96,16 @@ def _run(
     words: list[Any] | None = None,
     known_word_db: object | None = None,
     curate: Any = None,
+    config_changes: dict[str, object] | None = None,
+    line_index: list[Any] | None = None,
+    episode_name: str = "Episode 1",
 ) -> tuple[Any, FakeKotlinAnki, Any]:
-    """Run the fixture; the optional doubles default to one 猫 card and a fresh Kotlin."""
+    """Run the fixture; the optional doubles default to one 猫 card and a fresh Kotlin.
+
+    ``config_changes`` overrides the mapped engine config last; ``line_index`` is the parse's
+    per-line lemma index, which the fixture otherwise leaves empty. ``episode_name`` is the
+    label Kotlin derives from the video's display name.
+    """
 
     for module in ("pysubs2", "charset_normalizer", "requests"):
         pytest.importorskip(module, reason="runtime dependency lane")
@@ -123,7 +131,7 @@ def _run(
         {
             "videoPath": str(job / "input.mkv"),
             "subtitlePath": str(primary),
-            "episodeName": "Episode 1",
+            "episodeName": episode_name,
             "seriesName": "Local video",
             "sourceLabel": None,
             "audioTrackOverride": None,
@@ -143,8 +151,7 @@ def _run(
         mining._map_config(request, home),
         # Desktop-only switches, set here to keep the run off the known-words
         # scan and the offline-dictionary filters this fixture has no data for.
-        include_known_words=True,
-        bypass_optional_filters=True,
+        **{"include_known_words": True, "bypass_optional_filters": True, **(config_changes or {})},
     )
 
     word = TokenizedWord(
@@ -169,7 +176,7 @@ def _run(
 
         def parse_subtitle_file_with_index(self, subtitle_file: Path, subtitle_offset: float | None = None) -> Any:
             assert subtitle_file == primary
-            return list(tokens), []
+            return list(tokens), list(line_index or [])
 
         def count_lemmas(self, subtitle_file: Path) -> collections.Counter[str]:
             assert subtitle_file == primary

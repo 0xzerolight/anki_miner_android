@@ -292,6 +292,11 @@ class FfmpegToolingTests(unittest.TestCase):
                 "CONFIG_LIBAOM",
                 "CONFIG_LIBAOM_AV1_ENCODER",
                 "CONFIG_AVIF_MUXER",
+                # normalize_audio_loudness: the clip's loudnorm, its fades, and
+                # the 48 kHz resample back from loudnorm's 192 kHz.
+                "CONFIG_LOUDNORM_FILTER",
+                "CONFIG_AFADE_FILTER",
+                "CONFIG_ARESAMPLE_FILTER",
             }.issubset(enabled)
         )
         self.assertTrue(

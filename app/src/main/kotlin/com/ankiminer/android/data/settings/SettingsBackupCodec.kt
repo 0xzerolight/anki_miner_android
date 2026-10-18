@@ -35,10 +35,20 @@ internal data class ParsedSettingsBackup(
     val ignoredKeys: List<String>,
     val formatVersion: Int,
     val resourceChains: Map<String, List<PortableResourceSelection>>,
+    /** The settings schema of the app that wrote the file; null when it names none. */
+    val schemaVersion: Int? = null,
 ) {
     /** The mining language the file names (format 5 on), unchecked; null when it names none. */
     val miningLanguage: String?
         get() = values[SettingsBackupCodec.MINING_LANGUAGE_KEY] as? String
+
+    /**
+     * Written before the re-pin to desktop `6ca809fe`, so an unset value in it meant desktop
+     * v3.8.0's default; see [LegacyEngineDefaults]. The envelope's schema says so, not the format:
+     * the format stays 5 so that v2.0.0 can still read a newer file.
+     */
+    val keepsLegacyEngineDefaults: Boolean
+        get() = (schemaVersion ?: 0) < DataStoreAppSettingsRepository.NEW_ENGINE_DEFAULTS_SCHEMA
 }
 
 internal data class PortableResourceSelection(
@@ -121,6 +131,11 @@ internal object SettingsBackupCodec {
             "reading_tone_color",
             "strict_card_order",
             "merge_incomplete_cues",
+            "pick_best_sentence",
+            "skip_opening_ending",
+            "normalize_audio_loudness",
+            "crop_manga_to_text",
+            "known_from_reviewed_cards",
             "secondary_subtitle_enabled",
             // Appearance travels: a built-in palette always resolves on the receiving device, and
             // dynamic colour simply falls back where the platform cannot supply it.
@@ -347,6 +362,12 @@ internal object SettingsBackupCodec {
                 if (name in effectiveValues) effectiveValues[name] = RejectedValue
             }
         }
+        val legacyAdded =
+            if (keepsLegacyEngineDefaults) {
+                keepLegacyEngineDefaults(effectiveValues, targetLanguage.takeUnless { languageRejected })
+            } else {
+                emptySet()
+            }
         val rejectedNames =
             effectiveValues.keys
                 .filterTo(linkedSetOf()) { name -> effectiveValues.getValue(name) === RejectedValue }
@@ -369,7 +390,9 @@ internal object SettingsBackupCodec {
                 val rejectedKeys = effectiveValues.keys.filter { it in rejectedNames }
                 return AppliedSettingsBackup(
                     settings = settings,
-                    appliedCount = effectiveValues.size - rejectedKeys.size,
+                    // The keys the file predates were set for it, not loaded from it.
+                    appliedCount =
+                        effectiveValues.size - rejectedKeys.size - legacyAdded.count { it !in rejectedNames },
                     ignoredKeys = ignoredKeys,
                     rejectedKeys = rejectedKeys,
                     unknownLanguage = requestedLanguage?.takeIf { it != settings.language },
@@ -381,11 +404,34 @@ internal object SettingsBackupCodec {
         }
     }
 
+    /**
+     * The store's schema 4 migration for a file from before it: each [LegacyEngineDefaults.GLOBAL]
+     * setting the file exported as unset (`null`), or lacks because its app never exported it
+     * ([LegacyEngineDefaults.UNSET_WHEN_ABSENT]), arrives as desktop v3.8.0's value, and where the
+     * file's settings belong to [language] (null when they were refused) a cleanup it left unset
+     * arrives switched off. Other absent keys keep the current value, as in any import. Returns the
+     * keys added for the file.
+     */
+    private fun keepLegacyEngineDefaults(
+        values: MutableMap<String, Any>,
+        language: String?,
+    ): Set<String> {
+        val added = LegacyEngineDefaults.UNSET_WHEN_ABSENT.filterTo(linkedSetOf()) { it !in values }
+        LegacyEngineDefaults.GLOBAL.forEach { (name, legacy) ->
+            if (name in added || values[name] === ClearedValue) values[name] = legacy
+        }
+        if (language != null && LegacyEngineDefaults.pinsCleanupOff(language) { values[it] === ClearedValue }) {
+            values[LegacyEngineDefaults.USE_SUBTITLE_REGEX_FILTER_KEY] = LegacyEngineDefaults.USE_SUBTITLE_REGEX_FILTER
+        }
+        return added
+    }
+
     private fun readDocument(parser: JsonParser): ParsedSettingsBackup {
         if (parser.nextToken() != JsonToken.START_OBJECT) {
             throw SettingsBackupException(SettingsBackupFailure.NOT_A_BACKUP)
         }
         var backupVersion: Int? = null
+        var schemaVersion: Int? = null
         var settingsIsObject = false
         var settingsSeen = false
         var resourceChainsIsObject = false
@@ -405,6 +451,13 @@ internal object SettingsBackupCodec {
                         } else {
                             null
                         }
+                    parser.skipChildren()
+                }
+                "schemaVersion" -> {
+                    // Anything but an integer names no schema, which reads as the oldest.
+                    if (parser.currentToken() == JsonToken.VALUE_NUMBER_INT) {
+                        schemaVersion = parser.text.toIntOrNull()
+                    }
                     parser.skipChildren()
                 }
                 "settings" -> {
@@ -459,6 +512,7 @@ internal object SettingsBackupCodec {
             ignoredKeys = ignoredKeys,
             formatVersion = version,
             resourceChains = resourceChains,
+            schemaVersion = schemaVersion,
         )
     }
 

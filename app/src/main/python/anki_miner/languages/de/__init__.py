@@ -55,7 +55,9 @@ DE_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_de",
     custom_fetcher_language="de",
     papago_speaker=None,
-    default_chain=(AudioSourceEntry(kind="googletts"),),
+    wikimedia_prefixes=("De-", "LL-Q188 (deu)-"),
+    default_chain=(AudioSourceEntry(kind="wikimedia"), AudioSourceEntry(kind="googletts")),
+    edge_voice="de-DE-KatjaNeural",
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
 )
@@ -103,7 +105,10 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=DE_RESCUABLE_TAGS,
         ),
         catalog=DE_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_gender", "noun_plural", "lemmatised_frequency"}),
+        capabilities=frozenset(
+            {"pos_tag", "noun_gender", "noun_plural", "lemmatised_frequency", "manga_ocr", "video_ocr"}
+        ),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=DE_CARD_FIELDS,
         render_hooks=(PosHook(), GrammarTagHook(("noun_gender", "noun_plural"), gender_labels=DE_GENDER_LABELS)),
         content_style=SPACED_CONTENT_STYLE,

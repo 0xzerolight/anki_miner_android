@@ -140,6 +140,11 @@ class ReadingUnit:
     ``audio_ref`` and ``translation`` are set only by the Anki-deck loader
     (kind="deck"): the card's own sentence clip in Anki's ``collection.media``
     and its native-language line. Every other kind leaves them empty.
+
+    ``ruby`` is set only by the EPUB loader (SK-31): the ``(base, reading)``
+    pairs of the author's ``<ruby>`` furigana whose base occurs in this unit's
+    text, raw and language-neutral. The parser applies them only for a profile
+    that takes author ruby (``LanguageProfile.takes_author_ruby``).
     """
 
     text: str
@@ -149,6 +154,7 @@ class ReadingUnit:
     block_box: tuple[int, int, int, int] | None = None
     audio_ref: Path | None = None
     translation: str = ""
+    ruby: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         _reserve_reading_unit()
@@ -168,7 +174,7 @@ class ReadingSourceRef:
       ``.mokuro`` file on disk; for a self-contained archive (Issue #103) the
       ``.mokuro`` JSON lives *inside* the archive — then ``path`` and
       ``image_root`` are both the archive and ``ocr_entry`` names the member.
-    * kind in {"epub","txt","subtitle"}: the detector sets ``title`` =
+    * kind in {"epub","txt","pdf","subtitle"}: the detector sets ``title`` =
       ``path.stem`` (a provisional label for queue rows only), ``volume`` =
       None and ``image_root`` = None; the loader is authoritative for the
       final ``ReadingDocument`` metadata.
@@ -194,7 +200,7 @@ class ReadingSourceRef:
     in ``[start, end)``. None for every other ref.
     """
 
-    kind: Literal["mokuro", "epub", "txt", "subtitle", "text", "deck"]
+    kind: Literal["mokuro", "epub", "txt", "pdf", "subtitle", "text", "deck"]
     path: Path | None = None
     image_root: Path | None = None
     title: str = ""

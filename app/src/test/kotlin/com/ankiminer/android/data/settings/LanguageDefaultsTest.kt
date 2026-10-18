@@ -12,10 +12,10 @@ class LanguageDefaultsTest {
         val shown = LanguageDefaults.orJapanese(LanguageDefaults.forLanguage("he", LanguageProfileFixtures.all))
 
         assertEquals("he", shown.code)
-        // A he run filters subtitles with the profile's pattern while the toggle is unset.
+        // A he run filters subtitles with the profile's own pattern while the toggle is unset.
         assertTrue(shown.useSubtitleRegexFilter)
-        assertNotEquals(EngineDefaults.USE_SUBTITLE_REGEX_FILTER, shown.useSubtitleRegexFilter)
         assertTrue(shown.subtitleRegexFilter.isNotEmpty())
+        assertNotEquals(EngineDefaults.SUBTITLE_REGEX_FILTER, shown.subtitleRegexFilter)
     }
 
     @Test

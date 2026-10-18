@@ -273,7 +273,10 @@ def _process_snapshot(document: Any, home: Path) -> dict[str, Any]:
         include_known_words=True,
         bypass_optional_filters=True,
         reading_min_occurrence=1,
+        # Each of these makes phase 2 read a line index the fake parser never
+        # builds (EpisodeProcessor._wants_line_index); the corpus word has one line.
         use_i_plus_one_filter=False,
+        pick_best_sentence=False,
         media_temp_folder=home / "media",
     )
     parser = _DocumentParser(TokenizedWord)
@@ -323,6 +326,41 @@ def _process_snapshot(document: Any, home: Path) -> dict[str, Any]:
     }
 
 
+def _loader_kwargs(kind: str) -> dict[str, Any]:
+    """desktop ``load_reading_source``'s ``detector.load`` keywords for a default config.
+
+    Mirrors ``anki_miner/gui/workers/reading_queue_worker.py`` at the pin without
+    importing the GUI package. The corpus mines in the default language (ja): its
+    ladder is the loaders' built-in path (``import_decode_ladder`` gives None) and its
+    parser injects neither ``normalize`` nor ``has_target_script``. Cancellation is
+    left out; it changes no output.
+    """
+    from anki_miner.config import AnkiMinerConfig
+    from anki_miner.languages.registry import config_language, get_profile
+    from anki_miner.utils.subtitle_encoding import script_check_kwarg
+
+    config = AnkiMinerConfig()
+    profile = get_profile(config_language(config))
+    ladder = None if profile is get_profile("ja") else profile.import_encodings
+    has_target_script = None
+    if kind == "mokuro":
+        has_target_script = (
+            None
+            if "manga_ocr" in profile.capabilities and not profile.ocr_recognizer
+            else profile.script.contains_target_script
+        )
+    kwargs: dict[str, Any] = {
+        "encodings": ladder,
+        "rules": profile.sentence_rules,
+        **script_check_kwarg(ladder, profile.script),
+    }
+    if has_target_script is not None:
+        kwargs["has_target_script"] = has_target_script
+    if kind == "subtitle" and config.skip_opening_ending is True:
+        kwargs["skip_non_dialogue"] = True
+    return kwargs
+
+
 def derive(*, engine_root: Path, corpus_path: Path) -> dict[str, Any]:
     preloaded = sorted(
         name
@@ -349,10 +387,7 @@ def derive(*, engine_root: Path, corpus_path: Path) -> dict[str, Any]:
                 expected_kind = corpus["sources"][name]["kind"]
                 if len(refs) != 1 or refs[0].kind != expected_kind:
                     raise ReadingExportError(f"{name} detector output is invalid")
-                # Mirrors the bridge, which passes no cancellation here: the
-                # per-cue annotation strip is unconditional in the engine now,
-                # so there is no longer a kwarg to keep the two in step.
-                document = detector.load(refs[0])
+                document = detector.load(refs[0], **_loader_kwargs(refs[0].kind))
                 if name == "subtitle":
                     document.series = corpus["sources"][name]["series_name"]
                 loaded[name] = document

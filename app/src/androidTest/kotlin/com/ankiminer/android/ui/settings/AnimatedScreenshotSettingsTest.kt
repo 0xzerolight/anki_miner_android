@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.SettingsDraft
 import org.junit.Assert.assertEquals
@@ -26,8 +28,9 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * The animated-screenshot rows (Clip length stepper, Size, Animated format) stay visible and go
- * disabled while the feature is off, rather than appearing and disappearing.
+ * The Media page's rows. The animated-screenshot rows (Clip length stepper, Size, Animated format)
+ * stay visible and go disabled while the feature is off, rather than appearing and disappearing; the
+ * AnkiMobile warning shows only while Opus is chosen.
  *
  * Nothing else composes [mediaSettings], so this builds its own host. Every assertion scrolls
  * first — the CI emulator is 320x640 @ 160dpi while the local AVD is a Pixel 6, so a control that
@@ -43,10 +46,12 @@ class AnimatedScreenshotSettingsTest {
         enabled: Boolean,
         matchAudio: Boolean = false,
         duration: Double = 2.0,
+        audioFormat: AudioFormat? = null,
     ) {
         latest =
             SettingsDraft.from(
                 AppSettings(
+                    audioFormat = audioFormat,
                     animatedScreenshotsEnabled = enabled,
                     animatedScreenshotDurationSeconds = duration,
                     animatedScreenshotQuality = 30,
@@ -74,6 +79,20 @@ class AnimatedScreenshotSettingsTest {
         composeRule
             .onNodeWithTag(SettingsCategoryTestTags.LIST)
             .performScrollToNode(hasTestTag(tag))
+    }
+
+    /** Desktop's CC-21 warning: unset reads as the engine's MP3, so it starts hidden. */
+    @Test
+    fun theAnkiMobileWarningShowsOnlyWhileOpusIsChosen() {
+        setMediaSettings(enabled = false)
+
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.OPUS_WARNING).assertDoesNotExist()
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.LIST).performScrollToNode(hasText("Opus"))
+        composeRule.onNodeWithText("Opus").performClick()
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.OPUS_WARNING).assertExists()
+        composeRule.onNodeWithText("MP3").performClick()
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.OPUS_WARNING).assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(AudioFormat.MP3, latest.audioFormat) }
     }
 
     @Test

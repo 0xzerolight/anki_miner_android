@@ -617,6 +617,9 @@ def test_actual_process_reading_mines_loaded_mokuro_document(
         bypass_optional_filters=True,
         reading_min_occurrence=1,
         use_i_plus_one_filter=False,
+        # The best-sentence pick (on by default) reads the per-line index, which
+        # this one-sentence parser double does not build.
+        pick_best_sentence=False,
     )
     parser = _DocumentParser(TokenizedWord)
     definitions = _DefinitionService()

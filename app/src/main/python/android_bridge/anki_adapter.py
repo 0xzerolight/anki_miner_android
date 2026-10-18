@@ -40,6 +40,7 @@ from .unicode_contract import (
 logger = logging.getLogger(__name__)
 
 _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]")
+_TRAILING_COLONS_RE = re.compile(r":+\Z")
 # What desktop's ``AnkiService._build_note`` hands ``build_note`` for a ja profile.
 # AnkiService derives the five from the profile; ja declares no extra card field,
 # is left-to-right and tags no card language, so they behave like the builder's
@@ -225,11 +226,27 @@ def _expression_field_ordinals(note_types: Mapping[int, _NoteType]) -> dict[int,
     return ordinals
 
 
+class _ScannedFields(dict[str, dict[str, object]]):
+    """One note's fields as the resolver takes them, carrying the note's reviewed mark.
+
+    ``ExpressionFieldResolver`` buffers a note type's rows until it has chosen a field and hands
+    back the same mapping objects, so the mark travels with the row through ``feed``/``flush``.
+    """
+
+    __slots__ = ("reviewed",)
+
+    def __init__(self, fields: dict[str, dict[str, object]], *, reviewed: bool) -> None:
+        super().__init__(fields)
+        self.reviewed = reviewed
+
+
 def _resolver_row(
     note_type: _NoteType | None,
     ordinals: Sequence[int],
     values: Sequence[str],
-) -> tuple[str | None, dict[str, dict[str, object]]]:
+    *,
+    reviewed: bool = False,
+) -> tuple[str | None, _ScannedFields]:
     """One note as the resolver's ``feed`` takes a notesInfo row: note type name, then fields.
 
     A note type missing from the table (created after it was read, or outside its
@@ -237,11 +254,14 @@ def _resolver_row(
     """
 
     if note_type is None:
-        return None, {"": {"value": values[0]}}
-    return note_type.name, {
-        note_type.field_names[ordinal]: {"value": value, "order": ordinal}
-        for ordinal, value in zip(ordinals, values, strict=True)
-    }
+        return None, _ScannedFields({"": {"value": values[0]}}, reviewed=reviewed)
+    return note_type.name, _ScannedFields(
+        {
+            note_type.field_names[ordinal]: {"value": value, "order": ordinal}
+            for ordinal, value in zip(ordinals, values, strict=True)
+        },
+        reviewed=reviewed,
+    )
 
 
 _SETUP_ERROR_CODES = {
@@ -473,6 +493,20 @@ def _strict_utf8_bytes(value: str, *, context: str, code: str) -> bytes:
         return value.encode("utf-8")
     except UnicodeEncodeError as exc:
         raise BridgeProtocolError(code, f"{context} contains an invalid Unicode scalar") from exc
+
+
+def _fit_tag(tag: str) -> str:
+    """*tag* cut at a character boundary to the tag byte limit, without a dangling ``:``.
+
+    A cut on the ``::`` separator would leave an empty hierarchy component,
+    which ``render_card_tags`` never emits either. A regex rather than
+    ``str.rstrip``: this module calls no strip method (test_config_map).
+    """
+
+    encoded = _strict_utf8_bytes(tag, context="Anki tag", code="invalid_note")
+    if len(encoded) <= _MAX_TAG_UTF8_BYTES:
+        return tag
+    return _TRAILING_COLONS_RE.sub("", encoded[:_MAX_TAG_UTF8_BYTES].decode("utf-8", "ignore"))
 
 
 def _expect_exact_keys(value: object, required: set[str], *, context: str) -> dict[str, Any]:
@@ -872,9 +906,9 @@ class AndroidAnkiAdapter:
         # "cancelled" first, and the engine reads only the event when it
         # classifies the run.
         self._request_cancellation = request_cancellation or (lambda: None)
-        # Engine-composed ``"<series> — "`` prefix on the card source field.
-        # Android's series is a synthetic lane label with no counterpart on
-        # disk, so the composition layer hands the exact prefix down here.
+        # Engine-composed ``"<series> — "`` prefix on the card source field,
+        # which a reading run's composition layer hands down: process_reading
+        # takes no series override, and the deck already names the series.
         self._source_prefix = source_prefix or None
         self.last_created_note_ids: list[int] = []
         # Read back by ``_phase5`` to decide what to record as known. The engine
@@ -910,6 +944,11 @@ class AndroidAnkiAdapter:
         self._verified_field_names: tuple[str, ...] | None = None
         self._outstanding_baseline_token: str | None = None
         self._existing_vocab_cache: set[str] | None = None
+        # Desktop F-01: the same scan narrowed to notes with a reviewed card. It only scores
+        # text (i+1, the curator's unknowns); the set above stays the mining exclusion.
+        self._reviewed_vocab_cache: set[str] | None = None
+        # Set when the marked walk failed: get_reviewed_vocabulary raises it until invalidation.
+        self._reviewed_vocab_error: Exception | None = None
         self._dict_media_uploaded: set[str] = set()
         self._dict_media_missing_sources: set[str] = set()
         self._dict_media_actual_names: dict[str, str] = {}
@@ -966,6 +1005,8 @@ class AndroidAnkiAdapter:
             self._verified_field_names = None
             self._outstanding_baseline_token = None
             self._existing_vocab_cache = None
+            self._reviewed_vocab_cache = None
+            self._reviewed_vocab_error = None
             self._dict_media_uploaded.clear()
             self._dict_media_missing_sources.clear()
             self._dict_media_actual_names.clear()
@@ -1265,7 +1306,8 @@ class AndroidAnkiAdapter:
         cursor: dict[str, Any] | None,
         excluded_decks: list[str],
         field_ordinals: Mapping[int, tuple[int, ...]],
-    ) -> tuple[list[tuple[int, list[str]]], int, dict[str, Any] | None]:
+        mark_reviewed: bool,
+    ) -> tuple[list[tuple[int, list[str], bool]], int, dict[str, Any] | None]:
         self._raise_if_cancelled("scanFirstFields")
         limits = {
             "maxScannedNotes": _KNOWN_VOCABULARY_PAGE_ITEMS,
@@ -1273,20 +1315,19 @@ class AndroidAnkiAdapter:
             "maxItemUtf8Bytes": _MAX_RAW_FIRST_FIELD_UTF8_BYTES,
             "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
         }
-        payload = self._callbacks.scan_first_fields(
-            {
-                "scope": {
-                    "kind": "knownVocabulary",
-                    "excludedDecks": excluded_decks,
-                    "fieldOrdinals": [
-                        {"modelId": model_id, "ordinals": list(ordinals)}
-                        for model_id, ordinals in field_ordinals.items()
-                    ],
-                    "cursor": cursor,
-                    "limits": limits,
-                }
-            }
-        )
+        scope: dict[str, Any] = {
+            "kind": "knownVocabulary",
+            "excludedDecks": excluded_decks,
+            "fieldOrdinals": [
+                {"modelId": model_id, "ordinals": list(ordinals)} for model_id, ordinals in field_ordinals.items()
+            ],
+            "cursor": cursor,
+            "limits": limits,
+        }
+        if mark_reviewed:
+            # Absent when off, so a scan without marks keeps its bytes and request digest.
+            scope["markReviewed"] = True
+        payload = self._callbacks.scan_first_fields({"scope": scope})
         result = _expect_exact_keys(
             payload,
             {"runId", "requestId", "notes", "scannedNotes", "nextCursor"},
@@ -1298,12 +1339,16 @@ class AndroidAnkiAdapter:
                 "invalid_anki_response",
                 "Known-vocabulary page contains too many notes",
             )
-        notes: list[tuple[int, list[str]]] = []
+        notes: list[tuple[int, list[str], bool]] = []
         total_utf8_bytes = 0
+        note_keys = {"modelId", "fields", "reviewed"} if mark_reviewed else {"modelId", "fields"}
         for index, raw_note in enumerate(raw_notes):
-            note = _expect_exact_keys(raw_note, {"modelId", "fields"}, context=f"known-vocabulary note {index}")
+            note = _expect_exact_keys(raw_note, note_keys, context=f"known-vocabulary note {index}")
             model_id = _expect_positive_int(note["modelId"], context=f"known-vocabulary note {index} modelId")
             values = _expect_string_list(note["fields"], context=f"known-vocabulary note {index} fields")
+            reviewed = note.get("reviewed", False)
+            if not isinstance(reviewed, bool):
+                _protocol_error("invalid_anki_response", f"Known-vocabulary note {index} reviewed must be boolean")
             if len(values) != len(field_ordinals.get(model_id, (0,))):
                 _protocol_error(
                     "invalid_anki_response",
@@ -1328,7 +1373,7 @@ class AndroidAnkiAdapter:
                         "invalid_anki_response",
                         "Known-vocabulary page exceeds the UTF-8 budget",
                     )
-            notes.append((model_id, values))
+            notes.append((model_id, values, reviewed))
 
         scanned_notes = normalize_integral_json_number(result["scannedNotes"])
         if scanned_notes is None or scanned_notes < len(notes) or scanned_notes > _KNOWN_VOCABULARY_PAGE_ITEMS:
@@ -1398,18 +1443,91 @@ class AndroidAnkiAdapter:
         ``False``; it changes nothing here. Desktop degrades a timeout to an
         empty set, which on Android would mean "nothing is known" and re-mine
         the user's whole collection, so this read already raises either way —
-        see the ``AnkiCallbackError`` arm below.
+        see the ``AnkiCallbackError`` arm in ``_scan_known_vocabulary``.
+
+        With ``known_from_reviewed_cards`` on, the same walk marks each note
+        reviewed or not, so the ``get_reviewed_vocabulary`` call phase 2 makes
+        next is answered from it. If that marked walk fails with
+        ``AnkiConnectionError``, this walks again unmarked and
+        ``get_reviewed_vocabulary`` raises the failure, which the engine scores
+        past with every card, as desktop does when its reviewed query fails.
         """
 
         self._raise_if_cancelled("scanFirstFields")
         if self._existing_vocab_cache is not None:
             return self._existing_vocab_cache
+        if not self.config.known_from_reviewed_cards:
+            existing, _reviewed = self._scan_known_vocabulary(mark_reviewed=False)
+            self._existing_vocab_cache = existing
+            return existing
+
+        # Function-local by design: bootstrap.py must set ANKI_MINER_HOME first.
+        from anki_miner.exceptions import AnkiConnectionError
+        from anki_miner.utils.logging_ext import log_summary
+
+        try:
+            existing, reviewed = self._scan_known_vocabulary(mark_reviewed=True)
+        except AnkiConnectionError as error:
+            # The -is:new search is a provider query of its own: it can fail, or outrun the bulk
+            # deadline, where the page reads would not. Only the marks are lost.
+            log_summary(
+                logger,
+                "Anki reviewed marks unavailable",
+                level=logging.WARNING,
+                outcome="fail",
+                fallback="unmarked_walk",
+                exc_type=type(error).__name__,
+                error=str(error),
+            )
+            self._reviewed_vocab_error = error
+            existing, _reviewed = self._scan_known_vocabulary(mark_reviewed=False)
+        else:
+            self._reviewed_vocab_cache = reviewed
+        self._existing_vocab_cache = existing
+        return existing
+
+    def get_reviewed_vocabulary(self) -> set[str]:
+        """Card fronts whose note has a card reviewed at least once (desktop F-01).
+
+        The knowledge set for scoring text (i+1, the curator's unknowns column)
+        when "count a word as known only after its card has been reviewed" is
+        on. Never the mining exclusion: ``get_existing_vocabulary`` keeps every
+        card, so an unreviewed word is still never mined twice. Desktop's
+        ``deck:* -deck:"X" -is:new``: a note counts when one of its cards outside
+        the excluded decks is not new, so a card reviewed and later suspended
+        still counts. Cached for the run like that set and cleared with it.
+
+        Raises:
+            AnkiConnectionError: on a provider failure. The engine's
+                ``collect_knowledge_forms`` then falls back to every card.
+        """
+
+        self._raise_if_cancelled("scanFirstFields")
+        if self._reviewed_vocab_error is not None:
+            # This run's marked walk already failed; walking again would repeat the failing search.
+            from anki_miner.exceptions import AnkiConnectionError
+
+            raise AnkiConnectionError(str(self._reviewed_vocab_error)) from self._reviewed_vocab_error
+        if self._reviewed_vocab_cache is None:
+            existing, reviewed = self._scan_known_vocabulary(mark_reviewed=True)
+            if self._existing_vocab_cache is None:
+                self._existing_vocab_cache = existing
+            self._reviewed_vocab_cache = reviewed
+        return self._reviewed_vocab_cache
+
+    def _scan_known_vocabulary(self, *, mark_reviewed: bool) -> tuple[set[str], set[str]]:
+        """Walk the collection once: every in-script card front, and those of reviewed notes.
+
+        The reviewed set is empty unless ``mark_reviewed``. Which field is a note
+        type's expression is decided over all of its notes, reviewed or not.
+        """
 
         from anki_miner.services.anki_note_builder import _strip_for_dedup
         from anki_miner.utils.logging_ext import capped, log_summary
 
         excluded_decks = self._known_vocabulary_excluded_decks()
         existing: set[str] = set()
+        reviewed: set[str] = set()
         resolver = _expression_field_resolver(self.config)
 
         def collect(ready: list[tuple[Mapping[str, Any], str]]) -> None:
@@ -1417,6 +1535,8 @@ class AndroidAnkiAdapter:
                 normalized = self._dedup_key(_strip_for_dedup(fields[field_name]["value"]))
                 if normalized and self._is_target_script(normalized):
                     existing.add(normalized)
+                    if isinstance(fields, _ScannedFields) and fields.reviewed:
+                        reviewed.add(normalized)
 
         notes_read = 0
         cursor: dict[str, Any] | None = None
@@ -1426,10 +1546,15 @@ class AndroidAnkiAdapter:
             field_ordinals = _expression_field_ordinals(note_types)
             while True:
                 notes, _scanned_notes, next_cursor = self._scan_known_vocabulary_page(
-                    cursor, excluded_decks, field_ordinals
+                    cursor, excluded_decks, field_ordinals, mark_reviewed
                 )
-                for model_id, values in notes:
-                    model, fields = _resolver_row(note_types.get(model_id), field_ordinals.get(model_id, (0,)), values)
+                for model_id, values, note_reviewed in notes:
+                    model, fields = _resolver_row(
+                        note_types.get(model_id),
+                        field_ordinals.get(model_id, (0,)),
+                        values,
+                        reviewed=note_reviewed,
+                    )
                     collect(resolver.feed(model, fields))
                 notes_read += len(notes)
                 if next_cursor is None:
@@ -1464,6 +1589,7 @@ class AndroidAnkiAdapter:
             outcome="ok",
             notes=notes_read,
             forms=len(existing),
+            reviewed_forms=len(reviewed) if mark_reviewed else None,
             note_types=len(resolver.chosen),
             expression_fields=capped(
                 f"{model_id}:{note_type.field_names.index(overrides[note_type.name])}"
@@ -1471,11 +1597,13 @@ class AndroidAnkiAdapter:
                 if overrides.get(note_type.name) in note_type.field_names
             ),
         )
-        self._existing_vocab_cache = existing
-        return existing
+        return existing, reviewed
 
     def invalidate_existing_vocabulary_cache(self) -> None:
+        """Forget both vocabulary sets; the next read walks the collection again (desktop parity)."""
         self._existing_vocab_cache = None
+        self._reviewed_vocab_cache = None
+        self._reviewed_vocab_error = None
 
     def _parse_store_media_result(self, payload: dict[str, Any], assets: Sequence[_MediaAsset]) -> _StoreAssetsOutcome:
         result = _expect_exact_keys(
@@ -2074,28 +2202,27 @@ class AndroidAnkiAdapter:
     def _strip_source_prefix(self, word_data_list: list[Any]) -> list[Any]:
         """Drop the engine's ``"<series> — "`` prefix from the card source field.
 
-        ``process_episode``/``process_reading`` compose the source label as
-        ``f"{series} — {episode}"``. Android's series is a synthetic lane label
-        (SAF hands over a display name, never a parent folder), and
-        ``process_reading`` exposes no override at all, so the prefix is removed
-        here instead — before preflight, so note identity and the create-call
-        size budget both see the value that is actually written.
+        ``process_reading`` composes a manga or subtitle source label as
+        ``"<series> — <episode>"`` and exposes no override, so the reading
+        lane's prefix is removed here instead. The field is ``"<label> @
+        <position>"``, so an empty label (a video with no usable name, whose
+        series the bridge blanks) leaves a leading space, trimmed here too.
+        Both run before preflight, so note identity and the create-call size
+        budget see the value that is actually written.
         """
 
         from dataclasses import replace
 
         prefix = self._source_prefix
-        if not prefix:
-            return word_data_list
         stripped: list[Any] = []
         for item in word_data_list:
             extra_fields = item.extra_fields
             source = extra_fields.get("source") if extra_fields else None
-            if isinstance(source, str) and source.startswith(prefix):
-                item = replace(
-                    item,
-                    extra_fields={**extra_fields, "source": source[len(prefix) :]},
-                )
+            if isinstance(source, str):
+                written = source[len(prefix) :] if prefix and source.startswith(prefix) else source
+                written = written.removeprefix(" ") if written.startswith(" @ ") else written
+                if written != source:
+                    item = replace(item, extra_fields={**extra_fields, "source": written})
             stripped.append(item)
         return stripped
 
@@ -2417,6 +2544,24 @@ class AndroidAnkiAdapter:
                 )
         return total
 
+    def _build_note(self, payload: Any, stored_files: set[str]) -> Any:
+        """Desktop's ``build_note``, with each rendered source tag cut to the tag byte limit.
+
+        A ``{series}``, ``{episode}`` or ``{volume}`` value is a file or book
+        title, which can run past AnkiDroid's 256-byte tag limit where a typed
+        tag cannot (Settings refuses a longer one). Such a tag is cut to fit
+        rather than failing the run; a tag the user typed without a token keeps
+        the ``note_too_large`` check in ``_validated_note_content``.
+        """
+
+        from anki_miner.services.anki_note_builder import build_note, has_tag_tokens
+
+        built = build_note(payload, self.config, stored_files, **self._note_builder_kwargs)
+        typed = {tag for tag in self.config.anki_tags.split() if not has_tag_tokens(tag)}
+        fitted = (tag if tag in typed else _fit_tag(tag) for tag in built.note["tags"])
+        built.note["tags"] = [tag for tag in fitted if tag]
+        return built
+
     @staticmethod
     def _validated_note_content(
         note: Mapping[str, Any],
@@ -2672,13 +2817,11 @@ class AndroidAnkiAdapter:
         # Validate the exact current note graph before running a regex over
         # marked dictionary HTML or touching media on disk. This makes a
         # single oversized definition/glossary fail without a scan or upload.
-        from anki_miner.services.anki_note_builder import build_note
-
         built_notes: list[dict[str, Any]] = []
         built_fields: list[dict[str, str]] = []
         note_utf8_bytes = 0
         for payload in word_data_list:
-            built = build_note(payload, self.config, intended_stored_files, **self._note_builder_kwargs)
+            built = self._build_note(payload, intended_stored_files)
             fields, tags, content_bytes = self._validated_note_content(built.note)
             built_notes.append({"fields": fields, "tags": tags})
             built_fields.append(fields)
@@ -3665,7 +3808,7 @@ class AndroidAnkiAdapter:
                     record_not_created([pending.payload], "duplicate")
             return survivors
 
-        from anki_miner.services.anki_note_builder import _strip_for_dedup, build_note
+        from anki_miner.services.anki_note_builder import _strip_for_dedup
 
         try:
             progress_reported = 0
@@ -3800,12 +3943,7 @@ class AndroidAnkiAdapter:
                             stored_dictionary_batch.payloads,
                             strict=True,
                         ):
-                            built = build_note(
-                                item,
-                                self.config,
-                                stored_card_filenames,
-                                **self._note_builder_kwargs,
-                            )
+                            built = self._build_note(item, stored_card_filenames)
                             if built.used_precomputed_bold:
                                 bold_used += 1
                             if built.used_bold_fallback:

@@ -4,12 +4,12 @@ The GUI hands dropped paths to :func:`detect`, which classifies each into one or
 more :class:`ReadingSourceRef` items (one manga volume, novel file, or subtitle
 file each). The queue worker later calls :func:`load` per ref, which lazily
 dispatches to the matching source loader (``mokuro_source`` / ``epub_source`` /
-``aozora_source`` / ``subtitle_source``).
+``aozora_source`` / ``pdf_source`` / ``subtitle_source``).
 
 For ``kind="mokuro"`` refs, ``detect`` is the *sole* metadata reader: it validates
 the ``.mokuro`` JSON sidecar and fully populates ``title`` (series), ``volume``
 (episode) and ``image_root`` (archive Path / directory Path / None for text-only),
-so the loaders can trust the ref. For ``epub``/``txt`` refs it classifies purely by
+so the loaders can trust the ref. For ``epub``/``txt``/``pdf`` refs it classifies purely by
 extension without opening the file, leaving the loader authoritative for the final
 document metadata.
 """
@@ -59,11 +59,14 @@ _ARCHIVE_EXTS: tuple[str, ...] = (".cbz", ".zip")
 
 # Subtitle-file extensions mined as text (Reading → Subtitle Files sub-tab). No
 # MicroDVD ``.sub``: frame-based, pysubs2 needs a media-derived fps we don't
-# have without the video. SAMI ``.smi`` is the Korean fansub format.
-_SUBTITLE_EXTS: tuple[str, ...] = (".srt", ".ass", ".ssa", ".vtt", ".smi")
+# have without the video. SAMI ``.smi`` is the Korean fansub format; ``.lrc`` is
+# synced song lyrics.
+_SUBTITLE_EXTS: tuple[str, ...] = (".srt", ".ass", ".ssa", ".vtt", ".smi", ".lrc")
 
 # Book-file extensions (Reading → Novels sub-tab); matched case-insensitively.
-_BOOK_EXTS: tuple[str, ...] = (".epub", ".txt")
+# ``.pdf`` (TS-05) reads the embedded text layer only.
+_BOOK_EXTS: tuple[str, ...] = (".epub", ".txt", ".pdf")
+_BOOK_KIND_BY_EXT: dict[str, Literal["epub", "txt", "pdf"]] = {".epub": "epub", ".txt": "txt", ".pdf": "pdf"}
 
 
 def detect(
@@ -81,8 +84,8 @@ def detect(
     3. directory → its ``*.mokuro`` children and embedded-``.mokuro``
        archives (title dir), else the sibling ``<name>.mokuro`` (user
        dropped the image dir itself), else error.
-    4. ``.epub``/``.txt`` → one book (metadata deferred to the loader).
-    5. ``.srt``/``.ass``/``.ssa``/``.vtt``/``.smi`` → one subtitle document (metadata
+    4. ``.epub``/``.txt``/``.pdf`` → one book (metadata deferred to the loader).
+    5. ``.srt``/``.ass``/``.ssa``/``.vtt``/``.smi``/``.lrc`` → one subtitle document (metadata
        deferred to the loader).
 
     ``diagnostics`` receives ``(archive_path, reason)`` entries for malformed
@@ -134,6 +137,10 @@ def detect(
             refs = [_book_ref(path, "txt")]
             _log_detected(path, refs, format_="txt", reason="extension", marker=suffix)
             return refs
+        if suffix == ".pdf":
+            refs = [_book_ref(path, "pdf")]
+            _log_detected(path, refs, format_="pdf", reason="extension", marker=suffix)
+            return refs
         if suffix in _SUBTITLE_EXTS:
             refs = [_subtitle_ref(path)]
             _log_detected(path, refs, format_="subtitle", reason="extension", marker=suffix)
@@ -141,8 +148,8 @@ def detect(
 
         raise SetupError(
             f"'{path.name}' is not a recognized reading source. Supported: .mokuro, "
-            ".cbz/.zip (with a matching .mokuro beside or inside it), .epub, .txt, "
-            "subtitle files (.srt/.ass/.ssa/.vtt/.smi), or a folder of .mokuro volumes."
+            ".cbz/.zip (with a matching .mokuro beside or inside it), .epub, .txt, .pdf, "
+            "subtitle files (.srt/.ass/.ssa/.vtt/.smi/.lrc), or a folder of .mokuro volumes."
         )
     except SetupError:
         log_summary(
@@ -175,6 +182,7 @@ def load(
     normalize: Callable[[str], str] | None = None,
     has_target_script: Callable[[str], bool] | None = None,
     anki: DeckNoteReader | None = None,
+    skip_non_dialogue: bool = False,
 ) -> ReadingDocument:
     """Dispatch a ref to its source loader and return the loaded document.
 
@@ -186,10 +194,11 @@ def load(
     ``encodings`` is the mining language's decode ladder, and reaches only the
     two loaders that guess an encoding — the novel and subtitle ones. mokuro
     reads a UTF-8 JSON sidecar, EPUB takes its encoding from the archive's own
-    XML declaration, and a ``text`` ref is already a decoded string, so none of
-    the other three accepts the keyword at all.
+    XML declaration, a PDF's text layer is Unicode already, and a ``text`` ref
+    is already a decoded string, so none of the other four accepts the keyword
+    at all.
 
-    ``rules`` is that language's sentence-splitting policy, and reaches the four
+    ``rules`` is that language's sentence-splitting policy, and reaches the five
     loaders that call ``split_sentences``. ``subtitle`` is the odd one out the
     other way round: it splits nothing, so it takes the ladder but not the
     rules.
@@ -202,6 +211,9 @@ def load(
 
     ``anki`` reaches the Anki-deck loader only (``kind="deck"`` refs are
     pathless, built by the Anki Deck sub-tab, and read through AnkiConnect).
+
+    ``skip_non_dialogue`` reaches the subtitle loader only, and only when set,
+    so the call shape of every other caller is unchanged.
 
     Each optional argument is built as its own fragment and omitted when
     ``None``, so a call that supplies none is the pre-transition
@@ -229,12 +241,18 @@ def load(
         from . import aozora_source
 
         return aozora_source.load(ref, **common, **sniffing, **splitting)
+    if ref.kind == "pdf":
+        from . import pdf_source
+
+        return pdf_source.load(ref, **common, **splitting)
     if ref.kind == "subtitle":
         from . import subtitle_source
 
         cleaning: dict[str, Any] = {} if normalize is None else {"normalize": normalize}
         if has_target_script is not None:
             cleaning["has_target_script"] = has_target_script
+        if skip_non_dialogue:
+            cleaning["skip_non_dialogue"] = True
         return subtitle_source.load(ref, **common, **sniffing, **cleaning)
     if ref.kind == "text":
         from . import text_source
@@ -254,7 +272,7 @@ def load(
 
 
 def detect_book_folder(directory: Path) -> list[ReadingSourceRef]:
-    """Enumerate the top-level ``.epub``/``.txt`` books in a directory.
+    """Enumerate the top-level ``.epub``/``.txt``/``.pdf`` books in a directory.
 
     The Novels sub-tab's folder-mining path: one ref per book, natural-sorted
     by filename. Deliberately non-recursive — a folder pick must not sweep a
@@ -299,8 +317,8 @@ def detect_book_folder(directory: Path) -> list[ReadingSourceRef]:
             input=directory,
             found=found_extensions,
         )
-        raise SetupError(f"No .epub or .txt books found in '{directory.name}'.")
-    refs = [_book_ref(child, "epub" if child.suffix.lower() == ".epub" else "txt") for child in books]
+        raise SetupError(f"No .epub, .txt or .pdf books found in '{directory.name}'.")
+    refs = [_book_ref(child, _BOOK_KIND_BY_EXT[child.suffix.lower()]) for child in books]
     _log_detected(
         directory,
         refs,
@@ -363,7 +381,7 @@ def _mokuro_ref(mokuro_path: Path) -> ReadingSourceRef:
     )
 
 
-def _book_ref(path: Path, kind: Literal["epub", "txt"]) -> ReadingSourceRef:
+def _book_ref(path: Path, kind: Literal["epub", "txt", "pdf"]) -> ReadingSourceRef:
     """Build a provisional book ref by extension alone (no file open)."""
     return ReadingSourceRef(
         kind=kind,
@@ -424,21 +442,81 @@ def _detect_directory(
     """A dropped directory is a title dir, a dropped image dir, or not mokuro.
 
     A title dir's volumes are its ``.mokuro`` children plus any self-contained
-    ``.cbz``/``.zip`` archives carrying an embedded ``.mokuro`` member. A
-    sidecar covers its same-stem archive (one volume, not two), and among
+    ``.cbz``/``.zip`` archives carrying an embedded ``.mokuro`` member
+    (:func:`_embedded_archive_volumes`).
+    """
+    children = sorted(
+        (child for child in directory.iterdir() if _is_sidecar(child)),
+        key=lambda child: natural_sort_key(child.name),
+    )
+    sidecar_stems = {child.stem for child in children}
+    embedded_pairs = _embedded_archive_volumes(directory, sidecar_stems, degraded_archives=degraded_archives)
+
+    if children or embedded_pairs:
+        volumes = [(child, _mokuro_ref(child)) for child in children] + embedded_pairs
+        volumes.sort(key=lambda pair: natural_sort_key(pair[0].name))
+        return [ref for _, ref in volumes]
+
+    # User dropped the image dir itself: prefer an exact "<name>.mokuro",
+    # then the first filename-sorted exact-stem extension case variant.
+    sidecar = directory.parent / (directory.name + ".mokuro")
+    if not sidecar.is_file():
+        sidecars = sorted(
+            (
+                entry
+                for entry in directory.parent.iterdir()
+                if entry.is_file() and entry.stem == directory.name and entry.suffix.lower() == ".mokuro"
+            ),
+            key=lambda entry: entry.name,
+        )
+        if sidecars:
+            sidecar = sidecars[0]
+    if sidecar.is_file():
+        return [_mokuro_ref(sidecar)]
+
+    raise SetupError(
+        f"'{directory.name}' is not a recognized reading source: no .mokuro "
+        "volumes or embedded-.mokuro archives inside it and no matching "
+        ".mokuro sidecar beside it."
+    )
+
+
+def embedded_volume_archives(directory: Path) -> frozenset[Path]:
+    """The archives :func:`detect` reads as volumes of their own in *directory*.
+
+    The archive half of the directory rule, for a caller that lists the folder
+    itself and takes each ``.mokuro`` by name (Utilities → Readability).
+    Parsing every sidecar the way ``detect(directory)`` does would read each
+    volume's JSON twice, and one invalid sidecar would empty the whole scan.
+
+    An archive that scan would skip as broken (unreadable, or a ``.mokuro``
+    member it cannot parse) is listed too: the caller's own :func:`detect`
+    then fails that one file with the reason, where a folder scan could only
+    leave it out.
+    """
+    sidecar_stems = {child.stem for child in directory.iterdir() if _is_sidecar(child)}
+    broken: list[tuple[Path, str]] = []
+    volumes = _embedded_archive_volumes(directory, sidecar_stems, degraded_archives=broken)
+    return frozenset(archive for archive, _ref in volumes) | {archive for archive, _reason in broken}
+
+
+def _is_sidecar(child: Path) -> bool:
+    return child.is_file() and child.suffix.lower() == ".mokuro" and not is_junk_path(child.name)
+
+
+def _embedded_archive_volumes(
+    directory: Path,
+    sidecar_stems: set[str],
+    *,
+    degraded_archives: list[tuple[Path, str]] | None = None,
+) -> list[tuple[Path, ReadingSourceRef]]:
+    """Self-contained archives in *directory* that no sidecar covers.
+
+    A sidecar covers its same-stem archive (one volume, not two), and among
     embedded-only same-stem archives ``.cbz`` beats ``.zip`` (mirroring
     :func:`_resolve_image_root`). A broken/OCR-less archive contributes
     nothing — it must never abort the folder scan.
     """
-    children = sorted(
-        (
-            child
-            for child in directory.iterdir()
-            if child.is_file() and child.suffix.lower() == ".mokuro" and not is_junk_path(child.name)
-        ),
-        key=lambda child: natural_sort_key(child.name),
-    )
-    sidecar_stems = {child.stem for child in children}
     archives = sorted(
         (
             child
@@ -468,34 +546,7 @@ def _detect_directory(
         )
         if ref is not None:
             embedded_pairs.append((archive, ref))
-
-    if children or embedded_pairs:
-        volumes = [(child, _mokuro_ref(child)) for child in children] + embedded_pairs
-        volumes.sort(key=lambda pair: natural_sort_key(pair[0].name))
-        return [ref for _, ref in volumes]
-
-    # User dropped the image dir itself: prefer an exact "<name>.mokuro",
-    # then the first filename-sorted exact-stem extension case variant.
-    sidecar = directory.parent / (directory.name + ".mokuro")
-    if not sidecar.is_file():
-        sidecars = sorted(
-            (
-                entry
-                for entry in directory.parent.iterdir()
-                if entry.is_file() and entry.stem == directory.name and entry.suffix.lower() == ".mokuro"
-            ),
-            key=lambda entry: entry.name,
-        )
-        if sidecars:
-            sidecar = sidecars[0]
-    if sidecar.is_file():
-        return [_mokuro_ref(sidecar)]
-
-    raise SetupError(
-        f"'{directory.name}' is not a recognized reading source: no .mokuro "
-        "volumes or embedded-.mokuro archives inside it and no matching "
-        ".mokuro sidecar beside it."
-    )
+    return embedded_pairs
 
 
 def _embedded_mokuro_ref(

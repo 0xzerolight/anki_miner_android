@@ -72,6 +72,7 @@ internal object SettingsCategoryTestTags {
     const val ANIMATED_CLIP_LONGER = "settings-animated-clip-longer"
     const val ANIMATED_FORMAT = "settings-animated-format"
     const val ANIMATED_SIZE = "settings-animated-size"
+    const val OPUS_WARNING = "settings-opus-warning"
     const val SCRIPT_TYPE = "settings-script-type"
     const val NAME_WORDSETS = "settings-name-wordsets"
     const val SUBTITLE_CLEANUP = "settings-subtitle-cleanup"

@@ -18,7 +18,7 @@ class SettingsBackupCodecCoupledValidationTest {
         val applied = with(SettingsBackupCodec) { parse(json).applyTo(current) }
 
         assertEquals(listOf("screenshot_animated_quality"), applied.rejectedKeys)
-        assertEquals(current, applied.settings)
+        assertEquals(current.withPreUpgradeSwitches(), applied.settings)
     }
 
     @Test
@@ -35,6 +35,19 @@ class SettingsBackupCodecCoupledValidationTest {
         val applied = with(SettingsBackupCodec) { parse(json).applyTo(current) }
 
         assertEquals(listOf("field_map_v1"), applied.rejectedKeys)
-        assertEquals(current, applied.settings)
+        assertEquals(current.withPreUpgradeSwitches(), applied.settings)
     }
+
+    /**
+     * Both files predate the feature batch and strict card order, so its four switches and the
+     * order arrive off with them.
+     */
+    private fun AppSettings.withPreUpgradeSwitches() =
+        copy(
+            strictCardOrder = false,
+            pickBestSentence = false,
+            skipOpeningEnding = false,
+            normalizeAudioLoudness = false,
+            cropMangaToText = false,
+        )
 }

@@ -11,8 +11,8 @@ import com.ankiminer.android.engine.LanguageProfileInfo
  *
  * Japanese keeps [EngineDefaults], the values a Japanese snapshot resolves to and what the screen
  * showed before mining languages existed. Any other language reads its profile's `scoped_defaults`,
- * which is what the bridge resolves an omitted key to for that language (he filters bracketed
- * captions by default and does not fold kana; Japanese does neither and does).
+ * which is what the bridge resolves an omitted key to for that language (he uses its own pattern
+ * and does not fold kana; Japanese uses the built-in cleanup and folds).
  */
 internal data class LanguageDefaults(
     val code: String,

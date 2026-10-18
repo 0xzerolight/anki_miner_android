@@ -55,7 +55,9 @@ DA_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_da",
     custom_fetcher_language="da",
     papago_speaker=None,
-    default_chain=(AudioSourceEntry(kind="googletts"),),
+    wikimedia_prefixes=("Da-", "LL-Q9035 (dan)-"),
+    default_chain=(AudioSourceEntry(kind="wikimedia"), AudioSourceEntry(kind="googletts")),
+    edge_voice="da-DK-ChristelNeural",
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
 )
@@ -102,7 +104,10 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=UPOS_RESCUABLE,
         ),
         catalog=DA_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_article", "noun_gender", "lemmatised_frequency"}),
+        capabilities=frozenset(
+            {"pos_tag", "noun_article", "noun_gender", "lemmatised_frequency", "manga_ocr", "video_ocr"}
+        ),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=DA_CARD_FIELDS,
         render_hooks=(
             PosHook(),

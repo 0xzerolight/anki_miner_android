@@ -48,7 +48,9 @@ IT_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_it",
     custom_fetcher_language="it",
     papago_speaker=None,
-    default_chain=(AudioSourceEntry(kind="googletts"),),
+    wikimedia_prefixes=("It-", "LL-Q652 (ita)-"),
+    default_chain=(AudioSourceEntry(kind="wikimedia"), AudioSourceEntry(kind="googletts")),
+    edge_voice="it-IT-ElsaNeural",
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
 )
@@ -95,7 +97,10 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=UPOS_RESCUABLE,
         ),
         catalog=IT_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_gender", "noun_article", "lemmatised_frequency"}),
+        capabilities=frozenset(
+            {"pos_tag", "noun_gender", "noun_article", "lemmatised_frequency", "manga_ocr", "video_ocr"}
+        ),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=IT_CARD_FIELDS,
         render_hooks=(PosHook(), GrammarTagHook(("noun_gender", "noun_article"), article_rule=italian_article)),
         content_style=SPACED_CONTENT_STYLE,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+import json
 import logging
 import subprocess
 import sys
@@ -719,6 +720,205 @@ class AnimatedEncodeGateTests(unittest.TestCase):
             del holders
             gate.release()
             gate.release()
+
+
+class ChapterProbeOverlayTests(unittest.TestCase):
+    """``list_chapters`` probes through the overlay's own ffprobe path.
+
+    Skipping openings and endings (``skip_opening_ending``) reads a video's
+    chapters before phase 1, so the probe is timeout-bounded and any failure
+    means "no chapters": the file is mined whole, never failed.
+    """
+
+    def _detector(self):
+        return _load(
+            PROJECT_ROOT
+            / "tools/engine-sync/overrides/anki_miner/utils/audio_track_detector.py",
+            "audio_track_detector_chapter_test",
+            _common_stubs(),
+        )
+
+    def _chapters(self, detector, process: object, **kwargs: object):
+        popen = mock.Mock(return_value=process)
+        run = mock.Mock(side_effect=AssertionError("ffprobe must not use subprocess.run"))
+        with (
+            mock.patch.object(detector.subprocess, "Popen", popen),
+            mock.patch.object(detector.subprocess, "run", run),
+        ):
+            chapters = detector.list_chapters(Path("episode.mkv"), "ffprobe", **kwargs)
+        return chapters, popen
+
+    def test_chapters_parse_from_ffprobe_json(self) -> None:
+        detector = self._detector()
+        payload = {
+            "chapters": [
+                {"start_time": "0.000000", "end_time": "90.000000", "tags": {"title": "Opening"}},
+                {"start_time": "90.000000", "end_time": "1300.500000", "tags": {"TITLE": "Part A"}},
+                {"start_time": "1300.500000", "end_time": "1390.000000"},
+                {"start_time": "n/a", "end_time": "1400.000000", "tags": {"title": "Broken"}},
+            ],
+            "streams": [{"index": 0}],
+        }
+        chapters, popen = self._chapters(
+            detector,
+            _FinishedProcess(returncode=0, stdout=json.dumps(payload)),
+            require_video=True,
+        )
+
+        self.assertEqual(
+            [
+                detector.Chapter(start=0.0, end=90.0, title="Opening"),
+                detector.Chapter(start=90.0, end=1300.5, title="Part A"),
+                detector.Chapter(start=1300.5, end=1390.0, title=None),
+            ],
+            chapters,
+        )
+        self.assertEqual(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_chapters",
+                "-show_entries",
+                "stream=index",
+                "-select_streams",
+                "V",
+                "episode.mkv",
+            ],
+            popen.call_args.args[0],
+        )
+        self.assertIn("pass_fds", popen.call_args.kwargs)
+
+    def test_require_video_without_a_video_stream_has_no_chapters(self) -> None:
+        detector = self._detector()
+        payload = {
+            "chapters": [{"start_time": "0", "end_time": "90", "tags": {"title": "Opening the Door"}}],
+            "streams": [],
+        }
+        chapters, _ = self._chapters(
+            detector,
+            _FinishedProcess(returncode=0, stdout=json.dumps(payload)),
+            require_video=True,
+        )
+        self.assertEqual([], chapters)
+
+    def test_probe_failure_returns_no_chapters(self) -> None:
+        detector = self._detector()
+        cases = {
+            "spawn": OSError("ffprobe missing"),
+            "exit": _FinishedProcess(returncode=1, stderr="Invalid data found"),
+            "communicate": _FinishedProcess(communicate_error=ValueError("decode")),
+            "malformed": _FinishedProcess(returncode=0, stdout="not json"),
+            "not_an_object": _FinishedProcess(returncode=0, stdout="[]"),
+        }
+        for name, outcome in cases.items():
+            with self.subTest(name):
+                popen = (
+                    mock.Mock(side_effect=outcome)
+                    if isinstance(outcome, BaseException)
+                    else mock.Mock(return_value=outcome)
+                )
+                with mock.patch.object(detector.subprocess, "Popen", popen):
+                    self.assertEqual(
+                        [],
+                        detector.list_chapters(Path("episode.mkv"), "ffprobe", require_video=True),
+                    )
+
+    def test_probe_timeout_kills_reaps_and_returns_no_chapters(self) -> None:
+        detector = self._detector()
+        process = _BlockingProcess(timeout_once=True)
+        chapters, _ = self._chapters(detector, process, require_video=True)
+        self.assertEqual([], chapters)
+        self.assertTrue(process.killed.is_set())
+        self.assertEqual(2, process.communicate_calls)
+
+
+class ClipCommandOverlayTests(unittest.TestCase):
+    """Desktop's mono clip, opus cap, loudness switch and 720 px still, as the overlay builds them."""
+
+    def _service(self, media, **config: object):
+        service = object.__new__(media.MediaExtractorService)
+        service.config = SimpleNamespace(
+            audio_format="mp3",
+            audio_bitrate=96,
+            normalize_audio_loudness=False,
+            screenshot_offset=0.0,
+        )
+        for key, value in config.items():
+            setattr(service.config, key, value)
+        service._still_height = None
+        service._check_encoder_available = lambda *_a, **_k: True
+        service._resolve_audio_track_global_index = lambda *_a, **_k: 1
+        return service
+
+    def _command(self, extract) -> list[str]:
+        captured: list[list[str]] = []
+
+        def run(cmd: list[str], *_args: object, **_kwargs: object) -> bool:
+            captured.append(cmd)
+            return False  # stops before the output-file existence check
+
+        self.assertFalse(extract(run))
+        self.assertEqual(1, len(captured))
+        return captured[0]
+
+    def _clip(self, **config: object) -> list[str]:
+        media = _load_media_extractor()
+        service = self._service(media, **config)
+
+        def extract(run) -> bool:
+            service._run_ffmpeg = run
+            return service._extract_audio(Path("video.mkv"), 10.0, 2.5, Path("clip.mp3"))
+
+        return self._command(extract)
+
+    def _still(self, still_height: int | None) -> list[str]:
+        media = _load_media_extractor()
+        service = self._service(media)
+        service._still_height = still_height
+
+        def extract(run) -> bool:
+            service._run_ffmpeg = run
+            return service._extract_static_screenshot(
+                Path("video.mkv"), 10.0, 2.5, Path("still.jpg"), screenshot_time=11.0
+            )
+
+        return self._command(extract)
+
+    def test_every_clip_is_mono(self) -> None:
+        for audio_format in ("mp3", "opus"):
+            with self.subTest(audio_format):
+                cmd = self._clip(audio_format=audio_format)
+                self.assertEqual("1", cmd[cmd.index("-ac") + 1])
+                self.assertEqual(1, cmd.count("-ac"))
+
+    def test_loudness_off_leaves_the_clip_unfiltered(self) -> None:
+        cmd = self._clip(normalize_audio_loudness=False)
+        self.assertNotIn("-af", cmd)
+        self.assertNotIn("-ar", cmd)
+
+    def test_loudness_on_adds_loudnorm_fades_and_48k(self) -> None:
+        cmd = self._clip(normalize_audio_loudness=True)
+        self.assertEqual(
+            "loudnorm=I=-16:TP=-1.5:LRA=11,afade=t=in:d=0.03,afade=t=out:st=2.470:d=0.03",
+            cmd[cmd.index("-af") + 1],
+        )
+        self.assertEqual("48000", cmd[cmd.index("-ar") + 1])
+        self.assertEqual("clip.mp3", cmd[-1])
+
+    def test_opus_bitrate_caps_at_the_mono_ceiling(self) -> None:
+        opus = self._clip(audio_format="opus", audio_bitrate=320)
+        self.assertEqual("256k", opus[opus.index("-b:a") + 1])
+        mp3 = self._clip(audio_format="mp3", audio_bitrate=320)
+        self.assertEqual("320k", mp3[mp3.index("-b:a") + 1])
+
+    def test_still_scales_to_at_most_720_without_enlarging(self) -> None:
+        cmd = self._still(None)
+        self.assertEqual("scale=-2:'min(720,ih)'", cmd[cmd.index("-vf") + 1])
+        cmd = self._still(480)
+        self.assertEqual("scale=-2:480", cmd[cmd.index("-vf") + 1])
 
 
 if __name__ == "__main__":

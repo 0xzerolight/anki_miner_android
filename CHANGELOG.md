@@ -4,6 +4,35 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-18
+
+### Added
+
+- **"Pick the clearest sentence for each word" (Settings -> Sentences).** When a word appears on several lines, its card uses the line with the fewest unknown words and a comfortable length instead of the first one. Curation still lists every line.
+- **"Skip openings, endings and signs" (Settings -> Sentences).** Lines whose subtitle style marks them as a song or a sign, and lines inside a video's opening, ending or preview chapters, stay out of mining and curation. Chapters count only in files with a moving picture.
+- **"Even out audio volume" (Settings -> Media).** Sentence clips are brought to one loudness and fade in and out over 30 ms.
+- **"Crop manga pictures to the speech bubble" (Settings -> Media).** A manga card's picture shows the word's text block and the art around it; a page with no text box keeps the full page.
+- **"Count a word as known only after its card has been reviewed" (Settings -> Word filters).** The i+1 sentence rule then counts a word as known once its AnkiDroid card has been reviewed; mining still skips every word that has a card. Off by default. If AnkiDroid cannot answer the reviewed search, the run counts every card, as before.
+- **`{series}`, `{episode}` and `{volume}` in card tags (Settings -> Cards & Anki).** `mined::{episode}` tags a Video or Audio card with its file name; a book's title is its `{series}` and a manga volume its `{volume}`. A filled-in tag longer than AnkiDroid allows is shortened instead of failing the run.
+- **A Japanese EPUB's own furigana sets the card's reading (Reading tab).**
+- **A warning that AnkiMobile cannot play Opus clips (Settings -> Media).** It shows while Opus is the audio format.
+
+### Changed
+
+- **New installs start with the four new switches on, 96 kbps audio, a bold mined word, cards in order of appearance and subtitle cleanup.** Cleanup is on for Japanese, and for Chinese and Cantonese the first time they are opened. An update keeps every setting as it was, also when an older settings backup is restored: the four switches stay off, audio stays at 192 kbps, and a language you already mined in keeps its cleanup setting.
+- **The mining engine is updated to desktop Anki Miner 3.9.0 and later (desktop `6ca809fe`).** The entries that follow are what it changes in mining and on the cards.
+- **Definition and Glossary fields hold definitions only.** Tag chips and JMdict's forms row are gone, senses are numbered only when there are two or more, and a dictionary's name appears only in a field that stacks two dictionaries. A dictionary with its own stylesheet, such as Jitendex, keeps its own entry text. Cards mined before keep their old layout.
+- **Sentence audio is mono, and card pictures are at most 720 pixels high.** A shorter video is never enlarged. Opus clips are capped at 256 kbps.
+- **One card per sentence moves a word to another line it appears on (Settings -> Sentences).** The word is skipped only when every one of its lines is taken.
+- **The Source field leaves out release groups and resolutions.** `[SubsPlease] Frieren - 01 (1080p)` reads `Frieren - 01`.
+- **Everyday Japanese words such as 魔王 are no longer skipped as names, and 思わず, 実は and similar words are mined whole.** Plain 知らせる is mined as itself, and 彼の方 joins only when the line reads it as one word.
+- **EPUB copyright, contents and index pages are no longer mined (Reading tab).**
+- **A run warns when its subtitles or text look like another language (run result).** The check reads the first 200 content words against the language's dictionaries; the run still goes ahead, and the check is skipped when the language has no dictionary installed. The warning is in English.
+
+### Fixed
+
+- **Karaoke and animated sign frames count as one subtitle line.** A styled opening that repeats a line no longer inflates word counts or makes 50 ms sentences.
+
 ## [2.0.0] - 2026-10-15
 
 ### Added

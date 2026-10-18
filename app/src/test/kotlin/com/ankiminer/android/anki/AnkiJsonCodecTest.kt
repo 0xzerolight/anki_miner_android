@@ -351,6 +351,46 @@ class AnkiJsonCodecTest {
     }
 
     @Test
+    fun `reviewed marks are opt-in on the known scan and carried on every returned note`() {
+        val marked = knownVocabularyPayload().replace("\"cursor\":", "\"markReviewed\":true,\"cursor\":")
+        val request = decode(AnkiOperation.SCAN_FIRST_FIELDS, marked) as ScanFirstFieldsRequest
+        assertTrue((request.scope as KnownVocabularyScope).markReviewed)
+        val unmarked = decode(AnkiOperation.SCAN_FIRST_FIELDS, knownVocabularyPayload()) as ScanFirstFieldsRequest
+        assertFalse((unmarked.scope as KnownVocabularyScope).markReviewed)
+        // Off is the key's absence, so each meaning has one spelling on the wire.
+        assertCategory(AnkiProtocolCategory.INVALID_VALUE) {
+            decode(
+                AnkiOperation.SCAN_FIRST_FIELDS,
+                knownVocabularyPayload().replace("\"cursor\":", "\"markReviewed\":false,\"cursor\":"),
+            )
+        }
+        assertCategory(AnkiProtocolCategory.INVALID_PAYLOAD) {
+            decode(
+                AnkiOperation.SCAN_FIRST_FIELDS,
+                """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"noteTypes","markReviewed":true,"limits":{"maxItems":1024,"maxTotalUtf8Bytes":524288}}}""",
+            )
+        }
+
+        val markedScan = ScanFirstFieldsRequest(RUN_ID, REQUEST_ID, KnownVocabularyScope(emptyList(), null, markReviewed = true))
+        val unmarkedScan = ScanFirstFieldsRequest(RUN_ID, REQUEST_ID, KnownVocabularyScope(emptyList(), null))
+        val notes = listOf(KnownNote(7, listOf("猫"), reviewed = true), KnownNote(7, listOf("犬"), reviewed = false))
+        assertEquals(
+            """{"schemaVersion":1,"type":"anki.scanfirstfields.result","payload":{"runId":"$RUN_ID","requestId":"$REQUEST_ID","notes":[{"modelId":7,"fields":["猫"],"reviewed":true},{"modelId":7,"fields":["犬"],"reviewed":false}],"scannedNotes":2,"nextCursor":null}}""",
+            AnkiJsonCodec.encodeResponse(KnownVocabularyResult(RUN_ID, REQUEST_ID, notes, 2, null), markedScan),
+        )
+        // A mark answers only a request that asked for marks, and then every note carries one.
+        assertCategory(AnkiProtocolCategory.INVALID_VALUE) {
+            AnkiJsonCodec.encodeResponse(KnownVocabularyResult(RUN_ID, REQUEST_ID, notes, 2, null), unmarkedScan)
+        }
+        assertCategory(AnkiProtocolCategory.INVALID_VALUE) {
+            AnkiJsonCodec.encodeResponse(
+                KnownVocabularyResult(RUN_ID, REQUEST_ID, listOf(notes[0], KnownNote(7, listOf("犬"))), 2, null),
+                markedScan,
+            )
+        }
+    }
+
+    @Test
     fun `validates all aligned partial-result variants before generation`() {
         val mediaError = AnkiErrorDetail(AnkiErrorCode.POST_COMMIT_UNCERTAIN, "Provider result is uncertain", false)
         val media =

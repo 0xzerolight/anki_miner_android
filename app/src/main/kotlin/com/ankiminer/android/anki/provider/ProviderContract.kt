@@ -65,6 +65,13 @@ internal sealed interface ProviderSelection {
         val noteIds: List<Long>,
     ) : ProviderSelection
 
+    /**
+     * Notes with a card that is not new and sits outside every deck in [excludedDeckNames], compiled
+     * to the browser search `-is:new -deck:"A" -deck:"B"` inside the production gateway: desktop's
+     * reviewed-card query (`deck:* -deck:"X" -is:new`). AnkiDroid matches it card by card.
+     */
+    data class ReviewedNotes(val excludedDeckNames: List<String>) : ProviderSelection
+
     /** Exact positive note ID compiled to the global cards browser query inside the gateway. */
     data class CardsForNote(val noteId: Long) : ProviderSelection
 
@@ -270,6 +277,7 @@ internal object ProviderQueryShapes {
                     selection.checksums.isStrictlyIncreasingNonNegative()
             is ProviderSelection.ExcludedDeck,
             is ProviderSelection.NotesOutsideDecks,
+            is ProviderSelection.ReviewedNotes,
             is ProviderSelection.CardsForNote,
             -> false
         }
@@ -283,6 +291,9 @@ internal object ProviderQueryShapes {
                     selection.deckNames.all { it.isValidDeckName() } &&
                     selection.noteIds.size in 1..NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS &&
                     selection.noteIds.isStrictlyIncreasingPositive()
+            is ProviderSelection.ReviewedNotes ->
+                selection.excludedDeckNames.size <= AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT &&
+                    selection.excludedDeckNames.all { it.isValidDeckName() }
             else -> false
         }
 

@@ -91,6 +91,7 @@ SL_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_sl",
     custom_fetcher_language="sl",
     papago_speaker=None,
+    wikimedia_prefixes=("LL-Q9063 (slv)-",),
     default_chain=(AudioSourceEntry(kind="edgetts"),),
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
@@ -142,7 +143,10 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=SL_RESCUABLE_TAGS,
         ),
         catalog=SL_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_gender", "aspect_pairs", "lemmatised_frequency"}),
+        capabilities=frozenset(
+            {"pos_tag", "noun_gender", "aspect_pairs", "lemmatised_frequency", "manga_ocr", "video_ocr"}
+        ),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=SL_CARD_FIELDS,
         render_hooks=(
             PosHook(),

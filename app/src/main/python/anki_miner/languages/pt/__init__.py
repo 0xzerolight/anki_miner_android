@@ -73,7 +73,9 @@ PT_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_pt",
     custom_fetcher_language="pt",
     papago_speaker=None,
-    default_chain=(AudioSourceEntry(kind="googletts"),),
+    wikimedia_prefixes=("LL-Q5146 (por)-", "Pt-br-", "Pt-pt-"),
+    default_chain=(AudioSourceEntry(kind="wikimedia"), AudioSourceEntry(kind="googletts")),
+    edge_voice="pt-BR-FranciscaNeural",
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
 )
@@ -128,7 +130,10 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=UPOS_RESCUABLE,
         ),
         catalog=PT_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_gender", "regional_variants", "lemmatised_frequency"}),
+        capabilities=frozenset(
+            {"pos_tag", "noun_gender", "regional_variants", "lemmatised_frequency", "manga_ocr", "video_ocr"}
+        ),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=PT_CARD_FIELDS,
         render_hooks=(PosHook(), GrammarTagHook(("noun_gender",), gender_labels=PT_GENDER_LABELS)),
         content_style=SPACED_CONTENT_STYLE,

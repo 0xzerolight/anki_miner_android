@@ -1425,6 +1425,7 @@ class AnkiJsonCodecBoundaryTest {
                                         entry.array("ordinals").map { it.asLong("ordinal").toInt() },
                                     )
                                 },
+                                markReviewed = "markReviewed" in scope && scope.boolean("markReviewed"),
                             )
                         }
                         "noteTypes" -> NoteTypesScope
@@ -1560,7 +1561,11 @@ class AnkiJsonCodecBoundaryTest {
                         requestId,
                         payload.array("notes").map { rawNote ->
                             val note = rawNote.asObject("known note")
-                            KnownNote(note.long("modelId"), note.strings("fields"))
+                            KnownNote(
+                                note.long("modelId"),
+                                note.strings("fields"),
+                                if ("reviewed" in note) note.boolean("reviewed") else null,
+                            )
                         },
                         payload.long("scannedNotes").toInt(),
                         payload["nextCursor"]?.let { rawCursor ->
@@ -2077,6 +2082,7 @@ class AnkiJsonCodecBoundaryTest {
                             .filter { it.fields.size > 1 }
                             .distinctBy(KnownNote::modelId)
                             .map { KnownFieldOrdinals(it.modelId, it.fields.indices.toList()) },
+                        markReviewed = response.notes.any { it.reviewed != null },
                     ),
                 )
             is NoteTypesResult -> ScanFirstFieldsRequest(response.runId, response.requestId, NoteTypesScope)

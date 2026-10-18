@@ -416,6 +416,8 @@ def _parse_request(raw_request: str) -> _VideoRequest:
         # usable name, and _resolve_identity honours "" so the source field ends
         # up bare rather than repeating the synthetic lane label.
         episode_name=_canonical_label("episodeName", payload["episodeName"], allow_empty=True),
+        # Validated as before, though the engine is now handed a blank series
+        # (_process_episode).
         series_name=_canonical_label("seriesName", payload["seriesName"]),
         source_label=_optional_source_label(payload["sourceLabel"]),
         audio_track_override=_optional_audio_track(payload["audioTrackOverride"]),
@@ -1045,11 +1047,6 @@ def _process_episode(
                 config,
                 adapters.anki,
                 cancellation_check=adapters.cancel_event.is_set,
-                # process_episode composes the card source field as
-                # "<series> — <episode>", but Android's series is a synthetic
-                # lane label ("Local video"): SAF hands over a display name,
-                # never a parent folder. Strip it back off at the seam.
-                source_prefix=f"{request.series_name} — ".lstrip(),
                 request_cancellation=adapters.cancel_event.set,
             )
         )
@@ -1066,7 +1063,14 @@ def _process_episode(
                 progress_callback=adapters.progress,
                 curation_callback=adapters.curate,
                 episode_name_override=request.episode_name,
-                series_name_override=request.series_name,
+                # Kotlin's series is a synthetic lane label ("Local video"): SAF
+                # hands over a display name, never a parent folder. A blank
+                # series keeps it out of the card's Source field, which the
+                # engine composes from the parts that are not blank, and out of
+                # the {series} tag; _resolve_identity honours "". The run's
+                # stats rows record no series (Android never reads them); its
+                # receipt and Undo record are Kotlin's and keep the label.
+                series_name_override="",
                 audio_track_override=request.audio_track_override,
                 source_label_override=request.source_label,
                 audio_only=request.audio_only,

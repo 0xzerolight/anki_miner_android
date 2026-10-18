@@ -121,6 +121,7 @@ internal data class KnownTraversalInitialization(
 internal data class KnownTraversalScope(
     val excludedDecks: List<String>,
     val fieldOrdinals: List<KnownFieldOrdinals> = emptyList(),
+    val markReviewed: Boolean = false,
 )
 
 internal data class KnownPageLease(
@@ -130,6 +131,8 @@ internal data class KnownPageLease(
     /** Exclusive lower bound: this page reads the notes ordered after it. */
     internal val fromId: Long,
     val excludedNoteIds: Set<Long>,
+    /** The notes with a reviewed card outside the exclusions; null when the walk marks nothing. */
+    val reviewedNoteIds: Set<Long>?,
     val responseCursorOrdinal: Long,
 )
 
@@ -550,12 +553,13 @@ internal class AnkiRunStateRegistry(
         owner: RunOwner,
         initialization: KnownTraversalInitialization,
         excludedNoteIds: Set<Long>,
+        reviewedNoteIds: Set<Long>? = null,
     ): KnownPageLease =
         synchronized(lock) {
             val state = requireOwnerLocked(owner)
             requireInitialization(state, owner, initialization)
             state.knownInitialization = null
-            val traversal = KnownTraversal(initialization.scope, excludedNoteIds.toSet())
+            val traversal = KnownTraversal(initialization.scope, excludedNoteIds.toSet(), reviewedNoteIds?.toSet())
             state.knownTraversal = traversal
             reserveKnownPageLocked(state, owner, traversal, requestedCursor = null)
         }
@@ -842,6 +846,7 @@ internal class AnkiRunStateRegistry(
             generation = traversal.generation,
             fromId = traversal.lastId,
             excludedNoteIds = traversal.excludedNoteIds,
+            reviewedNoteIds = traversal.reviewedNoteIds,
             responseCursorOrdinal = responseOrdinal,
         )
     }
@@ -1024,6 +1029,7 @@ internal class AnkiRunStateRegistry(
     private inner class KnownTraversal(
         val scope: KnownTraversalScope,
         val excludedNoteIds: Set<Long>,
+        val reviewedNoteIds: Set<Long>?,
     ) {
         val generation = nextGeneration++
         var lastId = 0L

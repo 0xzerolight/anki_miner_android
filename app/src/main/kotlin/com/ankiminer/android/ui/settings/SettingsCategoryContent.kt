@@ -286,6 +286,7 @@ private fun LazyListScope.ankiSettings(
                 label = stringResource(R.string.settings_tags),
             )
             SupportingText(stringResource(R.string.settings_tags_help))
+            SupportingText(stringResource(R.string.settings_tags_tokens_help))
         }
     }
     settingsCard(SettingsCategory.ANKI, recorder, "anki-target") {
@@ -390,9 +391,9 @@ internal const val MEDIA_SENTENCE_AUDIO_KEY = "media-sentence-audio"
 internal const val MEDIA_SCREENSHOT_KEY = "media-screenshot"
 
 /**
- * Desktop's Card Media page: Sentence audio (format, bitrate, padding, text-to-speech, then the
- * Android-only subtitle offset) and Screenshot (offset, then the animated clip: format, length,
- * size).
+ * Desktop's Card Media page: Sentence audio (format, bitrate, padding, loudness, text-to-speech,
+ * then the Android-only subtitle offset) and Screenshot (offset, manga crop, then the animated clip:
+ * format, length, size).
  *
  * No failure origin deep-links here. Internal rather than private so the instrumented tests can
  * compose the real group.
@@ -420,6 +421,12 @@ internal fun LazyListScope.mediaSettings(
                 },
                 onChange = { onDraftChange(draft.copy(audioFormat = it)) },
             )
+            if (draft.showsOpusWarning) {
+                SupportingText(
+                    stringResource(R.string.settings_opus_ankimobile_warning),
+                    modifier = Modifier.testTag(SettingsCategoryTestTags.OPUS_WARNING),
+                )
+            }
             NumericField(
                 draft.bitrate,
                 { onDraftChange(draft.copy(bitrate = it)) },
@@ -429,6 +436,7 @@ internal fun LazyListScope.mediaSettings(
                 imeAction = ImeAction.Next,
                 placeholder = inheritedDefault(EngineDefaults.AUDIO_BITRATE_KBPS),
             )
+            SupportingText(stringResource(R.string.settings_audio_bitrate_help))
             NumericField(
                 draft.audioPadding,
                 { onDraftChange(draft.copy(audioPadding = it)) },
@@ -437,6 +445,12 @@ internal fun LazyListScope.mediaSettings(
                 imeAction = ImeAction.Next,
                 placeholder = inheritedDefault(EngineDefaults.AUDIO_PADDING_SECONDS),
             )
+            NullableToggle(
+                stringResource(R.string.settings_normalize_audio_loudness),
+                draft.normalizeAudioLoudness,
+                EngineDefaults.NORMALIZE_AUDIO_LOUDNESS,
+            ) { onDraftChange(draft.copy(normalizeAudioLoudness = it)) }
+            SupportingText(stringResource(R.string.settings_normalize_audio_loudness_help))
             // Desktop's Text-to-speech row, moved here from the word-audio sources. Android speaks
             // with the device's offline voice, so the row is on or off rather than a list of web
             // voices.
@@ -478,6 +492,12 @@ internal fun LazyListScope.mediaSettings(
                 error = validationMessage(draft, SettingsFieldKey.SCREENSHOT_OFFSET),
                 placeholder = inheritedDefault(EngineDefaults.SCREENSHOT_OFFSET_SECONDS),
             )
+            NullableToggle(
+                stringResource(R.string.settings_crop_manga_to_text),
+                draft.cropMangaToText,
+                EngineDefaults.CROP_MANGA_TO_TEXT,
+            ) { onDraftChange(draft.copy(cropMangaToText = it)) }
+            SupportingText(stringResource(R.string.settings_crop_manga_to_text_help))
             BooleanSetting(
                 label = stringResource(R.string.settings_animated_screenshots),
                 checked = draft.animatedScreenshots,
@@ -679,7 +699,8 @@ private fun animatedSizeLabel(preset: AnimatedSizePreset): Int =
 
 /**
  * What the example sentence is and looks like, mirroring desktop's Sentences page: subtitle text
- * cleanup first, then the sentence rule, the length caps and the sentence formatting rows.
+ * cleanup and the opening/ending skip first, then the sentence rule, the best-sentence pick, the
+ * length caps and the sentence formatting rows.
  *
  * No failure origin deep-links here. Internal rather than private so the instrumented tests can
  * compose the real group.
@@ -715,11 +736,25 @@ internal fun LazyListScope.sentencesSettings(
             ) {
                 SubtitlePatternFields(draft, onDraftChange, inherited)
             }
+            // The cleanup group's last row, as on desktop: it decides which subtitle lines are read
+            // at all.
+            NullableToggle(
+                stringResource(R.string.settings_skip_opening_ending),
+                draft.skipOpeningEnding,
+                EngineDefaults.SKIP_OPENING_ENDING,
+            ) { onDraftChange(draft.copy(skipOpeningEnding = it)) }
+            SupportingText(stringResource(R.string.settings_skip_opening_ending_help))
         }
     }
     settingsCard(SettingsCategory.SENTENCES, recorder, "sentence-options") {
         SettingsSection(stringResource(R.string.settings_sentence_options)) {
             SentenceRuleChoice(draft, onDraftChange)
+            NullableToggle(
+                stringResource(R.string.settings_pick_best_sentence),
+                draft.pickBestSentence,
+                EngineDefaults.PICK_BEST_SENTENCE,
+            ) { onDraftChange(draft.copy(pickBestSentence = it)) }
+            SupportingText(stringResource(R.string.settings_pick_best_sentence_help))
             // No master toggle: each cap is off at 0, which its help line says.
             NumericField(
                 draft.maxDuration,
@@ -1530,6 +1565,12 @@ internal fun LazyListScope.wordFilterOptions(
                 enabled = draft.frequencyBandSet,
             ) { onDraftChange(draft.copy(frequencyKeepUnranked = it)) }
             HorizontalDivider()
+            NullableToggle(
+                stringResource(R.string.settings_known_from_reviewed_cards),
+                draft.knownFromReviewedCards,
+                EngineDefaults.KNOWN_FROM_REVIEWED_CARDS,
+            ) { onDraftChange(draft.copy(knownFromReviewedCards = it)) }
+            SupportingText(stringResource(R.string.settings_known_from_reviewed_cards_help))
             NullableToggle(
                 stringResource(R.string.settings_known_words),
                 draft.knownWords,

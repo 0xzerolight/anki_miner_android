@@ -83,13 +83,13 @@ repository. So it too is an opt-in manual step, not a per-push gate.
 `bridge/` holds the Anki bridge-boundary corpora. They are not engine goldens:
 no exporter derives them, and no provenance block pins them.
 
-- `bridge/anki-protocol-v1.jsonl` — 125 envelope cases (50 request, 75
-  response; 44 accept, 81 reject) across the five Anki callbacks. Read by
+- `bridge/anki-protocol-v1.jsonl` — 128 envelope cases (52 request, 76
+  response; 46 accept, 82 reject) across the five Anki callbacks. Read by
   `tests/python/android_bridge/test_anki_protocol_corpus.py` and
   `app/src/test/kotlin/com/ankiminer/android/anki/AnkiJsonCodecBoundaryTest.kt`,
   so one corpus pins both decoders. `AnkiRequestDigestTest.kt` also probes for
   it, but only to locate the project root.
-- `bridge/anki-request-digest-v1.jsonl` — 19 raw-request/canonical-form/digest
+- `bridge/anki-request-digest-v1.jsonl` — 20 raw-request/canonical-form/digest
   vectors; `bridge/anki-request-digest-mutations-v1.jsonl` — 58 single-leaf
   mutations of those vectors with the digest each must produce. Both are read by
   `tests/python/android_bridge/test_request_digest.py` and
@@ -131,7 +131,7 @@ This prevents a developer's editable install or current checkout from silently
 supplying the fixtures.
 
 Run the desktop exporter through the Android-side verifier. `engine-v1.json` is
-frozen at desktop revision `ba3b3cf`, which predates the `e7cf74e8` recorded in
+frozen at desktop revision `ba3b3cf`, which predates the `6ca809fe` recorded in
 `tools/engine-sync/engine.lock`. `run_goldens.py` takes its expected revision
 from `--lock` (default: that file), so reproducing v1 means pointing both
 `--engine-root` and `--lock` at `ba3b3cf` — against the current lock the run

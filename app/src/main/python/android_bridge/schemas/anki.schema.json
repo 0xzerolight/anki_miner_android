@@ -235,6 +235,10 @@
             "maxItemUtf8Bytes": {"const": 65536},
             "maxTotalUtf8Bytes": {"const": 262144}
           }
+        },
+        "markReviewed": {
+          "const": true,
+          "$comment": "Absent when off. On, every returned note carries reviewed: whether it has a card that is not new outside the excluded decks (desktop's deck:* -deck:\"X\" -is:new, matched card by card). Nothing is filtered. Part of the traversal's immutable scope, like fieldOrdinals."
         }
       }
     },
@@ -379,6 +383,10 @@
           "minItems": 1,
           "maxItems": 64,
           "items": {"type": "string", "maxLength": 65536}
+        },
+        "reviewed": {
+          "type": "boolean",
+          "$comment": "Present on every note exactly when the request set markReviewed."
         }
       }
     },

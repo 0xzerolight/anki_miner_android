@@ -348,6 +348,7 @@ def run(fixture_json: str, expected_home: str) -> str:
             bypass_optional_filters=True,
             reading_min_occurrence=1,
             use_i_plus_one_filter=False,
+            pick_best_sentence=False,
         )
         actual_output = {
             "documents": documents,

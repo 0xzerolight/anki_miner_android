@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from catalog_completeness import assert_catalog_complete
+from catalog_completeness import STARDICT_NOT_VENDORED, assert_catalog_complete
 from language_data_fixtures import install_language_data, language_data_home
 
 pytest.importorskip("pysubs2", reason="runtime dependency lane: the registry imports the subtitle parser")
@@ -167,7 +167,7 @@ def test_every_desktop_catalog_row_is_pinned_or_excluded(initialized_bridge_home
             "wty-ar-en": "wty-ar-en-2026.09.20",
             "opensubtitles-ar": "opensubtitles-ar-2018",
         },
-        excluded={},
+        excluded={"freedict-ara-eng": STARDICT_NOT_VENDORED},
     )
 
 
