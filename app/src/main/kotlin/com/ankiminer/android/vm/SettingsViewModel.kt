@@ -420,10 +420,11 @@ internal data class SettingsDraft(
             audioBitrateKbps =
                 AppSettingsDraftParser.optionalInt(bitrate)
                     ?.takeUnless { it == EngineDefaults.AUDIO_BITRATE_KBPS },
-            // Blank text inherits the active language's default. For Japanese that is the empty
-            // pattern and replacement, so an explicit empty override would mean the same thing;
-            // another language can inherit a real pattern (he strips bracketed captions), so a
-            // blank field keeps filtering with it until the filter toggle is turned off.
+            // Blank text inherits the active language's default, and that is a real pattern: ja,
+            // zh and yue take desktop's built-in cleanup, he strips bracketed captions. A blank
+            // field keeps filtering with it until the filter toggle is turned off, which is why
+            // the schema 4 migration keeps an upgrader's cleanup off through the toggle and never
+            // through an empty pattern.
             subtitleRegexFilter = subtitleRegex.takeIf(String::isNotEmpty),
             subtitleRegexReplacement = subtitleRegexReplacement.takeIf(String::isNotEmpty),
             useSubtitleRegexFilter = useSubtitleRegex,

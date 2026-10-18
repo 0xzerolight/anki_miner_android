@@ -87,7 +87,10 @@ class AppSettingsRepositoryTest {
                 preferencesOf(),
             )
 
-        assertEquals(3, migrated[intPreferencesKey("settings_schema_version")])
+        assertEquals(
+            DataStoreAppSettingsRepository.CURRENT_SCHEMA_VERSION,
+            migrated[intPreferencesKey("settings_schema_version")],
+        )
         assertEquals("fresh-defaults-v1", migrated[stringPreferencesKey("wordset_defaults_policy")])
         assertFalse(DataStoreAppSettingsRepository.migrationRequired(migrated))
         assertEquals(
@@ -235,9 +238,10 @@ class AppSettingsRepositoryTest {
 
     @Test
     fun `an upgrader's store without the v3_8 settings reads their defaults and needs no migration`() {
+        // Schema 4: the v3.8 settings needed no schema step of their own.
         val upgraded =
             preferencesOf(
-                intPreferencesKey("settings_schema_version") to 3,
+                intPreferencesKey("settings_schema_version") to 4,
                 stringPreferencesKey("enabled_wordsets_v2") to "enabled-wordsets-v1\n",
                 stringPreferencesKey("wordset_defaults_policy") to "preserved-existing-v1",
                 booleanPreferencesKey("screenshot_animated_enabled") to true,
@@ -403,6 +407,176 @@ class AppSettingsRepositoryTest {
 
         assertFalse(encoded.asMap().keys.any { it.name == "use_sentence_length" })
     }
+
+    @Test
+    fun `an upgraded store keeps desktop v3_8_0's defaults wherever it left them unset`() {
+        // v1.0.0 wrote schema 2 with no language and nothing parked; v2.0.0 wrote schema 3.
+        listOf(upgradedStore(schemaVersion = 2), upgradedStore(schemaVersion = 3, withStash = true)).forEach { store ->
+            val migrated = DataStoreAppSettingsRepository.migratePreferences(store)
+            val settings = DataStoreAppSettingsRepository.decodePreferences(migrated)
+
+            assertEquals(192, settings.audioBitrateKbps)
+            assertEquals(false, settings.boldTargetInSentence)
+            assertEquals(false, settings.strictCardOrder)
+            assertEquals(false, settings.pickBestSentence)
+            assertEquals(false, settings.skipOpeningEnding)
+            assertEquals(false, settings.normalizeAudioLoudness)
+            assertEquals(false, settings.cropMangaToText)
+            // Off on desktop too, so nothing to keep.
+            assertNull(settings.knownFromReviewedCards)
+            // Japanese had no built-in cleanup: the toggle goes off and the pattern stays unset, so
+            // the draft's blank-to-null normalisation cannot turn it back on.
+            assertEquals(false, settings.useSubtitleRegexFilter)
+            assertNull(settings.subtitleRegexFilter)
+            assertFalse(migrated.asMap().keys.any { it.name == "subtitle_regex_filter" })
+            assertEquals("Lapis", settings.noteType)
+            assertEquals(
+                DataStoreAppSettingsRepository.CURRENT_SCHEMA_VERSION,
+                migrated[intPreferencesKey("settings_schema_version")],
+            )
+            assertFalse(DataStoreAppSettingsRepository.migrationRequired(migrated))
+            assertEquals(migrated.asMap(), DataStoreAppSettingsRepository.migratePreferences(migrated).asMap())
+        }
+    }
+
+    @Test
+    fun `an upgraded store pins cleanup off for a parked zh and leaves a parked de alone`() {
+        val settings =
+            DataStoreAppSettingsRepository.decodePreferences(
+                DataStoreAppSettingsRepository.migratePreferences(upgradedStore(schemaVersion = 3, withStash = true)),
+            )
+
+        val chinese = settings.languageStash.getValue("zh")
+        assertEquals(false, chinese["use_subtitle_regex_filter"])
+        assertNull(chinese["subtitle_regex_filter"])
+        assertEquals("Chinese", chinese["deck_name"])
+        assertEquals(PARKED_GERMAN, settings.languageStash.getValue("de"))
+        // Coming back to zh restores the pinned toggle, not zh's new built-in cleanup.
+        assertEquals(false, settings.switchLanguage(CHINESE).useSubtitleRegexFilter)
+    }
+
+    @Test
+    fun `an upgrader's never-visited zh starts with its new built-in cleanup`() {
+        val settings =
+            DataStoreAppSettingsRepository.decodePreferences(
+                DataStoreAppSettingsRepository.migratePreferences(upgradedStore(schemaVersion = 3)),
+            )
+
+        val chinese = settings.switchLanguage(CHINESE)
+        val snapshot = EngineSettingsSnapshotMapper.map(chinese, emptyList()).settings
+
+        assertNull(chinese.useSubtitleRegexFilter)
+        assertNull(chinese.subtitleRegexFilter)
+        // Left out, so the bridge resolves both to zh's profile: the cleanup pattern, on.
+        assertFalse("use_subtitle_regex_filter" in snapshot)
+        assertFalse("subtitle_regex_filter" in snapshot)
+        // Global settings stay the upgrader's.
+        assertEquals(BridgeJsonValue.Integer(192), snapshot["audio_bitrate"])
+        assertEquals(BridgeJsonValue.Bool(false), snapshot["pick_best_sentence"])
+    }
+
+    @Test
+    fun `an upgrader's explicit choices survive the legacy-defaults migration`() {
+        val chosen =
+            upgradedStore(schemaVersion = 3).toMutablePreferences().apply {
+                this[intPreferencesKey("audio_bitrate_kbps")] = 128
+                this[booleanPreferencesKey("bold_target")] = true
+                this[booleanPreferencesKey("strict_card_order")] = true
+                this[booleanPreferencesKey("use_subtitle_regex_filter")] = true
+                this[stringPreferencesKey("subtitle_regex_filter")] = """\(.*?\)"""
+            }.toPreferences()
+
+        val settings =
+            DataStoreAppSettingsRepository.decodePreferences(DataStoreAppSettingsRepository.migratePreferences(chosen))
+
+        assertEquals(128, settings.audioBitrateKbps)
+        assertEquals(true, settings.boldTargetInSentence)
+        assertEquals(true, settings.strictCardOrder)
+        assertEquals(true, settings.useSubtitleRegexFilter)
+        assertEquals("""\(.*?\)""", settings.subtitleRegexFilter)
+    }
+
+    @Test
+    fun `a ja toggle left on over an unset pattern is pinned off`() {
+        // Before the re-pin that pattern was ja's empty default, so the toggle filtered nothing.
+        val toggleOnly =
+            upgradedStore(schemaVersion = 3).toMutablePreferences().apply {
+                this[booleanPreferencesKey("use_subtitle_regex_filter")] = true
+            }.toPreferences()
+
+        val settings =
+            DataStoreAppSettingsRepository.decodePreferences(DataStoreAppSettingsRepository.migratePreferences(toggleOnly))
+
+        assertEquals(false, settings.useSubtitleRegexFilter)
+        assertNull(settings.subtitleRegexFilter)
+    }
+
+    @Test
+    fun `an upgraded store whose language had its own cleanup keeps it`() {
+        val german =
+            upgradedStore(schemaVersion = 3).toMutablePreferences().apply {
+                this[stringPreferencesKey("mining_language")] = "de"
+            }.toPreferences()
+
+        val settings =
+            DataStoreAppSettingsRepository.decodePreferences(DataStoreAppSettingsRepository.migratePreferences(german))
+
+        assertNull(settings.useSubtitleRegexFilter)
+        assertNull(settings.subtitleRegexFilter)
+        assertEquals(192, settings.audioBitrateKbps)
+    }
+
+    @Test
+    fun `a fresh store keeps every flipped default unset`() {
+        val settings =
+            DataStoreAppSettingsRepository.decodePreferences(
+                DataStoreAppSettingsRepository.migratePreferences(preferencesOf()),
+            )
+
+        assertEquals(AppSettings(), settings)
+    }
+
+    @Test
+    fun `the legacy-defaults migration runs once`() {
+        // A schema-4 store with everything unset is a fresh install's or a deliberate reset.
+        val current =
+            upgradedStore(schemaVersion = DataStoreAppSettingsRepository.CURRENT_SCHEMA_VERSION, withStash = true)
+
+        assertFalse(DataStoreAppSettingsRepository.migrationRequired(current))
+        assertEquals(current.asMap(), DataStoreAppSettingsRepository.migratePreferences(current).asMap())
+        val settings = DataStoreAppSettingsRepository.decodePreferences(current)
+        assertNull(settings.audioBitrateKbps)
+        assertNull(settings.useSubtitleRegexFilter)
+        assertNull(settings.pickBestSentence)
+    }
+
+    /** A store an earlier release wrote: ja, a note type, every flipped setting left unset. */
+    private fun upgradedStore(
+        schemaVersion: Int,
+        withStash: Boolean = false,
+    ): Preferences =
+        preferencesOf(
+            intPreferencesKey("settings_schema_version") to schemaVersion,
+            stringPreferencesKey("enabled_wordsets_v2") to "enabled-wordsets-v1\nsurnames\n",
+            stringPreferencesKey("wordset_defaults_policy") to "preserved-existing-v1",
+            booleanPreferencesKey("setup_wizard_seen") to true,
+            stringPreferencesKey("note_type") to "Lapis",
+        ).toMutablePreferences().apply {
+            if (withStash) {
+                this[stringPreferencesKey("language_stash_v1")] =
+                    checkNotNull(
+                        LanguageStashPreferenceCodec.encode(
+                            mapOf(
+                                "zh" to
+                                    DataStoreAppSettingsRepository.parkScoped(
+                                        AppSettings(language = "zh", deckName = "Chinese"),
+                                    ),
+                                "de" to PARKED_GERMAN,
+                            ),
+                        ),
+                    )
+            }
+        }.toPreferences()
 
     private fun pinEraStore(toggle: Boolean?): Preferences =
         preferencesOf(
@@ -1076,4 +1250,13 @@ class AppSettingsRepositoryTest {
     }
 
     private object SimulatedInterruption : RuntimeException()
+
+    private companion object {
+        /** German shipped its own cleanup before the re-pin, so its parked values stay as they are. */
+        val PARKED_GERMAN: Map<String, Any?> =
+            DataStoreAppSettingsRepository.parkScoped(AppSettings(language = "de", deckName = "German"))
+
+        /** The fixture has no zh profile; only the code matters to a switch. */
+        val CHINESE = LanguageProfileFixtures.arabic.copy(code = "zh")
+    }
 }
