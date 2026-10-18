@@ -101,9 +101,15 @@ def _run(
     respond: Respond,
     *,
     i_plus_one: bool = False,
+    primary_srt: str = _PRIMARY_SRT,
+    settings: dict[str, object] | None = None,
+    chapters: list[Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
+    """``chapters`` is what ffprobe reports for the video; without it the video is never probed."""
+
     for module in ("pysubs2", "charset_normalizer", "requests"):
         pytest.importorskip(module, reason="runtime dependency lane")
+    import anki_miner.services.subtitle_cleaner as cleaner_module
     import anki_miner.services.subtitle_parser as parser_module
     from anki_miner.config import AnkiMinerConfig
     from anki_miner.models import LineLemmas, TokenizedWord
@@ -113,9 +119,13 @@ def _run(
     job = tmp_path / "video-job"
     job.mkdir()
     primary = job / "subtitle.srt"
-    primary.write_text(_PRIMARY_SRT, encoding="utf-8")
+    primary.write_text(primary_srt, encoding="utf-8")
     secondary = job / "translation.srt"
     secondary.write_text(_TRANSLATION_SRT, encoding="utf-8")
+    if chapters is not None:
+        # The chapter probe reads only a file that exists.
+        (job / "input.mkv").write_bytes(b"")
+        monkeypatch.setattr(cleaner_module, "list_chapters", lambda *_args, **_kwargs: list(chapters))
 
     anki_fields = dict.fromkeys(AnkiMinerConfig().anki_fields, "")
     anki_fields.update(word="Expression", sentence="Sentence", sentence_translation="Translation")
@@ -138,6 +148,7 @@ def _run(
                     "anki_note_type": "Lapis",
                     "anki_fields": anki_fields,
                     "merge_incomplete_cues": True,
+                    **(settings or {}),
                 },
                 "androidTtsEnabled": False,
             },
@@ -376,3 +387,67 @@ def test_an_i_plus_one_fragment_the_engine_would_not_merge_opens_unmerged(
     assert default["translation"] == "I saw"
     assert (alternative["sentence"], alternative.get("linesBefore"), alternative["linesAfter"]) == ("猫が", None, 1)
     assert fields == {"Expression": "猫", "Sentence": "猫を", "Translation": "I saw"}
+
+
+# The 猫が occurrence runs into a lyric line inside an opening chapter, then the line after it.
+_OPENING_SRT = """\
+1
+00:00:01,000 --> 00:00:02,000
+猫を
+
+2
+00:00:02,200 --> 00:00:03,000
+見た。
+
+3
+00:00:10,000 --> 00:00:11,000
+猫が
+
+4
+00:00:11,100 --> 00:00:12,000
+ラララ
+
+5
+00:00:12,600 --> 00:00:13,500
+好き。
+"""
+
+
+@pytest.mark.parametrize(
+    ("skip", "lines_after", "sentence"),
+    [(True, 1, "猫が 好き。"), (False, 2, "猫が ラララ 好き。")],
+    ids=["on", "off"],
+)
+def test_an_opening_chapter_leaves_the_preview_and_the_picked_lines(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    skip: bool,
+    lines_after: int,
+    sentence: str,
+) -> None:
+    """The preview re-derives a picked occurrence's merge from the run's own parser.
+
+    The processor gave that parser the opening's span, so with the switch on the
+    lyric line is neither in the preview's merge nor on the card.
+    """
+
+    from anki_miner.utils.audio_track_detector import Chapter
+
+    def pick(curation: dict[str, Any]) -> list[dict[str, Any]]:
+        candidate_id, _default, alternative = _sentences(curation)
+        return _selection(candidate_id, alternative)
+
+    curation, fields = _run(
+        tmp_path,
+        initialized_bridge_home,
+        monkeypatch,
+        pick,
+        primary_srt=_OPENING_SRT,
+        settings={"skip_opening_ending": skip},
+        chapters=[Chapter(start=11.05, end=12.5, title="Opening")],
+    )
+
+    _candidate_id, _default, alternative = _sentences(curation)
+    assert (alternative["sentence"], alternative["linesAfter"]) == ("猫が", lines_after)
+    assert fields == {"Expression": "猫", "Sentence": sentence, "Translation": "I like cats."}
