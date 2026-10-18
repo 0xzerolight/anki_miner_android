@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-18
+
 ### Added
 
 - **"Pick the clearest sentence for each word" (Settings -> Sentences).** When a word appears on several lines, its card uses the line with the fewest unknown words and a comfortable length instead of the first one. Curation still lists every line.
