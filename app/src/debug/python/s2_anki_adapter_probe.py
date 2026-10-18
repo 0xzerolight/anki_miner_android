@@ -65,17 +65,22 @@ def run(
     try:
         adapter.verify_card_target()
         before = sorted(adapter.get_existing_vocabulary())
+        # A second walk, this one with reviewed marks: the -is:new search.
+        reviewed_before = sorted(adapter.get_reviewed_vocabulary())
         created = adapter.create_cards_batch(
             [CardPayload(word=word, media=media, definition="cat")]
         )
         adapter.invalidate_existing_vocabulary_cache()
         after = sorted(adapter.get_existing_vocabulary())
+        reviewed_after = sorted(adapter.get_reviewed_vocabulary())
         return json.dumps(
             {
                 "created": created,
                 "noteIds": adapter.last_created_note_ids,
                 "knownBefore": before,
                 "knownAfter": after,
+                "reviewedBefore": reviewed_before,
+                "reviewedAfter": reviewed_after,
                 "audioFilename": media.audio_filename,
                 "imageFilename": media.screenshot_filename,
             },

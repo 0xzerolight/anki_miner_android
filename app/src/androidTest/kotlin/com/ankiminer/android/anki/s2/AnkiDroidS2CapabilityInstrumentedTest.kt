@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.s2
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -97,6 +98,9 @@ class AnkiDroidS2CapabilityInstrumentedTest {
         val directNoteId = requireNotNull(api.addNote(modelId, deckId, directFields, setOf(PROBE_TAG)))
         assertArrayEquals(directFields, requireNotNull(api.getNote(directNoteId)).getFields())
         assertCardRouted(directNoteId, deckId, directAudioName, directImageName)
+        // The reviewed-marks scan needs one reviewed card: the direct note's. The adapter's note
+        // stays new.
+        reviewOnlyCard(deckId, directNoteId)
 
         assertTrue(providerCallbacks.registerRun(RUN_ID))
         val callbacks = ProbeMutationCallbacks(context, providerCallbacks, api, deckId, modelId)
@@ -124,6 +128,12 @@ class AnkiDroidS2CapabilityInstrumentedTest {
             val adapterImage = summary.getString("imageFilename")
             assertTrue(rawStrings(summary.getJSONArray("knownBefore")).contains(DIRECT_EXPRESSION))
             assertTrue(rawStrings(summary.getJSONArray("knownAfter")).containsAll(listOf(DIRECT_EXPRESSION, "猫")))
+            // AnkiDroid answers the reviewed-marks scan's `-is:new` search: the reviewed direct
+            // note is marked, the adapter's new note is not.
+            assertTrue(rawStrings(summary.getJSONArray("reviewedBefore")).contains(DIRECT_EXPRESSION))
+            val reviewedAfter = rawStrings(summary.getJSONArray("reviewedAfter"))
+            assertTrue(reviewedAfter.contains(DIRECT_EXPRESSION))
+            assertFalse(reviewedAfter.contains("猫"))
             assertEquals(setOf(adapterAudio, adapterImage), callbacks.storedMediaNames)
             assertArrayEquals(
                 arrayOf("猫", "<img src=\"$adapterImage\">", "[sound:$adapterAudio]"),
@@ -223,6 +233,32 @@ class AnkiDroidS2CapabilityInstrumentedTest {
             assertTrue(answer.contains(imageName))
             assertFalse(cursor.moveToNext())
         }
+    }
+
+    /** Answers the note's only card Good through AnkiDroid's schedule URI and proves it left new. */
+    private fun reviewOnlyCard(deckId: Long, noteId: Long) {
+        val resolver = context.contentResolver
+        // AnkiDroid answers against its scheduler's queue, which follows the selected deck.
+        val selected = ContentValues().apply { put(FlashCardsContract.Deck.DECK_ID, deckId) }
+        assertEquals(1, resolver.update(FlashCardsContract.Deck.CONTENT_SELECTED_URI, selected, null, null))
+        val answer =
+            ContentValues().apply {
+                put(FlashCardsContract.ReviewInfo.NOTE_ID, noteId)
+                put(FlashCardsContract.ReviewInfo.CARD_ORD, 0)
+                put(FlashCardsContract.ReviewInfo.EASE, 3)
+                put(FlashCardsContract.ReviewInfo.TIME_TAKEN, 1_000L)
+            }
+        assertEquals(1, resolver.update(FlashCardsContract.ReviewInfo.CONTENT_URI, answer, null, null))
+        // The provider logs and swallows a scheduler failure, so the card's state is read back.
+        val stillNew =
+            resolver.query(
+                FlashCardsContract.Note.CONTENT_URI,
+                arrayOf(FlashCardsContract.Note._ID),
+                "nid:$noteId -is:new",
+                null,
+                null,
+            ).use { cursor -> cursor == null || !cursor.moveToFirst() }
+        assertFalse("the probe could not review its direct note's card", stillNew)
     }
 
     private fun rawStrings(values: JSONArray): Set<String> =
