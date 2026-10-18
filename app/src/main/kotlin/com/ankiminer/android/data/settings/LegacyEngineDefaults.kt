@@ -25,6 +25,14 @@ internal object LegacyEngineDefaults {
     val FEATURE_SWITCHES: Set<String> =
         setOf("pick_best_sentence", "skip_opening_ending", "normalize_audio_loudness", "crop_manga_to_text")
 
+    /**
+     * The [GLOBAL] keys an older backup can lack because its app never exported them, so a missing
+     * one means unset rather than "keep the current value": the four switches, and strict card
+     * order, which no export before v2.0.0 carries. Every backup-writing release (v0.5.0 on) exports
+     * the other flipped keys.
+     */
+    val UNSET_WHEN_ABSENT: Set<String> = FEATURE_SWITCHES + "strict_card_order"
+
     /** The global settings an upgrader keeps, each with the value it keeps. */
     val GLOBAL: Map<String, Any> =
         mapOf(

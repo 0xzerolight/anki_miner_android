@@ -480,10 +480,12 @@ class SettingsBackupCodecTest {
 
     @Test
     fun `a v1_0_0 backup takes the same defaults into a fresh install`() {
-        // v1.0.0 wrote format 3 at schema 2, with no mining language and the length toggle.
+        // v1.0.0 wrote format 3 at schema 2, with no mining language and the length toggle. It had
+        // no strict card order setting, so its export never carries that key.
         val json =
             """{"ankiMinerAndroidSettings":3,"appVersion":"1.0.0","schemaVersion":2,""" +
-                """"settings":{"use_sentence_length":null,$unsetFlipped"deck_name":"Mining",""" +
+                """"settings":{"use_sentence_length":null,"audio_bitrate_kbps":null,"bold_target":null,""" +
+                """"use_subtitle_regex_filter":null,"subtitle_regex_filter":null,"deck_name":"Mining",""" +
                 """"dictionary_sources_v1":null,"frequency_sources_v1":null,""" +
                 """"pitch_sources_v1":null,"audio_packs_v1":null},""" +
                 """"resourceChains":{"dictionary_sources_v1":[],"frequency_sources_v1":[],""" +
@@ -492,8 +494,12 @@ class SettingsBackupCodecTest {
         val applied = with(SettingsBackupCodec) { parse(json).applyTo(AppSettings(), ResourceManagerState()) }
 
         assertPreUpgradeDefaults(applied.settings, cleanupPinnedOff = true)
+        // Off, as the store migration leaves a 1.0.0 install; a fresh install's null would mean on.
+        assertEquals(false, applied.settings.strictCardOrder)
         assertEquals("Mining", applied.settings.deckName)
         assertEquals(null, applied.settings.knownFromReviewedCards)
+        // Only the keys from the file count as loaded: the deck, the four unset settings, the chains.
+        assertEquals(9, applied.appliedCount)
     }
 
     @Test
@@ -507,6 +513,8 @@ class SettingsBackupCodecTest {
         assertEquals(192, applied.settings.audioBitrateKbps)
         assertEquals(false, applied.settings.pickBestSentence)
         assertEquals(false, applied.settings.normalizeAudioLoudness)
+        // No export before v2.0.0 has strict order, so the missing key means unset: off.
+        assertEquals(false, applied.settings.strictCardOrder)
         // Absent from the file, so the current values stay.
         assertEquals(populated.boldTargetInSentence, applied.settings.boldTargetInSentence)
         assertEquals(populated.subtitleRegexFilter, applied.settings.subtitleRegexFilter)
