@@ -682,6 +682,8 @@ internal fun compileProviderSelection(
             CompiledProviderSelection(excludedDeckSelection(selection.deckName), null)
         is ProviderSelection.NotesOutsideDecks ->
             CompiledProviderSelection(notesOutsideDecksSelection(selection), null)
+        is ProviderSelection.ReviewedNotes ->
+            CompiledProviderSelection(reviewedNotesSelection(selection), null)
         is ProviderSelection.CardsForNote ->
             CompiledProviderSelection("nid:${selection.noteId}", null)
         is ProviderSelection.NoteIds -> {
@@ -722,6 +724,15 @@ private fun notesOutsideDecksSelection(selection: ProviderSelection.NotesOutside
     buildString {
         selection.noteIds.joinTo(this, separator = ",", prefix = "nid:")
         for (deckName in selection.deckNames) {
+            append(" -")
+            append(excludedDeckSelection(deckName))
+        }
+    }
+
+private fun reviewedNotesSelection(selection: ProviderSelection.ReviewedNotes): String =
+    buildString {
+        append("-is:new")
+        for (deckName in selection.excludedDeckNames) {
             append(" -")
             append(excludedDeckSelection(deckName))
         }

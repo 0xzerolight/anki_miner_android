@@ -467,6 +467,7 @@ internal object AnkiJsonCodec {
             var fieldOrdinals: List<KnownFieldOrdinals>? = null
             var cursorSeen = false
             var cursor: KnownVocabularyCursor? = null
+            var markReviewed = false
             var modelName: String? = null
             var firstFieldName: String? = null
             var candidates: List<DuplicateCandidate>? = null
@@ -480,6 +481,7 @@ internal object AnkiJsonCodec {
                     "excludedDecks",
                     "fieldOrdinals",
                     "cursor",
+                    "markReviewed",
                     "modelName",
                     "firstFieldName",
                     "candidates",
@@ -500,6 +502,13 @@ internal object AnkiJsonCodec {
                         cursorSeen = true
                         cursor = readNullable { readKnownCursor() }
                     }
+                    "markReviewed" -> {
+                        // Off is the key's absence, so false has no spelling on the wire.
+                        if (!readBoolean("known-vocabulary reviewed marks")) {
+                            fail(AnkiProtocolCategory.INVALID_VALUE, "markReviewed must be true when present")
+                        }
+                        markReviewed = true
+                    }
                     "modelName" -> modelName = readString("model name")
                     "firstFieldName" -> firstFieldName = readString("first field name")
                     "candidates" -> candidates = readArray(AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT, 1, "duplicate candidates") { readDuplicateCandidate() }
@@ -514,7 +523,7 @@ internal object AnkiJsonCodec {
             }
             return when (kind) {
                 "knownVocabulary" -> {
-                    requireExactSeen(seen, setOf("kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"), "known-vocabulary scope")
+                    requireExactSeen(seen - "markReviewed", setOf("kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"), "known-vocabulary scope")
                     if (!cursorSeen) missingPayload("cursor")
                     requireExactLimits(
                         limits!!,
@@ -525,7 +534,7 @@ internal object AnkiJsonCodec {
                             "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES.toLong(),
                         ),
                     )
-                    KnownVocabularyScope(excludedDecks!!, cursor, fieldOrdinals!!)
+                    KnownVocabularyScope(excludedDecks!!, cursor, fieldOrdinals!!, markReviewed)
                 }
                 "noteTypes" -> {
                     requireExactSeen(seen, setOf("kind", "limits"), "note-type scope")
@@ -1110,6 +1119,7 @@ internal object AnkiJsonCodec {
             generator.writeArrayFieldStart("fields")
             note.fields.forEach(generator::writeString)
             generator.writeEndArray()
+            note.reviewed?.let { generator.writeBooleanField("reviewed", it) }
             generator.writeEndObject()
         }
         generator.writeEndArray()

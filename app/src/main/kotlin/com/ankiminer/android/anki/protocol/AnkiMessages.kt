@@ -80,6 +80,11 @@ internal data class KnownVocabularyScope(
     val cursor: KnownVocabularyCursor?,
     /** Part of the traversal's immutable scope. A note whose type is not listed returns its first field. */
     val fieldOrdinals: List<KnownFieldOrdinals> = emptyList(),
+    /**
+     * Part of the traversal's immutable scope. On, every returned note says whether it has a reviewed
+     * card outside the excluded decks; nothing is filtered. Off is absent on the wire.
+     */
+    val markReviewed: Boolean = false,
 ) : ScanScope
 
 /** Every note type's ID, name and ordered field names, read once before a known-vocabulary traversal. */
@@ -209,6 +214,8 @@ internal data class VerifyTargetResult(
 internal data class KnownNote(
     val modelId: Long,
     val fields: List<String>,
+    /** Present exactly when the request set [KnownVocabularyScope.markReviewed]. */
+    val reviewed: Boolean? = null,
 )
 
 internal data class KnownVocabularyResult(
