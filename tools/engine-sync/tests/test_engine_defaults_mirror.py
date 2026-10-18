@@ -62,6 +62,11 @@ MIRRORED_FIELDS = {
     "READING_MINIMUM_OCCURRENCE": "reading_min_occurrence",
     "MAX_PARALLEL_WORKERS": "max_parallel_workers",
     "PITCH_CATEGORY_FORMAT": "pitch_category_format",
+    "PICK_BEST_SENTENCE": "pick_best_sentence",
+    "SKIP_OPENING_ENDING": "skip_opening_ending",
+    "NORMALIZE_AUDIO_LOUDNESS": "normalize_audio_loudness",
+    "CROP_MANGA_TO_TEXT": "crop_manga_to_text",
+    "KNOWN_FROM_REVIEWED_CARDS": "known_from_reviewed_cards",
 }
 
 # Kotlin enum entry -> the wire string the engine stores. Keeps the two enum-valued mirrors

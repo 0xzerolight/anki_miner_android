@@ -85,6 +85,14 @@ internal object EngineDefaults {
     const val STRICT_CARD_ORDER: Boolean = true
     const val MERGE_INCOMPLETE_CUES: Boolean = false
 
+    // Desktop's 2026-10 feature batch. The first four are on for a fresh install only: an upgraded
+    // store keeps them off (see AppSettingsRepository's legacy-defaults migration).
+    const val PICK_BEST_SENTENCE: Boolean = true
+    const val SKIP_OPENING_ENDING: Boolean = true
+    const val NORMALIZE_AUDIO_LOUDNESS: Boolean = true
+    const val CROP_MANGA_TO_TEXT: Boolean = true
+    const val KNOWN_FROM_REVIEWED_CARDS: Boolean = false
+
     /** One occurrence, i.e. no minimum. */
     const val READING_MINIMUM_OCCURRENCE: Int = 1
     const val MAX_PARALLEL_WORKERS: Int = 6

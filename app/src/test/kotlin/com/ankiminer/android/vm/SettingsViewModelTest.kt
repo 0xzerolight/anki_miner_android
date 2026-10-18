@@ -1,5 +1,8 @@
 package com.ankiminer.android.vm
 
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.viewModelScope
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.R
@@ -25,6 +28,7 @@ import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
 import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.LanguageDefaults
 import com.ankiminer.android.data.settings.LanguageProfileFixtures
@@ -1295,6 +1299,40 @@ class SettingsViewModelTest {
             assertFalse(repository.current.dynamicColorEnabled)
             assertTrue(io.written.isEmpty())
             assertTrue(viewModel.backupState.value is SettingsBackupState.Failed)
+        }
+
+    @Test
+    fun `an upgrader's pinned cleanup and old defaults survive saving an unrelated setting`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val upgraded =
+                DataStoreAppSettingsRepository.decodePreferences(
+                    DataStoreAppSettingsRepository.migratePreferences(
+                        preferencesOf(
+                            intPreferencesKey("settings_schema_version") to 3,
+                            stringPreferencesKey("enabled_wordsets_v2") to "enabled-wordsets-v1\nsurnames\n",
+                            stringPreferencesKey("wordset_defaults_policy") to "preserved-existing-v1",
+                            stringPreferencesKey("note_type") to "Lapis",
+                        ),
+                    ),
+                )
+            val repository = FakeAppSettingsRepository(upgraded)
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            // The draft turns a blank pattern back into null, so a migration that pinned cleanup
+            // off by writing an empty pattern would lose it here and ja would start filtering.
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(tags = "mined"))
+            advanceUntilIdle()
+
+            assertEquals("mined", repository.current.tags)
+            val snapshot = repository.snapshot(listOf("first")).settings
+            assertEquals(BridgeJsonValue.Bool(false), snapshot["use_subtitle_regex_filter"])
+            assertFalse("subtitle_regex_filter" in snapshot)
+            assertEquals(BridgeJsonValue.Integer(192), snapshot["audio_bitrate"])
+            assertEquals(BridgeJsonValue.Bool(false), snapshot["bold_target_in_sentence"])
+            assertEquals(BridgeJsonValue.Bool(false), snapshot["strict_card_order"])
+            listOf("pick_best_sentence", "skip_opening_ending", "normalize_audio_loudness", "crop_manga_to_text")
+                .forEach { key -> assertEquals(key, BridgeJsonValue.Bool(false), snapshot[key]) }
         }
 
     @Test

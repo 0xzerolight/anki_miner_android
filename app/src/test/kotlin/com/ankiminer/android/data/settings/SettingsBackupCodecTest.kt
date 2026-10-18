@@ -51,6 +51,11 @@ class SettingsBackupCodecTest {
             knownWordsMatchKanaVariants = false,
             strictCardOrder = true,
             mergeIncompleteCues = true,
+            pickBestSentence = false,
+            skipOpeningEnding = false,
+            normalizeAudioLoudness = true,
+            cropMangaToText = false,
+            knownFromReviewedCards = true,
             secondarySubtitleEnabled = true,
             pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
             maxParallelWorkers = 4,
@@ -454,6 +459,153 @@ class SettingsBackupCodecTest {
         assertTrue(json, "jisho_enabled" !in json)
         assertTrue("jisho_enabled" !in SettingsBackupCodec.portableKeyNames)
     }
+
+    @Test
+    fun `a pre-upgrade backup keeps desktop v3_8_0's defaults, into an upgraded store or a fresh one`() {
+        // v2.0.0 wrote format 5 at schema 3, every portable key present and null where unset.
+        val json = formatFiveBackup(schemaVersion = 3, settings = """"mining_language":"ja",$unsetFlipped""")
+
+        listOf(populated, AppSettings()).forEach { current ->
+            val applied = with(SettingsBackupCodec) { parse(json).applyTo(current, ResourceManagerState()) }
+
+            assertPreUpgradeDefaults(applied.settings, cleanupPinnedOff = true)
+            assertEquals(current.knownFromReviewedCards, applied.settings.knownFromReviewedCards)
+            assertEquals(emptyList<String>(), applied.rejectedKeys)
+            assertEquals(emptyList<String>(), applied.ignoredKeys)
+            // The language, the five unset settings and the four chains; the four switches the file
+            // predates are set without counting as loaded from it.
+            assertEquals(10, applied.appliedCount)
+        }
+    }
+
+    @Test
+    fun `a v1_0_0 backup takes the same defaults into a fresh install`() {
+        // v1.0.0 wrote format 3 at schema 2, with no mining language and the length toggle.
+        val json =
+            """{"ankiMinerAndroidSettings":3,"appVersion":"1.0.0","schemaVersion":2,""" +
+                """"settings":{"use_sentence_length":null,$unsetFlipped"deck_name":"Mining",""" +
+                """"dictionary_sources_v1":null,"frequency_sources_v1":null,""" +
+                """"pitch_sources_v1":null,"audio_packs_v1":null},""" +
+                """"resourceChains":{"dictionary_sources_v1":[],"frequency_sources_v1":[],""" +
+                """"pitch_sources_v1":[],"audio_packs_v1":[]}}"""
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(AppSettings(), ResourceManagerState()) }
+
+        assertPreUpgradeDefaults(applied.settings, cleanupPinnedOff = true)
+        assertEquals("Mining", applied.settings.deckName)
+        assertEquals(null, applied.settings.knownFromReviewedCards)
+    }
+
+    @Test
+    fun `a backup without a schema version is a pre-upgrade one`() {
+        val json =
+            """{"ankiMinerAndroidSettings":2,"appVersion":"0.5.0",""" +
+                """"settings":{"audio_bitrate_kbps":null,"theme_mode":"light"}}"""
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(populated) }
+
+        assertEquals(192, applied.settings.audioBitrateKbps)
+        assertEquals(false, applied.settings.pickBestSentence)
+        assertEquals(false, applied.settings.normalizeAudioLoudness)
+        // Absent from the file, so the current values stay.
+        assertEquals(populated.boldTargetInSentence, applied.settings.boldTargetInSentence)
+        assertEquals(populated.subtitleRegexFilter, applied.settings.subtitleRegexFilter)
+        assertEquals(2, applied.appliedCount)
+    }
+
+    @Test
+    fun `pre-upgrade cleanup is kept off only for a file in ja, zh or yue`() {
+        mapOf("ja" to false, "zh" to false, "yue" to false, "de" to null).forEach { (language, expected) ->
+            val json =
+                formatFiveBackup(schemaVersion = 3, settings = """"mining_language":"$language",$unsetFlipped""")
+
+            val applied =
+                with(SettingsBackupCodec) {
+                    parse(json).applyTo(
+                        AppSettings(),
+                        ResourceManagerState(),
+                        knownLanguages = setOf("ja", "zh", "yue", "de"),
+                    )
+                }
+
+            assertEquals(language, language, applied.settings.language)
+            assertEquals(language, expected, applied.settings.useSubtitleRegexFilter)
+            assertEquals(language, null, applied.settings.subtitleRegexFilter)
+            assertEquals(language, 192, applied.settings.audioBitrateKbps)
+        }
+    }
+
+    @Test
+    fun `a pre-upgrade file in a refused language leaves the current cleanup alone`() {
+        val json = formatFiveBackup(schemaVersion = 3, settings = """"mining_language":"zh",$unsetFlipped""")
+        val current = AppSettings(subtitleRegexFilter = "x+", useSubtitleRegexFilter = true)
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(json).applyTo(current, ResourceManagerState(), knownLanguages = setOf("ja"))
+            }
+
+        assertEquals("ja", applied.settings.language)
+        assertEquals(true, applied.settings.useSubtitleRegexFilter)
+        assertEquals("x+", applied.settings.subtitleRegexFilter)
+        // The global settings still arrive.
+        assertEquals(192, applied.settings.audioBitrateKbps)
+    }
+
+    @Test
+    fun `a schema 4 backup's nulls clear and the switches it lacks keep their current value`() {
+        val json = formatFiveBackup(schemaVersion = 4, settings = """"mining_language":"ja",$unsetFlipped""")
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(populated, ResourceManagerState()) }
+
+        assertEquals(null, applied.settings.audioBitrateKbps)
+        assertEquals(null, applied.settings.boldTargetInSentence)
+        assertEquals(null, applied.settings.strictCardOrder)
+        assertEquals(null, applied.settings.useSubtitleRegexFilter)
+        assertEquals(null, applied.settings.subtitleRegexFilter)
+        assertEquals(populated.pickBestSentence, applied.settings.pickBestSentence)
+        assertEquals(populated.skipOpeningEnding, applied.settings.skipOpeningEnding)
+        assertEquals(populated.normalizeAudioLoudness, applied.settings.normalizeAudioLoudness)
+        assertEquals(populated.cropMangaToText, applied.settings.cropMangaToText)
+    }
+
+    @Test
+    fun `a new backup is written at schema 4`() {
+        val json = SettingsBackupCodec.encode(AppSettings(), "2.1.0", ResourceManagerState())
+
+        assertTrue(json, "\"schemaVersion\" : 4" in json)
+        assertTrue(json, "\"ankiMinerAndroidSettings\" : 5" in json)
+    }
+
+    private fun assertPreUpgradeDefaults(
+        settings: AppSettings,
+        cleanupPinnedOff: Boolean,
+    ) {
+        assertEquals(192, settings.audioBitrateKbps)
+        assertEquals(false, settings.boldTargetInSentence)
+        assertEquals(false, settings.strictCardOrder)
+        assertEquals(if (cleanupPinnedOff) false else null, settings.useSubtitleRegexFilter)
+        assertEquals(null, settings.subtitleRegexFilter)
+        assertEquals(false, settings.pickBestSentence)
+        assertEquals(false, settings.skipOpeningEnding)
+        assertEquals(false, settings.normalizeAudioLoudness)
+        assertEquals(false, settings.cropMangaToText)
+    }
+
+    private fun formatFiveBackup(
+        schemaVersion: Int,
+        settings: String,
+    ): String =
+        """{"ankiMinerAndroidSettings":5,"appVersion":"2.0.0","schemaVersion":$schemaVersion,""" +
+            """"settings":{$settings"dictionary_sources_v1":null,"frequency_sources_v1":null,""" +
+            """"pitch_sources_v1":null,"audio_packs_v1":null},""" +
+            """"resourceChains":{"dictionary_sources_v1":[],"frequency_sources_v1":[],""" +
+            """"pitch_sources_v1":[],"audio_packs_v1":[]}}"""
+
+    /** Every setting whose default the re-pin flipped, unset, as an older app exported it. */
+    private val unsetFlipped =
+        """"audio_bitrate_kbps":null,"bold_target":null,"strict_card_order":null,""" +
+            """"use_subtitle_regex_filter":null,"subtitle_regex_filter":null,"""
 
     /** A format-3 export as the pin-era app wrote it: every portable key present, null when unset. */
     private fun applyPinEraBackup(toggle: String): AppliedSettingsBackup {

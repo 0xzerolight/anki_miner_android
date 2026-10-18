@@ -73,6 +73,15 @@ _BOOL_FIELDS = frozenset(
         # Language-scoped; only a profile's card render hook reads it (zh). Kotlin
         # shows its toggle only where the profile has the tone_color capability.
         "reading_tone_color",
+        # Desktop's 2026-10 feature batch. The first four default on for a fresh
+        # install; Kotlin stores them off for an upgrader (desktop
+        # keep_legacy_feature_switches). known_from_reviewed_cards reads
+        # AndroidAnkiAdapter.get_reviewed_vocabulary.
+        "pick_best_sentence",
+        "skip_opening_ending",
+        "normalize_audio_loudness",
+        "crop_manga_to_text",
+        "known_from_reviewed_cards",
     }
 )
 _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {

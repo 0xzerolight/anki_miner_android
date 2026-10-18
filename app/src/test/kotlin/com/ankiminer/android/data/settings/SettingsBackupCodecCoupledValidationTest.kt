@@ -18,7 +18,7 @@ class SettingsBackupCodecCoupledValidationTest {
         val applied = with(SettingsBackupCodec) { parse(json).applyTo(current) }
 
         assertEquals(listOf("screenshot_animated_quality"), applied.rejectedKeys)
-        assertEquals(current, applied.settings)
+        assertEquals(current.withPreUpgradeSwitches(), applied.settings)
     }
 
     @Test
@@ -35,6 +35,15 @@ class SettingsBackupCodecCoupledValidationTest {
         val applied = with(SettingsBackupCodec) { parse(json).applyTo(current) }
 
         assertEquals(listOf("field_map_v1"), applied.rejectedKeys)
-        assertEquals(current, applied.settings)
+        assertEquals(current.withPreUpgradeSwitches(), applied.settings)
     }
+
+    /** Both files predate the feature batch, so its four switches arrive off with them. */
+    private fun AppSettings.withPreUpgradeSwitches() =
+        copy(
+            pickBestSentence = false,
+            skipOpeningEnding = false,
+            normalizeAudioLoudness = false,
+            cropMangaToText = false,
+        )
 }
