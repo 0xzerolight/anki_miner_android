@@ -284,6 +284,11 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.readingToneColor, value.readingToneColor)
                 candidate.setOrRemove(Keys.strictCardOrder, value.strictCardOrder)
                 candidate.setOrRemove(Keys.mergeIncompleteCues, value.mergeIncompleteCues)
+                candidate.setOrRemove(Keys.pickBestSentence, value.pickBestSentence)
+                candidate.setOrRemove(Keys.skipOpeningEnding, value.skipOpeningEnding)
+                candidate.setOrRemove(Keys.normalizeAudioLoudness, value.normalizeAudioLoudness)
+                candidate.setOrRemove(Keys.cropMangaToText, value.cropMangaToText)
+                candidate.setOrRemove(Keys.knownFromReviewedCards, value.knownFromReviewedCards)
                 candidate[Keys.secondarySubtitleEnabled] = value.secondarySubtitleEnabled
                 candidate.setOrRemove(Keys.pitchCategoryFormat, value.pitchCategoryFormat?.wireValue)
                 candidate.setOrRemove(Keys.maxParallelWorkers, value.maxParallelWorkers)
@@ -522,6 +527,11 @@ class DataStoreAppSettingsRepository internal constructor(
                     readingToneColor = decoder.read(Keys.readingToneColor, null, { it }),
                     strictCardOrder = decoder.read(Keys.strictCardOrder, null, { it }),
                     mergeIncompleteCues = decoder.read(Keys.mergeIncompleteCues, null, { it }),
+                    pickBestSentence = decoder.read(Keys.pickBestSentence, null, { it }),
+                    skipOpeningEnding = decoder.read(Keys.skipOpeningEnding, null, { it }),
+                    normalizeAudioLoudness = decoder.read(Keys.normalizeAudioLoudness, null, { it }),
+                    cropMangaToText = decoder.read(Keys.cropMangaToText, null, { it }),
+                    knownFromReviewedCards = decoder.read(Keys.knownFromReviewedCards, null, { it }),
                     secondarySubtitleEnabled =
                         decoder.read(Keys.secondarySubtitleEnabled, false, { it }),
                     pitchCategoryFormat =
@@ -730,6 +740,11 @@ class DataStoreAppSettingsRepository internal constructor(
             val readingToneColor = register(booleanPreferencesKey("reading_tone_color"))
             val strictCardOrder = register(booleanPreferencesKey("strict_card_order"))
             val mergeIncompleteCues = register(booleanPreferencesKey("merge_incomplete_cues"))
+            val pickBestSentence = register(booleanPreferencesKey("pick_best_sentence"))
+            val skipOpeningEnding = register(booleanPreferencesKey("skip_opening_ending"))
+            val normalizeAudioLoudness = register(booleanPreferencesKey("normalize_audio_loudness"))
+            val cropMangaToText = register(booleanPreferencesKey("crop_manga_to_text"))
+            val knownFromReviewedCards = register(booleanPreferencesKey("known_from_reviewed_cards"))
             val secondarySubtitleEnabled =
                 register(booleanPreferencesKey("secondary_subtitle_enabled"))
             val pitchCategoryFormat = register(stringPreferencesKey("pitch_category_format"))

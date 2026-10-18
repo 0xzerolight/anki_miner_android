@@ -1741,6 +1741,59 @@ class BridgeJsonCodecTest {
         }
     }
 
+    @Test
+    fun `the feature batch switches the snapshot mapper emits survive the run encoder`() {
+        val snapshot =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    noteType = "Lapis",
+                    pickBestSentence = false,
+                    skipOpeningEnding = false,
+                    normalizeAudioLoudness = false,
+                    cropMangaToText = false,
+                    knownFromReviewedCards = true,
+                ),
+                emptyList(),
+            )
+        val request = videoRequest(audioOnly = false).copy(configSnapshot = snapshot)
+
+        val decoded = BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(request))
+
+        assertEquals(BridgeMessage.VideoRun(request), decoded)
+        assertEquals(
+            BridgeJsonValue.Bool(true),
+            (decoded as BridgeMessage.VideoRun).request.configSnapshot.settings["known_from_reviewed_cards"],
+        )
+    }
+
+    @Test
+    fun `accepts the feature batch switches and rejects a non-boolean one`() {
+        val switches =
+            listOf(
+                "pick_best_sentence",
+                "skip_opening_ending",
+                "normalize_audio_loudness",
+                "crop_manga_to_text",
+                "known_from_reviewed_cards",
+            )
+        val decoded =
+            BridgeJsonCodec.decode(
+                videoRunWithSettings(switches.joinToString(",") { """"$it":false""" }),
+            ) as BridgeMessage.VideoRun
+
+        assertEquals(
+            switches.associateWith { BridgeJsonValue.Bool(false) },
+            decoded.request.configSnapshot.settings,
+        )
+        switches.forEach { key ->
+            assertEquals(
+                key,
+                BridgeProtocolCategory.INVALID_PAYLOAD,
+                protocolFailure { BridgeJsonCodec.decode(videoRunWithSettings(""""$key":"no"""")) }.category,
+            )
+        }
+    }
+
     private fun videoRunWithSettings(settings: String): String =
         """{"schemaVersion":1,"type":"mining.video.run","payload":{"videoPath":"/proc/self/fd/8",""" +
             """"subtitlePath":"/cache/subtitle.SRT","secondarySubtitlePath":null,"secondarySubtitleOffsetMs":0,""" +

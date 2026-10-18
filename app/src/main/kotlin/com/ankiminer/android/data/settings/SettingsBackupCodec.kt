@@ -121,6 +121,11 @@ internal object SettingsBackupCodec {
             "reading_tone_color",
             "strict_card_order",
             "merge_incomplete_cues",
+            "pick_best_sentence",
+            "skip_opening_ending",
+            "normalize_audio_loudness",
+            "crop_manga_to_text",
+            "known_from_reviewed_cards",
             "secondary_subtitle_enabled",
             // Appearance travels: a built-in palette always resolves on the receiving device, and
             // dynamic colour simply falls back where the platform cannot supply it.

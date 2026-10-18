@@ -540,6 +540,11 @@ class AppSettingsRepositoryTest {
                 readingToneColor = null,
                 strictCardOrder = null,
                 mergeIncompleteCues = null,
+                pickBestSentence = null,
+                skipOpeningEnding = null,
+                normalizeAudioLoudness = null,
+                cropMangaToText = null,
+                knownFromReviewedCards = null,
                 secondarySubtitleEnabled = false,
                 pitchCategoryFormat = null,
                 maxParallelWorkers = null,
@@ -760,6 +765,11 @@ class AppSettingsRepositoryTest {
             readingToneColor = true,
             strictCardOrder = true,
             mergeIncompleteCues = true,
+            pickBestSentence = false,
+            skipOpeningEnding = false,
+            normalizeAudioLoudness = true,
+            cropMangaToText = false,
+            knownFromReviewedCards = true,
             // Non-default, or corrupting the key would quarantine to the value already stored.
             secondarySubtitleEnabled = true,
             pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
@@ -953,6 +963,17 @@ class AppSettingsRepositoryTest {
             corruptBoolean(
                 "merge_incomplete_cues",
                 original.copy(mergeIncompleteCues = defaults.mergeIncompleteCues),
+            ),
+            corruptBoolean("pick_best_sentence", original.copy(pickBestSentence = defaults.pickBestSentence)),
+            corruptBoolean("skip_opening_ending", original.copy(skipOpeningEnding = defaults.skipOpeningEnding)),
+            corruptBoolean(
+                "normalize_audio_loudness",
+                original.copy(normalizeAudioLoudness = defaults.normalizeAudioLoudness),
+            ),
+            corruptBoolean("crop_manga_to_text", original.copy(cropMangaToText = defaults.cropMangaToText)),
+            corruptBoolean(
+                "known_from_reviewed_cards",
+                original.copy(knownFromReviewedCards = defaults.knownFromReviewedCards),
             ),
             corruptBoolean(
                 "secondary_subtitle_enabled",

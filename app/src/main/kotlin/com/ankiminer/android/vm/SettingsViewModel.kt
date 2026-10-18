@@ -250,6 +250,11 @@ internal data class SettingsDraft(
     val knownWordsMatchKanaVariants: Boolean?,
     val strictCardOrder: Boolean?,
     val mergeIncompleteCues: Boolean?,
+    val pickBestSentence: Boolean?,
+    val skipOpeningEnding: Boolean?,
+    val normalizeAudioLoudness: Boolean?,
+    val cropMangaToText: Boolean?,
+    val knownFromReviewedCards: Boolean?,
     val scriptVariant: String? = null,
     val readingToneColor: Boolean? = null,
     val secondarySubtitleEnabled: Boolean,
@@ -434,6 +439,11 @@ internal data class SettingsDraft(
             knownWordsMatchKanaVariants = knownWordsMatchKanaVariants,
             strictCardOrder = strictCardOrder,
             mergeIncompleteCues = mergeIncompleteCues,
+            pickBestSentence = pickBestSentence,
+            skipOpeningEnding = skipOpeningEnding,
+            normalizeAudioLoudness = normalizeAudioLoudness,
+            cropMangaToText = cropMangaToText,
+            knownFromReviewedCards = knownFromReviewedCards,
             scriptVariant = scriptVariant,
             readingToneColor = readingToneColor,
             secondarySubtitleEnabled = secondarySubtitleEnabled,
@@ -677,6 +687,11 @@ internal data class SettingsDraft(
                 knownWordsMatchKanaVariants = settings.knownWordsMatchKanaVariants,
                 strictCardOrder = settings.strictCardOrder,
                 mergeIncompleteCues = settings.mergeIncompleteCues,
+                pickBestSentence = settings.pickBestSentence,
+                skipOpeningEnding = settings.skipOpeningEnding,
+                normalizeAudioLoudness = settings.normalizeAudioLoudness,
+                cropMangaToText = settings.cropMangaToText,
+                knownFromReviewedCards = settings.knownFromReviewedCards,
                 scriptVariant = settings.scriptVariant,
                 readingToneColor = settings.readingToneColor,
                 secondarySubtitleEnabled = settings.secondarySubtitleEnabled,
@@ -798,6 +813,24 @@ private fun SettingsDraft.rebaseChangesSince(
                 baseline.mergeIncompleteCues,
                 mergeIncompleteCues,
                 persisted.mergeIncompleteCues,
+            ),
+        pickBestSentence =
+            changedValue(baseline.pickBestSentence, pickBestSentence, persisted.pickBestSentence),
+        skipOpeningEnding =
+            changedValue(baseline.skipOpeningEnding, skipOpeningEnding, persisted.skipOpeningEnding),
+        normalizeAudioLoudness =
+            changedValue(
+                baseline.normalizeAudioLoudness,
+                normalizeAudioLoudness,
+                persisted.normalizeAudioLoudness,
+            ),
+        cropMangaToText =
+            changedValue(baseline.cropMangaToText, cropMangaToText, persisted.cropMangaToText),
+        knownFromReviewedCards =
+            changedValue(
+                baseline.knownFromReviewedCards,
+                knownFromReviewedCards,
+                persisted.knownFromReviewedCards,
             ),
         scriptVariant = changedValue(baseline.scriptVariant, scriptVariant, persisted.scriptVariant),
         readingToneColor =

@@ -379,8 +379,35 @@ def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
     assert {"screenshot_animated_fps", "screenshot_animated_height"} <= exposed
     assert "language_stash" not in exposed
     assert "jisho_delay" not in exposed
-    assert len(exposed) == 53
+    # Plus the 2026-10 feature batch's five switches (_FEATURE_BATCH_FIELDS).
+    assert set(_FEATURE_BATCH_FIELDS) <= exposed
+    assert len(exposed) == 58
     assert exposed <= {field.name for field in fields(AnkiMinerConfig)}
+
+
+# Desktop's 2026-10 feature batch, each set to its non-default value. Four default on for a fresh
+# install; Kotlin stores them off for an upgrader, so the snapshot carries an explicit False.
+# ``known_from_reviewed_cards`` reads AndroidAnkiAdapter.get_reviewed_vocabulary.
+_FEATURE_BATCH_FIELDS = {
+    "pick_best_sentence": False,
+    "skip_opening_ending": False,
+    "normalize_audio_loudness": False,
+    "crop_manga_to_text": False,
+    "known_from_reviewed_cards": True,
+}
+
+
+def test_feature_batch_fields_reach_the_engine_config(tmp_path: Path) -> None:
+    from anki_miner.config import AnkiMinerConfig
+
+    defaults = AnkiMinerConfig()
+    assert {name: getattr(defaults, name) for name in _FEATURE_BATCH_FIELDS} == {
+        name: not value for name, value in _FEATURE_BATCH_FIELDS.items()
+    }
+
+    mapped = map_config_settings({**_NOTE_TYPE, **_FEATURE_BATCH_FIELDS}, _paths(tmp_path))
+
+    assert {name: getattr(mapped.engine_config, name) for name in _FEATURE_BATCH_FIELDS} == _FEATURE_BATCH_FIELDS
 
 
 def test_wave_b_fields_reach_the_engine_config(tmp_path: Path) -> None:
@@ -460,6 +487,8 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
         ({"strict_card_order": "true"}, "invalid_config_field"),
         ({"frequency_keep_unranked": None}, "invalid_config_field"),
         ({"known_words_match_kana_variants": 0}, "invalid_config_field"),
+        ({"pick_best_sentence": "false"}, "invalid_config_field"),
+        ({"known_from_reviewed_cards": 1}, "invalid_config_field"),
         ({"secondary_subtitle_enabled": True}, "unknown_config_field"),
         # Desktop's AnkiConnect sync after a run (AI-03) is not ported.
         ({"sync_anki_after_run": True}, "unknown_config_field"),

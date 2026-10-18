@@ -839,6 +839,33 @@ class AppSettingsTest {
     }
 
     @Test
+    fun featureBatchSwitchesReachTheSnapshotOnlyWhenSet() {
+        val set =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    pickBestSentence = false,
+                    skipOpeningEnding = false,
+                    normalizeAudioLoudness = true,
+                    cropMangaToText = false,
+                    knownFromReviewedCards = true,
+                ),
+                emptyList(),
+            ).settings
+        val unset = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList()).settings
+
+        assertEquals(
+            mapOf(
+                "pick_best_sentence" to BridgeJsonValue.Bool(false),
+                "skip_opening_ending" to BridgeJsonValue.Bool(false),
+                "normalize_audio_loudness" to BridgeJsonValue.Bool(true),
+                "crop_manga_to_text" to BridgeJsonValue.Bool(false),
+                "known_from_reviewed_cards" to BridgeJsonValue.Bool(true),
+            ),
+            set - unset.keys,
+        )
+    }
+
+    @Test
     fun secondarySubtitleToggleNeverReachesTheEngine() {
         // Kotlin-only: it gates the Video tab's second picker. The engine never reads it and the
         // bridge rejects it as an unknown config field.
