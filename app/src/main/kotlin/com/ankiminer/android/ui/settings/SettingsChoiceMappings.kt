@@ -232,11 +232,16 @@ internal fun nameWordsetsAfterClick(
     if (nameWordsetsState(enabled, catalog) == ToggleableState.On) emptyList() else catalog
 
 /**
- * Desktop's `builtin_cleanup_pieces`: a language that ships its own pattern keeps exactly that one
- * piece; the rest get every preset.
+ * Desktop's `builtin_cleanup_pieces`: a language that ships its own pattern (ko, th, the spaced
+ * languages) keeps exactly that one piece. ja, zh and yue default to the joined built-ins and get
+ * them back piece by piece, so the same pieces in another order still read as the built-in cleanup.
  */
 internal fun subtitleCleanupPieces(languageDefault: String): List<String> =
-    if (languageDefault.isNotEmpty()) listOf(languageDefault) else SUBTITLE_REGEX_PRESETS.map { it.pattern }
+    if (languageDefault.isNotEmpty() && languageDefault != EngineDefaults.SUBTITLE_REGEX_FILTER) {
+        listOf(languageDefault)
+    } else {
+        EngineDefaults.SUBTITLE_CLEANUP_PIECES
+    }
 
 /** Desktop's `add_missing_pieces`: the user's own text keeps its order; missing pieces go last. */
 internal fun addMissingCleanupPieces(

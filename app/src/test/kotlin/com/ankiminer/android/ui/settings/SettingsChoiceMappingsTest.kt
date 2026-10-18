@@ -264,6 +264,42 @@ class SettingsChoiceMappingsTest {
     }
 
     @Test
+    fun `a language whose default is the built-in cleanup gets it back piece by piece`() {
+        // ja, zh and yue default to the joined built-ins (desktop builtin_cleanup_pieces).
+        assertEquals(
+            EngineDefaults.SUBTITLE_CLEANUP_PIECES,
+            subtitleCleanupPieces(EngineDefaults.SUBTITLE_REGEX_FILTER),
+        )
+        assertEquals(EngineDefaults.SUBTITLE_CLEANUP_PIECES, subtitleCleanupPieces(""))
+    }
+
+    @Test
+    fun `the built-in pieces in another order read as fully on`() {
+        val reordered = EngineDefaults.SUBTITLE_CLEANUP_PIECES.reversed().joinToString("|")
+        val chinese = LanguageDefaults.JAPANESE.copy(code = "zh")
+
+        listOf(LanguageDefaults.JAPANESE, chinese).forEach { inherited ->
+            val own = draft().copy(subtitleRegex = reordered, useSubtitleRegex = true)
+            assertEquals(inherited.code, ToggleableState.On, own.subtitleCleanupState(inherited))
+        }
+    }
+
+    @Test
+    fun `ticking cleanup over built-in pieces adds only the missing ones`() {
+        val pieces = EngineDefaults.SUBTITLE_CLEANUP_PIECES
+        val some = draft().copy(subtitleRegex = "${pieces[3]}|${pieces[0]}", useSubtitleRegex = false)
+        val every = draft().copy(subtitleRegex = pieces.reversed().joinToString("|"), useSubtitleRegex = false)
+
+        val completed = some.withSubtitleCleanupClicked(LanguageDefaults.JAPANESE)
+        assertEquals(true, completed.useSubtitleRegex)
+        assertEquals(
+            listOf(pieces[3], pieces[0], pieces[1], pieces[2], pieces[4]).joinToString("|"),
+            completed.subtitleRegex,
+        )
+        assertEquals(every.subtitleRegex, every.withSubtitleCleanupClicked(LanguageDefaults.JAPANESE).subtitleRegex)
+    }
+
+    @Test
     fun `missing pieces are appended and present ones kept in place`() {
         assertEquals("a|b", addMissingCleanupPieces("", listOf("a", "b")))
         assertEquals("b|mine|a", addMissingCleanupPieces("b|mine", listOf("a", "b")))
