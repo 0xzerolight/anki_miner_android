@@ -225,11 +225,27 @@ def _expression_field_ordinals(note_types: Mapping[int, _NoteType]) -> dict[int,
     return ordinals
 
 
+class _ScannedFields(dict[str, dict[str, object]]):
+    """One note's fields as the resolver takes them, carrying the note's reviewed mark.
+
+    ``ExpressionFieldResolver`` buffers a note type's rows until it has chosen a field and hands
+    back the same mapping objects, so the mark travels with the row through ``feed``/``flush``.
+    """
+
+    __slots__ = ("reviewed",)
+
+    def __init__(self, fields: dict[str, dict[str, object]], *, reviewed: bool) -> None:
+        super().__init__(fields)
+        self.reviewed = reviewed
+
+
 def _resolver_row(
     note_type: _NoteType | None,
     ordinals: Sequence[int],
     values: Sequence[str],
-) -> tuple[str | None, dict[str, dict[str, object]]]:
+    *,
+    reviewed: bool = False,
+) -> tuple[str | None, _ScannedFields]:
     """One note as the resolver's ``feed`` takes a notesInfo row: note type name, then fields.
 
     A note type missing from the table (created after it was read, or outside its
@@ -237,11 +253,14 @@ def _resolver_row(
     """
 
     if note_type is None:
-        return None, {"": {"value": values[0]}}
-    return note_type.name, {
-        note_type.field_names[ordinal]: {"value": value, "order": ordinal}
-        for ordinal, value in zip(ordinals, values, strict=True)
-    }
+        return None, _ScannedFields({"": {"value": values[0]}}, reviewed=reviewed)
+    return note_type.name, _ScannedFields(
+        {
+            note_type.field_names[ordinal]: {"value": value, "order": ordinal}
+            for ordinal, value in zip(ordinals, values, strict=True)
+        },
+        reviewed=reviewed,
+    )
 
 
 _SETUP_ERROR_CODES = {
@@ -910,6 +929,9 @@ class AndroidAnkiAdapter:
         self._verified_field_names: tuple[str, ...] | None = None
         self._outstanding_baseline_token: str | None = None
         self._existing_vocab_cache: set[str] | None = None
+        # Desktop F-01: the same scan narrowed to notes with a reviewed card. It only scores
+        # text (i+1, the curator's unknowns); the set above stays the mining exclusion.
+        self._reviewed_vocab_cache: set[str] | None = None
         self._dict_media_uploaded: set[str] = set()
         self._dict_media_missing_sources: set[str] = set()
         self._dict_media_actual_names: dict[str, str] = {}
@@ -966,6 +988,7 @@ class AndroidAnkiAdapter:
             self._verified_field_names = None
             self._outstanding_baseline_token = None
             self._existing_vocab_cache = None
+            self._reviewed_vocab_cache = None
             self._dict_media_uploaded.clear()
             self._dict_media_missing_sources.clear()
             self._dict_media_actual_names.clear()
@@ -1265,7 +1288,8 @@ class AndroidAnkiAdapter:
         cursor: dict[str, Any] | None,
         excluded_decks: list[str],
         field_ordinals: Mapping[int, tuple[int, ...]],
-    ) -> tuple[list[tuple[int, list[str]]], int, dict[str, Any] | None]:
+        mark_reviewed: bool,
+    ) -> tuple[list[tuple[int, list[str], bool]], int, dict[str, Any] | None]:
         self._raise_if_cancelled("scanFirstFields")
         limits = {
             "maxScannedNotes": _KNOWN_VOCABULARY_PAGE_ITEMS,
@@ -1273,20 +1297,19 @@ class AndroidAnkiAdapter:
             "maxItemUtf8Bytes": _MAX_RAW_FIRST_FIELD_UTF8_BYTES,
             "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
         }
-        payload = self._callbacks.scan_first_fields(
-            {
-                "scope": {
-                    "kind": "knownVocabulary",
-                    "excludedDecks": excluded_decks,
-                    "fieldOrdinals": [
-                        {"modelId": model_id, "ordinals": list(ordinals)}
-                        for model_id, ordinals in field_ordinals.items()
-                    ],
-                    "cursor": cursor,
-                    "limits": limits,
-                }
-            }
-        )
+        scope: dict[str, Any] = {
+            "kind": "knownVocabulary",
+            "excludedDecks": excluded_decks,
+            "fieldOrdinals": [
+                {"modelId": model_id, "ordinals": list(ordinals)} for model_id, ordinals in field_ordinals.items()
+            ],
+            "cursor": cursor,
+            "limits": limits,
+        }
+        if mark_reviewed:
+            # Absent when off, so a scan without marks keeps its bytes and request digest.
+            scope["markReviewed"] = True
+        payload = self._callbacks.scan_first_fields({"scope": scope})
         result = _expect_exact_keys(
             payload,
             {"runId", "requestId", "notes", "scannedNotes", "nextCursor"},
@@ -1298,12 +1321,16 @@ class AndroidAnkiAdapter:
                 "invalid_anki_response",
                 "Known-vocabulary page contains too many notes",
             )
-        notes: list[tuple[int, list[str]]] = []
+        notes: list[tuple[int, list[str], bool]] = []
         total_utf8_bytes = 0
+        note_keys = {"modelId", "fields", "reviewed"} if mark_reviewed else {"modelId", "fields"}
         for index, raw_note in enumerate(raw_notes):
-            note = _expect_exact_keys(raw_note, {"modelId", "fields"}, context=f"known-vocabulary note {index}")
+            note = _expect_exact_keys(raw_note, note_keys, context=f"known-vocabulary note {index}")
             model_id = _expect_positive_int(note["modelId"], context=f"known-vocabulary note {index} modelId")
             values = _expect_string_list(note["fields"], context=f"known-vocabulary note {index} fields")
+            reviewed = note.get("reviewed", False)
+            if not isinstance(reviewed, bool):
+                _protocol_error("invalid_anki_response", f"Known-vocabulary note {index} reviewed must be boolean")
             if len(values) != len(field_ordinals.get(model_id, (0,))):
                 _protocol_error(
                     "invalid_anki_response",
@@ -1328,7 +1355,7 @@ class AndroidAnkiAdapter:
                         "invalid_anki_response",
                         "Known-vocabulary page exceeds the UTF-8 budget",
                     )
-            notes.append((model_id, values))
+            notes.append((model_id, values, reviewed))
 
         scanned_notes = normalize_integral_json_number(result["scannedNotes"])
         if scanned_notes is None or scanned_notes < len(notes) or scanned_notes > _KNOWN_VOCABULARY_PAGE_ITEMS:
@@ -1398,18 +1425,60 @@ class AndroidAnkiAdapter:
         ``False``; it changes nothing here. Desktop degrades a timeout to an
         empty set, which on Android would mean "nothing is known" and re-mine
         the user's whole collection, so this read already raises either way —
-        see the ``AnkiCallbackError`` arm below.
+        see the ``AnkiCallbackError`` arm in ``_scan_known_vocabulary``.
+
+        With ``known_from_reviewed_cards`` on, the same walk marks each note
+        reviewed or not, so the ``get_reviewed_vocabulary`` call phase 2 makes
+        next is answered from it.
         """
 
         self._raise_if_cancelled("scanFirstFields")
         if self._existing_vocab_cache is not None:
             return self._existing_vocab_cache
+        mark_reviewed = self.config.known_from_reviewed_cards
+        existing, reviewed = self._scan_known_vocabulary(mark_reviewed=mark_reviewed)
+        self._existing_vocab_cache = existing
+        if mark_reviewed:
+            self._reviewed_vocab_cache = reviewed
+        return existing
+
+    def get_reviewed_vocabulary(self) -> set[str]:
+        """Card fronts whose note has a card reviewed at least once (desktop F-01).
+
+        The knowledge set for scoring text (i+1, the curator's unknowns column)
+        when "count a word as known only after its card has been reviewed" is
+        on. Never the mining exclusion: ``get_existing_vocabulary`` keeps every
+        card, so an unreviewed word is still never mined twice. Desktop's
+        ``deck:* -deck:"X" -is:new``: a note counts when one of its cards outside
+        the excluded decks is not new, so a card reviewed and later suspended
+        still counts. Cached for the run like that set and cleared with it.
+
+        Raises:
+            AnkiConnectionError: on a provider failure. The engine's
+                ``collect_knowledge_forms`` then falls back to every card.
+        """
+
+        self._raise_if_cancelled("scanFirstFields")
+        if self._reviewed_vocab_cache is None:
+            existing, reviewed = self._scan_known_vocabulary(mark_reviewed=True)
+            if self._existing_vocab_cache is None:
+                self._existing_vocab_cache = existing
+            self._reviewed_vocab_cache = reviewed
+        return self._reviewed_vocab_cache
+
+    def _scan_known_vocabulary(self, *, mark_reviewed: bool) -> tuple[set[str], set[str]]:
+        """Walk the collection once: every in-script card front, and those of reviewed notes.
+
+        The reviewed set is empty unless ``mark_reviewed``. Which field is a note
+        type's expression is decided over all of its notes, reviewed or not.
+        """
 
         from anki_miner.services.anki_note_builder import _strip_for_dedup
         from anki_miner.utils.logging_ext import capped, log_summary
 
         excluded_decks = self._known_vocabulary_excluded_decks()
         existing: set[str] = set()
+        reviewed: set[str] = set()
         resolver = _expression_field_resolver(self.config)
 
         def collect(ready: list[tuple[Mapping[str, Any], str]]) -> None:
@@ -1417,6 +1486,8 @@ class AndroidAnkiAdapter:
                 normalized = self._dedup_key(_strip_for_dedup(fields[field_name]["value"]))
                 if normalized and self._is_target_script(normalized):
                     existing.add(normalized)
+                    if isinstance(fields, _ScannedFields) and fields.reviewed:
+                        reviewed.add(normalized)
 
         notes_read = 0
         cursor: dict[str, Any] | None = None
@@ -1426,10 +1497,15 @@ class AndroidAnkiAdapter:
             field_ordinals = _expression_field_ordinals(note_types)
             while True:
                 notes, _scanned_notes, next_cursor = self._scan_known_vocabulary_page(
-                    cursor, excluded_decks, field_ordinals
+                    cursor, excluded_decks, field_ordinals, mark_reviewed
                 )
-                for model_id, values in notes:
-                    model, fields = _resolver_row(note_types.get(model_id), field_ordinals.get(model_id, (0,)), values)
+                for model_id, values, note_reviewed in notes:
+                    model, fields = _resolver_row(
+                        note_types.get(model_id),
+                        field_ordinals.get(model_id, (0,)),
+                        values,
+                        reviewed=note_reviewed,
+                    )
                     collect(resolver.feed(model, fields))
                 notes_read += len(notes)
                 if next_cursor is None:
@@ -1464,6 +1540,7 @@ class AndroidAnkiAdapter:
             outcome="ok",
             notes=notes_read,
             forms=len(existing),
+            reviewed_forms=len(reviewed) if mark_reviewed else None,
             note_types=len(resolver.chosen),
             expression_fields=capped(
                 f"{model_id}:{note_type.field_names.index(overrides[note_type.name])}"
@@ -1471,11 +1548,12 @@ class AndroidAnkiAdapter:
                 if overrides.get(note_type.name) in note_type.field_names
             ),
         )
-        self._existing_vocab_cache = existing
-        return existing
+        return existing, reviewed
 
     def invalidate_existing_vocabulary_cache(self) -> None:
+        """Forget both vocabulary sets; the next read walks the collection again (desktop parity)."""
         self._existing_vocab_cache = None
+        self._reviewed_vocab_cache = None
 
     def _parse_store_media_result(self, payload: dict[str, Any], assets: Sequence[_MediaAsset]) -> _StoreAssetsOutcome:
         result = _expect_exact_keys(
