@@ -281,11 +281,15 @@ class SettingsChoiceMappingsTest {
 
     @Test
     fun `ticking cleanup turns the filter on with every built-in piece`() {
-        val ticked = draft().withSubtitleCleanupClicked(LanguageDefaults.JAPANESE)
+        // A language with no pattern and the filter off. Japanese no longer is one: its default
+        // is the built-in cleanup, switched on.
+        val patternless =
+            LanguageDefaults.JAPANESE.copy(useSubtitleRegexFilter = false, subtitleRegexFilter = "")
+        val ticked = draft().withSubtitleCleanupClicked(patternless)
 
         assertEquals(true, ticked.useSubtitleRegex)
         assertEquals(SUBTITLE_REGEX_PRESETS.joinToString("|") { it.pattern }, ticked.subtitleRegex)
-        val cleared = ticked.withSubtitleCleanupClicked(LanguageDefaults.JAPANESE)
+        val cleared = ticked.withSubtitleCleanupClicked(patternless)
         assertEquals(false, cleared.useSubtitleRegex)
         // Off keeps the pattern, so turning it back on finds it.
         assertEquals(ticked.subtitleRegex, cleared.subtitleRegex)

@@ -248,6 +248,11 @@ class AudioDefaults:
     #: in ``default_chain`` (spec D14, tests/unit/languages/test_edge_voice_contract.py).
     #: For that language the voice also reads sentence TTS (see sentence_web_voice).
     edge_voice: str = ""
+    #: Commons file-name prefixes the ``wikimedia`` word-audio kind accepts, in
+    #: preference order (``Pl-``, ``LL-Q809 (pol)-``); an entry with a ``{term}``
+    #: slot is a whole-name template (nb's bot uploads, spec R29). Empty means no
+    #: Commons leg: service_factory builds none and Settings -> Word Audio offers none.
+    wikimedia_prefixes: tuple[str, ...] = ()
 
     def resolved_gtts_lang(self, config: AnkiMinerConfig) -> str:
         """The gTTS code for *config*; "" when the language has no Google voice."""
@@ -436,3 +441,18 @@ class LanguageProfile:
     #: whose dictionaries answer the same word with different senses and no
     #: chain order serves every word. ``False`` is first hit wins.
     stacked_definition: bool = False
+    #: The PP-OCR recogniser (a ``services.ocr.recognizers.RECOGNIZERS`` key) Manga OCR and
+    #: Video OCR read this language with. "" means the tool's own engine (mokuro's
+    #: manga-ocr, meikiocr), which reads Japanese only. Offering a tool stays the
+    #: ``manga_ocr`` / ``video_ocr`` capability's job.
+    ocr_recognizer: str = ""
+
+    @property
+    def takes_author_ruby(self) -> bool:
+        """Whether a book's own furigana (EPUB ``<rt>``) may set a card's reading (SK-31).
+
+        True for a profile that renders kanji furigana (the ``furigana``
+        capability; Japanese today): an author's kana reading over a word then
+        replaces the tokenizer's guess. Every other profile ignores ruby.
+        """
+        return "furigana" in self.capabilities

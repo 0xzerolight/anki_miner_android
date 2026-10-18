@@ -45,11 +45,14 @@ from anki_miner.services import (
     SubtitleParserService,
     WordFilterService,
 )
+from anki_miner.services.anki_note_builder import CARD_TAGS_KEY, has_tag_tokens, render_card_tags
 from anki_miner.services.anki_service import is_transient_anki_transport_error
 from anki_miner.services.cue_merge import auto_line_expansion, merge_budget_seconds
+from anki_miner.services.definition_service import preferred_dictionaries
 from anki_miner.services.dictionary.card_style_block import attach_card_style_block
 from anki_miner.services.frequency.multi_frequency_service import harmonic_rank, min_rank
 from anki_miner.services.frequency.render import render_frequency_html
+from anki_miner.services.known_word_db import collect_knowledge_forms
 from anki_miner.services.pitch_accent.render import (
     render_pitch_graph_field,
     render_pitch_text_field,
@@ -57,8 +60,9 @@ from anki_miner.services.pitch_accent.render import (
 from anki_miner.services.pitch_accent_service import pitch_position_field_value
 from anki_miner.services.reading.images import ReadingImageArchiveError, ReadingImageMemberError, prepare_card_image
 from anki_miner.services.resource_staleness import stale_resource_reimport_error
-from anki_miner.services.secondary_subtitles import attach_translations
+from anki_miner.services.secondary_subtitles import attach_translations, load_auto_translation
 from anki_miner.services.sentence_edit import resolve_sentence_edit
+from anki_miner.services.subtitle_cleaner import op_ed_skip_ranges
 from anki_miner.services.subtitle_parser import _differs_by_okurigana_only
 from anki_miner.services.word_filter import (
     MergedLineWindow,
@@ -72,6 +76,7 @@ from anki_miner.services.word_filter import (
 from anki_miner.services.word_list_service import active_whitelist
 from anki_miner.services.youtube_postfetch import StepReport, align_fetched, transcribe_fetched
 from anki_miner.utils import ensure_directory, katakana_to_hiragana
+from anki_miner.utils.ffmpeg_resolver import resolve_ffprobe
 from anki_miner.utils.i18n import tr_format
 from anki_miner.utils.logging_ext import capped, log_summary, suppressed
 from anki_miner.utils.timing import timed_phase
@@ -197,12 +202,19 @@ def _attach_position_labels(words: list[TokenizedWord], unit_labels: Mapping[int
             candidate.position_label = _position_label(candidate.start_time, unit_labels)
 
 
-# Strips a contiguous trailing run of ``[...]`` groups plus an optional
-# ``-ReleaseGroup`` suffix (Issue #83). ``[^\]]*`` (no nested brackets) keeps this
-# linear-time and confines the match to a *trailing* block, so mid-title brackets
-# like ``[Blu-ray]`` survive. End-anchored, so a leading series/season prefix is
-# never touched.
-_ARR_METADATA_RE = re.compile(r"\s*(?:\[[^\]]*\]\s*)+(?:-\S+)?\s*$")
+# Strips a contiguous trailing run of ``[...]`` groups and resolution parens such
+# as ``(1080p)`` or ``(BD 1920x1080 HEVC)``, plus an optional ``-ReleaseGroup``
+# suffix (Issue #83). ``[^\]]*`` / ``[^()]*`` (no nesting) confine the match to a
+# *trailing* block, so mid-title brackets like ``[Blu-ray]`` and a year paren like
+# ``(2019)`` survive. Labels are short (file stems), so the lookahead is cheap.
+_ARR_METADATA_RE = re.compile(
+    r"\s*(?:(?:\[[^\]]*\]|\((?=[^()]*(?<!\d)\d{3,4}(?:[pP]|[xX×]\d{3,4}))[^()]*\))\s*)+(?:-\S+)?\s*$"
+)
+# One leading fansub tag (``[SubsPlease] Title``). Applied after the trailing strip.
+# Only a tag with no space: a bracket with words in it reads as a title such as
+# ``[Oshi no Ko] 01``. Also skipped when nothing but a dash or nothing at all
+# would follow it.
+_LEADING_GROUP_RE = re.compile(r"^\s*\[[^\]\s]*\]\s*")
 
 _OFFLINE_DICTIONARY_REQUIRED_MESSAGE = (
     "No usable offline dictionary is installed. Use Tools → Download Recommended Resources or Settings → Dictionaries."
@@ -228,9 +240,55 @@ def require_usable_offline_provider(
 
 
 def sanitize_source_label(label: str) -> str:
-    """Remove *arr release metadata (e.g. ``[WEBRip-1080p][JA]-Trix``) from a
-    source label, leaving the human-readable title."""
-    return _ARR_METADATA_RE.sub("", label).strip()
+    """Remove release metadata from a source label, leaving the human-readable title.
+
+    Drops the trailing *arr block (``[WEBRip-1080p][JA]-Trix``), a trailing
+    resolution paren (``(1080p)``) and one leading fansub tag (``[SubsPlease]``).
+    """
+    label = _ARR_METADATA_RE.sub("", label).strip()
+    rest = _LEADING_GROUP_RE.sub("", label, count=1)
+    if rest and rest[0] not in "-–—":
+        return rest
+    return label
+
+
+def _source_label(series: str, episode: str) -> str:
+    """``series — episode`` for the Source field, each part sanitized on its own.
+
+    The episode stem carries its own fansub tag, which would otherwise sit
+    mid-label after the separator where the leading-tag strip cannot see it. A
+    part that sanitizes to nothing is kept as written: a folder named only
+    ``[Oshi no Ko]`` is a title, not release metadata.
+    """
+    parts = ((sanitize_source_label(part) or part.strip()) for part in (series, episode))
+    return " — ".join(part for part in parts if part)
+
+
+def _episode_tag_values(series: str, episode: str) -> dict[str, str]:
+    """Tag-token values for a video, audiobook or subtitle source (F-03).
+
+    Each part is cleaned like the Source label (:func:`_source_label`): release
+    metadata stripped, and a part that cleans to nothing kept as written.
+    """
+    return {
+        "series": sanitize_source_label(series) or series.strip(),
+        "episode": sanitize_source_label(episode) or episode.strip(),
+        "volume": "",
+    }
+
+
+def _document_tag_values(document: ReadingDocument) -> dict[str, str]:
+    """Tag-token values for a reading source (F-03).
+
+    A manga's mokuro volume is ``{volume}``. A book's, pasted text's or Anki
+    deck's ``series`` is a constant ("Books", "Text") or repeats the title, so
+    its title is ``{series}``. A subtitle file reads like a video.
+    """
+    if document.kind == "manga":
+        return {"series": document.series.strip(), "episode": "", "volume": document.episode.strip()}
+    if document.kind == "subtitle":
+        return _episode_tag_values(document.series, document.episode)
+    return {"series": document.episode.strip(), "episode": "", "volume": ""}
 
 
 def _online_run_identity(site: str, video_id: str) -> tuple[str, str]:
@@ -285,6 +343,21 @@ def _note_dropped(
             drops.setdefault(word.mined_form, reason if isinstance(reason, NotMinedReason) else reason(word))
 
 
+def _log_sentence_moves(event: str, before: list[TokenizedWord], after: list[TokenizedWord]) -> None:
+    """One receipt for the words a sentence picker moved to another of their lines (F-06, F-07).
+
+    A moved word comes back re-made (``WordFilterService._swap_word_to_line``);
+    a word left where it was comes back as the same object. A stand-in filter
+    (a test double) that returns no list logs nothing.
+    """
+    if not isinstance(after, list):
+        return
+    unchanged = {id(word) for word in before}
+    moved = sum(1 for word in after if id(word) not in unchanged)
+    if moved:
+        log_summary(logger, event, moved=moved, words=len(after))
+
+
 #: ``last_word_drops`` / ``AnkiService.last_not_created`` states as not-mined reasons.
 _WORD_DROP_REASONS = {"media_failed": NotMinedReason.MEDIA_FAILED, "no_definition": NotMinedReason.NO_DEFINITION}
 _NOT_CREATED_REASONS = {
@@ -292,6 +365,16 @@ _NOT_CREATED_REASONS = {
     "refused": NotMinedReason.ANKI_FAILED,
     "uncertain": NotMinedReason.ANKI_FAILED,
 }
+
+#: MS-28 (ruling R21): the language check samples a run's first content words
+#: (phase 1's first-appearance order), stays silent below a minimum sample, and
+#: warns when fewer than this share of them have a dictionary entry. A correct
+#: Japanese run sits near 98 % (the owner's 2026-09 logs: 1-15 no-definition
+#: rejects per 255-1095 unique words); a file in another language falls far
+#: below half.
+_LANGUAGE_CHECK_SAMPLE = 200
+_LANGUAGE_CHECK_MIN_WORDS = 30
+_LANGUAGE_CHECK_FLOOR = 0.5
 
 
 def _build_pos_context(words: list[TokenizedWord]) -> dict[str, str]:
@@ -333,6 +416,11 @@ class _EpisodeContext:
     # timestamp format); set by process_reading for manga/novels/subtitles.
     unit_labels: dict[int, str] | None = None
 
+    #: F-03: ``series`` / ``episode`` / ``volume`` for the tag tokens, taken
+    #: from this item's source at construction. Empty on a context built by
+    #: hand (tests), which renders every token empty.
+    tag_values: dict[str, str] = field(default_factory=dict)
+
     #: Which entry point started this run ("episode" / "reading" / "youtube").
     #: Rendered on both halves of the run's ``Pipeline start``/``Pipeline end``
     #: receipt so a phase count can be tied back to the run that produced it.
@@ -363,6 +451,11 @@ class _EpisodeContext:
     # The same snapshot as card fronts: the key i+1 and the curator's unknowns
     # column count on (UniDic folds 撮る onto 取る's lemma; known-ness is per front).
     unknown_fronts: set[str] = field(default_factory=set)
+    #: The fronts phase 2's exclusion left (every card in Anki). Equal to
+    #: ``unknown_fronts`` unless F-01's reviewed-only box widens that scoring
+    #: basis; the season mine pass re-checks its subset against this one, so
+    #: a word with an unreviewed card is never mined twice.
+    mineable_fronts: set[str] = field(default_factory=set)
     # Which whitelist entries this item reached (Settings -> Word Filters): phase
     # 2 stamps the entries and the already-known ones; None when no whitelist
     # is in effect. The mined ones are added at the result funnel
@@ -536,6 +629,11 @@ class EpisodeProcessor:
         #: it merged into, in source order. The --api result's `filter` reads it.
         #: Reset per run.
         self.last_collapsed: list[tuple[TokenizedWord, str]] = []
+        #: F-04: the translation cues this processor picked per video when the
+        #: user chose no file (None = looked, found nothing). Kept for the
+        #: processor's life, so a season's pre-pass and mine pass pick once and
+        #: the curator reads the same cues the cards get.
+        self._auto_translations: dict[Path, list[tuple[float, float, str]] | None] = {}
         # Resolved, not required: every existing caller builds this positionally
         # or by the create_episode_processor kwargs, and ja is the only profile
         # until Stage 2.
@@ -934,12 +1032,14 @@ class EpisodeProcessor:
     def _season_subset_still_unknown(self, ctx: _EpisodeContext, subset: list[TokenizedWord]) -> list[TokenizedWord]:
         """The season curator's subset minus what this mine pass now knows (T3).
 
-        ``ctx.unknown_fronts`` is this pass's post-known snapshot over the same
+        ``ctx.mineable_fronts`` is this pass's post-known snapshot over the same
         file, so a curated word an earlier episode's mine pass just carded (or
         its kana spelling, under the kana-variant rule) drops out exactly as it
-        would in per-pair Batch. Nothing else re-judges the subset.
+        would in per-pair Batch. Nothing else re-judges the subset. It is the
+        exclusion snapshot, not the i+1 basis: with F-01's reviewed-only box on,
+        a just-carded word is still unreviewed and must not be mined again.
         """
-        kept = [word for word in subset if word.mined_form in ctx.unknown_fronts]
+        kept = [word for word in subset if word.mined_form in ctx.mineable_fronts]
         ctx.new_words_found = len(kept)
         if len(kept) < len(subset):
             logger.info("season mine pass: %d curated word(s) known since the season curator", len(subset) - len(kept))
@@ -973,6 +1073,18 @@ class EpisodeProcessor:
             )
         )
 
+    def _wants_line_index(self) -> bool:
+        """Whether phase 2 reads the per-line index even with no curator in the run.
+
+        i+1 picks each word's line from it, one card per sentence moves a word
+        whose line is taken to another of its lines (F-06), and the
+        best-sentence pick ranks a word's lines (F-07). Without the index each
+        falls back silently (i+1 would drop every word). A curator asks for the
+        index on its own (``want_line_index``).
+        """
+        config = self.config
+        return bool(config.use_i_plus_one_filter or config.deduplicate_sentences or config.pick_best_sentence)
+
     def _phase1_parse(
         self,
         ctx: _EpisodeContext,
@@ -984,9 +1096,9 @@ class EpisodeProcessor:
         """Phase 1: parse subtitles into tokenized words (and optionally a line index).
 
         Returns the raw parse output; mutates ``ctx.total_words_found``. The
-        line index is built when the i+1 filter needs it OR when a caller asks
-        via ``want_line_index`` (interactive curation uses it to offer
-        alternative example sentences per word).
+        line index is built when phase 2 reads it (:meth:`_wants_line_index`)
+        OR when a caller asks via ``want_line_index`` (interactive curation
+        uses it to offer alternative example sentences per word).
 
         ``subtitle_offset`` is this run's offset; ``None`` leaves the parser on
         its own ``config.subtitle_offset``.
@@ -1000,7 +1112,7 @@ class EpisodeProcessor:
             tr_format(QCoreApplication.translate("EpisodeProcessor", "Subtitles: %1"), subtitle_file.name)
         )
         line_index: list[LineLemmas] | None = None
-        if self.config.use_i_plus_one_filter or want_line_index:
+        if self._wants_line_index() or want_line_index:
             all_words, line_index = self.subtitle_parser.parse_subtitle_file_with_index(subtitle_file, subtitle_offset)
         else:
             all_words = self.subtitle_parser.parse_subtitle_file(subtitle_file, subtitle_offset)
@@ -1020,6 +1132,30 @@ class EpisodeProcessor:
             unique=len(all_words),
         )
         return all_words, line_index
+
+    def _register_op_ed_chapters(self, video_file: Path, subtitle_file: Path, subtitle_offset: float | None) -> None:
+        """Tell the parser which of the video's chapters to leave out (F-08 step 2).
+
+        Runs before phase 1 so the parse, the line index and line expansion
+        read the same lines. The Word Curator builds its own parser for its
+        context and registers the same ranges there (X, L3b README Post-merge
+        item 6). Off with the switch (strict ``is True``, as for a test's
+        MagicMock config). The video's chapters
+        apply to an external subtitle file too: they are media time, and the
+        run's offset puts the file's cues on that timeline. Audiobooks passes
+        the audio file, which has no moving picture, so its chapters skip nothing.
+        """
+        if self.config.skip_opening_ending is not True:
+            return
+        ranges = op_ed_skip_ranges(video_file, resolve_ffprobe(self.config))
+        offset = self.config.subtitle_offset if subtitle_offset is None else subtitle_offset
+        self.subtitle_parser.set_skip_ranges(subtitle_file, ranges, offset=offset)
+        if ranges:
+            self.presenter.show_info(
+                QCoreApplication.translate(
+                    "EpisodeProcessor", "Skipping lines in %n opening, ending or preview chapter(s)", "", len(ranges)
+                )
+            )
 
     def _active_whitelist(self) -> WordListService | None:
         """The whitelist service when force-include is in effect for this run.
@@ -1220,14 +1356,20 @@ class EpisodeProcessor:
         # filters (frequency, word-list, script-type, wordset) shrink it.
         # The i+1 check must see ALL words the learner doesn't know, not
         # just the mineable ones.
-        all_unknown_lemmas = {w.lemma for w in unknown_words}
+        # F-01: with Word Filters → "Count a word as known only after its card
+        # has been reviewed" on, a word whose card is still new counts as
+        # unknown here (i+1, the curator's unknowns column) while the exclusion
+        # above still keeps it from being mined again.
+        scoring_words = self._phase2_scoring_unknown(all_words, unknown_words)
+        all_unknown_lemmas = {w.lemma for w in scoring_words}
         # Parsed lines are counted by card front (P4): known-ness was decided
         # per front, so a known 取る must not count as unknown beside 撮る.
-        all_unknown_fronts = {w.mined_form for w in unknown_words}
+        all_unknown_fronts = {w.mined_form for w in scoring_words}
         # The curator's "Unknowns in line" column counts against this same
         # basis, so the column and the i+1 filter can never disagree.
         ctx.unknown_lemmas = all_unknown_lemmas
         ctx.unknown_fronts = all_unknown_fronts
+        ctx.mineable_fronts = {w.mined_form for w in unknown_words}
 
         viable = self._phase2_definition_viability(unknown_words, counts)
         _note_dropped(ctx.not_mined, NotMinedReason.NO_DEFINITION, unknown_words, viable)
@@ -1385,6 +1527,30 @@ class EpisodeProcessor:
                     drops.update(dict.fromkeys(known, NotMinedReason.KNOWN))
         return unknown_words
 
+    def _phase2_scoring_unknown(
+        self, all_words: list[TokenizedWord], unknown_words: list[TokenizedWord]
+    ) -> list[TokenizedWord]:
+        """The words that count as unknown when scoring lines (F-01, owner ruling R3).
+
+        ``unknown_words`` (phase 2's exclusion: every card in Anki) unless the
+        reviewed-only box is on. Then the same subtraction runs again from
+        ``all_words`` against the knowledge set — reviewed cards, the user list
+        and the cache rows flagged reviewed — and this run flags the reviewed
+        forms in the cache. A failed review query falls back to every card
+        with one warning (``collect_knowledge_forms``). The "include known
+        words" harness mode subtracts nothing either way.
+        """
+        if not self.config.known_from_reviewed_cards or self.config.include_known_words:
+            return unknown_words
+        knowledge = collect_knowledge_forms(
+            self.known_word_db,
+            self.config,
+            self.anki_service.get_existing_vocabulary(),
+            self.anki_service.get_reviewed_vocabulary,
+            record_reviews=True,
+        )
+        return self._drop_known_card_fronts(self.word_filter.filter_unknown(all_words, knowledge), knowledge)
+
     def _drop_known_card_fronts(self, words: list[TokenizedWord], known: set[str]) -> list[TokenizedWord]:
         """``words`` minus those a render hook cards under a front already known (audit L1-004).
 
@@ -1536,6 +1702,45 @@ class EpisodeProcessor:
         ]
         return viable
 
+    def _warn_if_wrong_language(self, all_words: list[TokenizedWord]) -> None:
+        """MS-28 (ruling R21): warn when few of the run's first words have a dictionary entry.
+
+        A subtitle or text in another language than the one being mined parses
+        into words the mining language's dictionaries mostly lack. The check
+        probes the first :data:`_LANGUAGE_CHECK_SAMPLE` phase-1 words (known
+        ones included) with phase 2's own probe, :meth:`definition_viable`, so
+        "has an entry" means what the no-definition gate means, and warns in the
+        Activity Log below :data:`_LANGUAGE_CHECK_FLOOR`. A warning only: the
+        run goes on.
+
+        Silent when fewer than :data:`_LANGUAGE_CHECK_MIN_WORDS` words were
+        parsed (too few to judge), when no usable offline dictionary is loaded
+        (nothing to measure against), and on a bypass run that skips the
+        dictionary gates (the golden contract), like the no-definition gate.
+        """
+        if self.config.bypass_optional_filters and self.bypass_skips_dictionary_gates:
+            return
+        sample = all_words[:_LANGUAGE_CHECK_SAMPLE]
+        if len(sample) < _LANGUAGE_CHECK_MIN_WORDS:
+            return
+        if not self.definition_service.has_usable_offline_provider():
+            return
+        hits = sum(self.definition_viable(sample))
+        log_summary(logger, "Language check", sampled=len(sample), hits=hits, floor=_LANGUAGE_CHECK_FLOOR)
+        if hits >= _LANGUAGE_CHECK_FLOOR * len(sample):
+            return
+        self.presenter.show_warning(
+            tr_format(
+                QCoreApplication.translate(
+                    "EpisodeProcessor",
+                    "Only %1% of the first %2 words have an entry in your dictionaries. "
+                    "Is this file in the language you are mining?",
+                ),
+                round(hits * 100 / len(sample)),
+                len(sample),
+            )
+        )
+
     def _phase2_coverage_filters(
         self,
         unknown_words: list[TokenizedWord],
@@ -1551,7 +1756,10 @@ class EpisodeProcessor:
         """Phase 2: run the coverage filters in order; return the words they keep.
 
         Frequency band, word lists, script type, name wordsets, the reading
-        occurrence floor, sentence dedup, i+1, then sentence length. Whitelist
+        occurrence floor, i+1, the best-sentence pick (F-07), sentence dedup,
+        then sentence length. Dedup and i+1 never both run, so their order is
+        free; the best-sentence pick sits after i+1 (it refines i+1's line) and
+        before dedup (which then sees the chosen lines). Whitelist
         force-included words never reach here. Fills each filter's reject
         counter.
         """
@@ -1697,29 +1905,6 @@ class EpisodeProcessor:
             _note_dropped(drops, NotMinedReason.OCCURRENCE, previous, unknown_words)
             counts.episode_rejects += before - len(unknown_words)
 
-        # Sentence deduplication. i+1 filter does its own sentence picking;
-        # dedup would be a no-op (post-i+1 sentences are unique by construction).
-        if (
-            self.config.deduplicate_sentences
-            and not self.config.use_i_plus_one_filter
-            and not self.config.bypass_optional_filters
-        ):
-            before = len(unknown_words)
-            previous = unknown_words
-            unknown_words = self.word_filter.deduplicate_by_sentence(unknown_words)
-            _note_dropped(drops, NotMinedReason.ONE_PER_SENTENCE, previous, unknown_words)
-            deduped = before - len(unknown_words)
-            counts.duplicate_sentence_rejects = deduped
-            if deduped > 0:
-                self.presenter.show_info(
-                    tr_format(
-                        QCoreApplication.translate(
-                            "EpisodeProcessor", "Sentence deduplication: removed %1 duplicate-sentence words"
-                        ),
-                        deduped,
-                    )
-                )
-
         # i+1 sentence filtering. Restricts mining to words with an i+1 example
         # sentence (exactly one unknown overall — checked against the pre-filter
         # snapshot, Issue #74 — and that unknown must be mineable). Rescans
@@ -1746,6 +1931,65 @@ class EpisodeProcessor:
                     f"{pct:.0f}",
                 )
             )
+
+        # Best sentence (F-07, ruling R5). A word that appears on several lines
+        # moves to its clearest one: fewest unknown words, then a length inside
+        # the band, then the shorter, then the earlier line. After i+1, whose
+        # pick it refines among i+1 lines (every line holds the word itself, so
+        # the fewest unknowns there is 1); before dedup, which then sees the
+        # chosen lines. Lines over the length caps are never picked. Whether
+        # length counts words or characters is the profile's
+        # SentenceRules.space_aware.
+        if self.config.pick_best_sentence and line_index and not self.config.bypass_optional_filters:
+            previous = unknown_words
+            unknown_words = self.word_filter.pick_best_sentences(
+                unknown_words,
+                line_index,
+                all_unknown_lemmas,
+                all_unknown_fronts,
+                spaced=self.profile.sentence_rules.space_aware,
+                max_duration=self.config.max_sentence_duration_seconds,
+                max_chars=self.config.max_sentence_chars,
+                # With i+1 the pick stays among i+1 lines (one unknown, the word).
+                max_unknown=1 if self.config.use_i_plus_one_filter else 0,
+            )
+            _log_sentence_moves("Best sentence", previous, unknown_words)
+
+        # Sentence deduplication (one card per sentence). i+1 filter does its own
+        # sentence picking; dedup would be a no-op (post-i+1 sentences are unique
+        # by construction). With a line index, a word whose line an earlier word
+        # kept moves to another of its lines that no word holds and that passes
+        # the length caps (F-06); only a word with no such line is dropped. The
+        # one-argument call without an index is the pre-F-06 first-wins rule.
+        if (
+            self.config.deduplicate_sentences
+            and not self.config.use_i_plus_one_filter
+            and not self.config.bypass_optional_filters
+        ):
+            before = len(unknown_words)
+            previous = unknown_words
+            if line_index:
+                unknown_words = self.word_filter.deduplicate_by_sentence(
+                    unknown_words,
+                    line_index=line_index,
+                    max_duration=self.config.max_sentence_duration_seconds,
+                    max_chars=self.config.max_sentence_chars,
+                )
+            else:
+                unknown_words = self.word_filter.deduplicate_by_sentence(unknown_words)
+            _note_dropped(drops, NotMinedReason.ONE_PER_SENTENCE, previous, unknown_words)
+            _log_sentence_moves("Sentence dedup", previous, unknown_words)
+            deduped = before - len(unknown_words)
+            counts.duplicate_sentence_rejects = deduped
+            if deduped > 0:
+                self.presenter.show_info(
+                    tr_format(
+                        QCoreApplication.translate(
+                            "EpisodeProcessor", "Sentence deduplication: removed %1 duplicate-sentence words"
+                        ),
+                        deduped,
+                    )
+                )
 
         # Sentence length filter (Issue #33). Drops words whose FINAL example
         # sentence exceeds the configured audio-duration and/or character caps.
@@ -2042,12 +2286,20 @@ class EpisodeProcessor:
         lookup_batch = (
             self.definition_service.get_glossaries_batch if stacked else self.definition_service.get_definitions_batch
         )
+        # F-10: a word the Word Curator pinned to a dictionary takes that
+        # dictionary's entry. Passed only when a pick exists, so an untouched
+        # run calls the lookup exactly as before; a stacking profile already
+        # holds every dictionary in its Definition and ignores the pick.
+        definition_kwargs: dict[str, dict[str, str]] = dict(token_kwargs)
+        picks = preferred_dictionaries(words_with_media)
+        if picks and not stacked:
+            definition_kwargs["preferred_dictionaries"] = picks
         definitions = lookup_batch(
             lookup_pairs,
             progress_callback,
             fallback_context,
             is_cancelled=lambda: self.cancelled,
-            **token_kwargs,
+            **definition_kwargs,
         )
         self.presenter.show_success(
             QCoreApplication.translate(
@@ -2199,10 +2451,9 @@ class EpisodeProcessor:
         # entries ONCE per episode off the already-loaded provider chain
         # (DefinitionService.css_entries — no registry rescan, no per-dict
         # SQLite I/O; PB1) but attach a <style> block to EVERY mapped styled
-        # field inside the loop — tree-shaken against that field's own HTML
-        # and filtered to the dictionaries present in it (Issue #93;
-        # witness/variant scans are cheap cached string work; freshly rendered
-        # bodies are born stamped, so witnesses are already post-stamp). Each
+        # field inside the loop — its base regions picked by that field's own
+        # HTML and its dict CSS filtered to the dictionaries present in it
+        # (cheap substring checks over cached minified regions). Each
         # field must carry its own TRAILING block: JS-driven note types (Kiku)
         # keep fields in inert <template>s and re-inject them one at a time
         # through DOMParser→body.innerHTML, so a <style> in another field never
@@ -2217,6 +2468,14 @@ class EpisodeProcessor:
         # S21: an rtl language's blocks carry the example-sentence rule; the
         # profile says which (card_style_block.RTL_GLOSSARY_CSS).
         style_direction = self.profile.content_style.direction
+        # F-03: {series} / {episode} / {volume} in the tag string render once
+        # per item from its source. A tag string without tokens stamps nothing,
+        # so those notes stay byte-identical (Review Focus 1).
+        card_tags = (
+            " ".join(render_card_tags(self.config.anki_tags, ctx.tag_values))
+            if has_tag_tokens(self.config.anki_tags)
+            else None
+        )
         for (word, media), definition, glossary, (pitch_position, pitch_category) in zip(
             media_results, definitions, glossaries, pitch_data, strict=True
         ):
@@ -2289,6 +2548,8 @@ class EpisodeProcessor:
             # never a KeyError. ctx.unit_labels is None on the video path.
             # Same formula the curator's Position column shows, by construction.
             extra_fields["source"] = f"{ctx.source_label} @ {_position_label(word.start_time, ctx.unit_labels)}"
+            if card_tags is not None:
+                extra_fields[CARD_TAGS_KEY] = card_tags
 
             # Per-field self-containment: the definition field carries its OWN
             # trailing block whenever it's mapped — regardless of the glossary
@@ -2994,6 +3255,44 @@ class EpisodeProcessor:
         logger.info("secondary subtitle: %d cue(s) from %s", len(entries), secondary_subtitle_file.name)
         return entries
 
+    def _auto_secondary_entries(self, video_file: Path, temp_dir: Path) -> list[tuple[float, float, str]] | None:
+        """F-04: the translation track picked for ``video_file`` when the user chose none, or None.
+
+        Picked once per video for this processor's life and named in the
+        Activity Log on that first pick (R15). Finding nothing is only a log
+        line: a run without a translation stays as quiet as it always was.
+        """
+        if video_file in self._auto_translations:
+            return self._auto_translations[video_file]
+        picked = load_auto_translation(video_file, self.config, self.subtitle_parser, temp_dir)
+        if picked is None:
+            self._auto_translations[video_file] = None
+            logger.info("secondary subtitle: no translation track found for %s", video_file.name)
+            return None
+        self._auto_translations[video_file] = picked.entries
+        if picked.candidate.sidecar is not None:
+            template = QCoreApplication.translate("EpisodeProcessor", "Translation subtitles picked automatically: %1")
+        else:
+            template = QCoreApplication.translate(
+                "EpisodeProcessor", "Translation subtitles picked automatically: embedded track %1"
+            )
+        self.presenter.show_info(tr_format(template, picked.candidate.label))
+        logger.info(
+            "secondary subtitle: auto-picked %s for %s, %d cue(s)",
+            picked.candidate.label,
+            video_file.name,
+            len(picked.entries),
+        )
+        return picked.entries
+
+    def auto_translation_entries(self, video_file: Path) -> list[tuple[float, float, str]]:
+        """The cues :meth:`_auto_secondary_entries` picked for ``video_file``; [] when none was picked.
+
+        Read by the curation context builders while the worker is parked in
+        the curator, so the Translation column shows what the cards will get.
+        """
+        return list(self._auto_translations.get(video_file) or [])
+
     def _apply_strict_card_order(
         self,
         words: list[TokenizedWord],
@@ -3123,8 +3422,9 @@ class EpisodeProcessor:
             subtitle_file_str=str(subtitle_file),
             episode_name=episode_name,
             series_name=series_name,
-            source_label=source_label_override or sanitize_source_label(f"{series_name} — {episode_name}"),
+            source_label=source_label_override or _source_label(series_name, episode_name),
             kind=_outer_kind or "episode",
+            tag_values=_episode_tag_values(series_name, episode_name),
             receipt=(
                 None
                 if _outer_kind is not None
@@ -3148,6 +3448,8 @@ class EpisodeProcessor:
             # repopulate on the first probe and protect against double-probes
             # (the 2e0cc13 perf win). Video-only — omitted on the reading path.
             self.media_extractor.invalidate_audio_stream_cache(video_file)
+            # F-08 step 2: the video's opening/ending chapters, before anything parses.
+            self._register_op_ed_chapters(video_file, subtitle_file, subtitle_offset)
 
             # Interactive curation offers a per-word sentence picker, which needs
             # the line index (all lines each lemma appears on). Build it for that
@@ -3166,6 +3468,22 @@ class EpisodeProcessor:
             # Parsed here, not lazily: a second file that will not parse should
             # fail the run before filtering and curation spend their time.
             secondary_entries = self._load_secondary_entries(secondary_subtitle_file)
+            # F-04: the feature is on and no file was chosen, so the run picks a
+            # translation itself (a sidecar named for the video or a text track
+            # inside it). That track sits on the video's own timeline: the
+            # offset the caller passed belongs to a chosen file, not to it.
+            # Audiobooks and the YouTube inner run have no translation input;
+            # --api runs turn the switch off in resolve_run_config (the caller
+            # names its own track).
+            translation_offset = secondary_subtitle_offset
+            if (
+                secondary_entries is None
+                and self.config.secondary_subtitle_enabled
+                and not audio_only
+                and _outer_kind is None
+            ):
+                secondary_entries = self._auto_secondary_entries(video_file, run_temp_folder)
+                translation_offset = 0.0
             # The --api callback (cli/api/lines.py WordSelection) can make a named
             # word from its named line, so an empty parse, phase 2 or merge stamp
             # does not end its run: it gets whatever is left, possibly nothing.
@@ -3177,6 +3495,10 @@ class EpisodeProcessor:
                     return ctx.build_result()
                 unknown_words: list[TokenizedWord] = []
             else:
+                # MS-28: before phase 2, so the warning leads the filter lines.
+                # Not on the season mine pass: its pre-pass already checked this file.
+                if getattr(curation_callback, "fixed_subset", None) is None:
+                    self._warn_if_wrong_language(all_words)
                 with timed_phase("filter", logger):
                     unknown_words = self._phase2_filter(ctx, all_words, line_index, progress_callback, collapse=False)
                 if self.cancelled:
@@ -3262,7 +3584,7 @@ class EpisodeProcessor:
                 # sentence pick or a +line has already moved the window this
                 # matches against. The curator painted its column from the same
                 # cues with the same function, so the card agrees with it.
-                attach_translations(unknown_words, secondary_entries, offset=secondary_subtitle_offset)
+                attach_translations(unknown_words, secondary_entries, offset=translation_offset)
 
             unknown_words = self._apply_strict_card_order(unknown_words, all_words)
 
@@ -3492,7 +3814,10 @@ class EpisodeProcessor:
         # their remaining refs, warn once each), and a set of individual refs
         # whose page failed to decode (skip re-attempt, warn once each even when
         # the page/cover is shared by many words).
-        ref_cache: dict[ImageRef, Path] = {}
+        # Keyed by (page, block box), not the page alone (F-11): with manga crop
+        # on, two words on one page with different blocks need two pictures.
+        # With crop off every key's box is None, which is the per-page memo of old.
+        ref_cache: dict[tuple[ImageRef, tuple[int, int, int, int] | None], Path] = {}
         failed_archives: set[Path] = set()
         failed_refs: set[ImageRef] = set()
         # One open ZipFile per archive for the whole phase (a manga volume's
@@ -3522,11 +3847,16 @@ class EpisodeProcessor:
                 media = MediaData()
                 unit = units_by_index.get(int(word.start_time))
                 ref = unit.image_ref if unit is not None else None
+                crop_box = unit.block_box if unit is not None and self.config.crop_manga_to_text else None
                 if picture_mapped and ref is not None and ref.source not in failed_archives and ref not in failed_refs:
-                    image_path = ref_cache.get(ref)
+                    image_path = ref_cache.get((ref, crop_box))
                     if image_path is None:
                         try:
-                            image_path = prepare_card_image(ref, images_dir, archive_handles)
+                            # No crop keeps the pre-F-11 call exactly, so a crop-off run is unchanged.
+                            if crop_box is None:
+                                image_path = prepare_card_image(ref, images_dir, archive_handles)
+                            else:
+                                image_path = prepare_card_image(ref, images_dir, archive_handles, block_box=crop_box)
                         except SetupError as exc:
                             # Appending to document.warnings here would be lost (the
                             # up-front drain already ran) — surface directly, once
@@ -3598,7 +3928,7 @@ class EpisodeProcessor:
                                 )
                             image_path = None
                         else:
-                            ref_cache[ref] = image_path
+                            ref_cache[(ref, crop_box)] = image_path
                     if image_path is not None:
                         media.screenshot_path = image_path
                         media.screenshot_filename = image_path.name
@@ -3683,7 +4013,7 @@ class EpisodeProcessor:
         # parent folder), so prefix it; books use the bare episode title, and
         # an Anki deck its name (episode), which is its whole identity.
         if document.kind in ("manga", "subtitle"):
-            source_label = sanitize_source_label(f"{document.series} — {document.episode}")
+            source_label = _source_label(document.series, document.episode)
         else:
             source_label = document.episode
         ctx = _EpisodeContext(
@@ -3695,6 +4025,7 @@ class EpisodeProcessor:
             source_label=source_label,
             unit_labels={unit.index: unit.location_label for unit in document.units},
             kind="reading",
+            tag_values=_document_tag_values(document),
             receipt={
                 # A reading run has neither file, so both slots render "-"; the
                 # document identity rides the two trailing fields instead.
@@ -3731,12 +4062,13 @@ class EpisodeProcessor:
             )
 
         def _body(run_temp_folder: Path) -> ProcessingResult:
-            # D4: fuse the two triggers for building the line index. The episode
-            # path splits this across caller (curation) and callee (i+1); here we
-            # call parse_text_units directly, so an i+1-enabled Mine run must set
-            # want_line_index itself — otherwise the filter gets an empty index
-            # and silently drops every word.
-            want_line_index = self.config.use_i_plus_one_filter or curation_callback is not None
+            # D4: fuse the triggers for building the line index. The episode
+            # path splits this across caller (curation) and callee
+            # (_wants_line_index); here we call parse_text_units directly, so a
+            # Mine run whose phase 2 reads the index (i+1, one card per
+            # sentence, best sentence) must set want_line_index itself —
+            # otherwise i+1 gets an empty index and silently drops every word.
+            want_line_index = self._wants_line_index() or curation_callback is not None
             self._announce_stage(
                 progress_callback,
                 1,
@@ -3776,6 +4108,8 @@ class EpisodeProcessor:
                 )
                 return ctx.build_result()
 
+            # MS-28: before phase 2, so the warning leads the filter lines.
+            self._warn_if_wrong_language(all_words)
             with timed_phase("filter", logger):
                 unknown_words = self._phase2_filter(
                     ctx,
@@ -3873,6 +4207,10 @@ class EpisodeProcessor:
                     unknown_words=result.new_words_found,
                     cards_created=result.cards_created,
                     elapsed_time=result.elapsed_time,
+                    # AI-16: Analytics can show or delete this run's cards later.
+                    # card_ids holds note ids (see _phase5_create's caller).
+                    note_ids=list(result.card_ids),
+                    mined_forms=list(result.mined_forms),
                 )
             )
         except (sqlite3.Error, OSError) as e:

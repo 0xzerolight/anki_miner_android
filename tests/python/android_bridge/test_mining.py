@@ -685,16 +685,16 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
             received_config: object,
             received_callbacks: object,
             cancellation_check: object,
-            source_prefix: object,
             request_cancellation: object,
+            source_prefix: object = None,
         ) -> None:
             assert received_config is config
             assert received_callbacks is anki_callbacks
             assert callable(cancellation_check)
             assert not cancellation_check()
-            # The engine composes "<series> — <episode>" into the card source
-            # field; the seam strips the synthetic lane label back off.
-            assert source_prefix == "Series — "
+            # The engine is handed a blank series, so it never composes the
+            # synthetic lane label into the card source field: nothing to strip.
+            assert source_prefix is None
             # A stop Kotlin reports first must reach the event the engine reads.
             assert request_cancellation == cancel_event.set
             events.append("adapter-init")
@@ -714,7 +714,7 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
                 "progress_callback": progress,
                 "curation_callback": curate,
                 "episode_name_override": "Episode",
-                "series_name_override": "Series",
+                "series_name_override": "",
                 "audio_track_override": 2,
                 "source_label_override": "Source",
                 "audio_only": audio_only,
@@ -763,6 +763,77 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
         "processor-close",
         "adapter-exit",
     ]
+
+
+@dataclass(frozen=True)
+class _SourceCard:
+    extra_fields: dict[str, str]
+
+
+@pytest.mark.parametrize(
+    ("audio_only", "episode", "expected"),
+    [
+        # v2.0.0 wrote these too: "Local video — " was composed, then stripped.
+        (False, "Frieren - 01", "Frieren - 01 @ 00:01:02"),
+        # A display name with no usable stem: the bare position, no leading space.
+        (True, "", "@ 00:01:02"),
+    ],
+)
+def test_the_card_source_field_carries_no_lane_label(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    audio_only: bool,
+    episode: str,
+    expected: str,
+) -> None:
+    """The Source field per lane: v2.0.0's value, with desktop's per-part sanitising."""
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    from anki_miner.orchestration.episode_processor import _position_label, _source_label
+
+    strip = anki_adapter_module.AndroidAnkiAdapter._strip_source_prefix
+    captured: dict[str, object] = {}
+
+    def adapter(*_args: object, source_prefix: object = None, **_kwargs: object) -> object:
+        captured["source_prefix"] = source_prefix
+        return nullcontext(object())
+
+    class FakeProcessor:
+        def process_episode(self, *_args: object, **kwargs: object) -> object:
+            captured["series"] = kwargs["series_name_override"]
+            return object()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(anki_adapter_module, "AndroidAnkiAdapter", adapter)
+    monkeypatch.setattr(mining, "_build_processor", lambda *_args: FakeProcessor())
+    adapters = SimpleNamespace(
+        anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
+        cancel_event=threading.Event(),
+        progress=object(),
+        curate=None,
+    )
+    request = mining._parse_request(
+        encode_message(
+            "mining.video.run",
+            _payload(
+                episodeName=episode,
+                seriesName="Local audio" if audio_only else "Local video",
+                # Kotlin never sends one; the engine composes the label.
+                sourceLabel=None,
+                audioOnly=audio_only,
+            ),
+        )
+    )
+    mining._process_episode(request, object(), adapters)
+
+    # What _phase5_create stamps (process_episode's source label, then the position),
+    # through the adapter's own pre-write step.
+    written = f"{_source_label(captured['series'], episode)} @ {_position_label(62.0, None)}"
+    seam = SimpleNamespace(_source_prefix=captured["source_prefix"])
+    (card,) = strip(seam, [_SourceCard({"source": written})])
+    assert card.extra_fields["source"] == expected
 
 
 def test_audio_only_true_from_wire_reaches_process_episode(

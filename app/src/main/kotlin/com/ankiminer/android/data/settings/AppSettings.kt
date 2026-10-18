@@ -176,8 +176,9 @@ data class AppSettings(
     val strictCardOrder: Boolean? = null,
     val mergeIncompleteCues: Boolean? = null,
     /**
-     * Shows the Video tab's second subtitle picker. Kotlin-only: the engine never reads its own
-     * `secondary_subtitle_enabled`, so the snapshot mapper never emits it.
+     * Shows the Video tab's second subtitle picker. Kotlin-only: the engine now reads its own
+     * `secondary_subtitle_enabled` to pick a translation track itself (through the deferred
+     * `audio_condenser`), so the snapshot mapper must never emit it; `test_config_map.py` pins it.
      */
     val secondarySubtitleEnabled: Boolean = false,
     val pitchCategoryFormat: PitchCategoryFormat? = null,

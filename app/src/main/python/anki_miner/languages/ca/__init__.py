@@ -42,8 +42,9 @@ CA_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_ca",
     custom_fetcher_language="ca",
     papago_speaker=None,
-    # Lingua Libre (LL-Q7026 (cat)-) leads once the wiktionary kind exists (Stage W); Google TTS until then.
-    default_chain=(AudioSourceEntry(kind="googletts"),),
+    wikimedia_prefixes=("LL-Q7026 (cat)-",),
+    default_chain=(AudioSourceEntry(kind="wikimedia"), AudioSourceEntry(kind="googletts")),
+    edge_voice="ca-ES-JoanaNeural",
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
 )
@@ -89,7 +90,8 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=UPOS_RESCUABLE,
         ),
         catalog=CA_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_gender", "lemmatised_frequency"}),
+        capabilities=frozenset({"pos_tag", "noun_gender", "lemmatised_frequency", "manga_ocr", "video_ocr"}),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=CA_CARD_FIELDS,
         render_hooks=(PosHook(), GrammarTagHook(("noun_gender",), gender_labels=CA_GENDER_LABELS)),
         content_style=SPACED_CONTENT_STYLE,

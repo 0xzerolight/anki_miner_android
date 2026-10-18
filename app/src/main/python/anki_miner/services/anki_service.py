@@ -16,7 +16,7 @@ from anki_miner.exceptions import AnkiConnectionError, SetupError
 from anki_miner.interfaces import ProgressCallback
 from anki_miner.languages.profile import CARD_FRONT_KEY
 from anki_miner.models import AnkiWriteState, CardPayload
-from anki_miner.services._ankiconnect import _expect_list, post_action, post_multi
+from anki_miner.services._ankiconnect import _expect_list, escape_anki_search, post_action, post_multi
 from anki_miner.services.anki_media_store import AnkiMediaStore
 from anki_miner.services.anki_note_builder import (
     _RAW_HTML_FIELD_KEYS,
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 # Matches any hiragana, katakana, or CJK ideograph (kanji)
 _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]")
 
-# updateNoteFields batching. Restyled glossary fields run 10-20 KB each, so a
+# updateNoteFields batching. Styled glossary fields run 10-20 KB each, so a
 # count-only chunk of 500 notes can hit ~7-8 MB in one `multi` body and trip the
 # AnkiConnect oversized-body connection reset (mirrors anki_media_store's
 # _MEDIA_BATCH_MAX_BYTES). Bound each POST by cumulative serialized field bytes
@@ -119,16 +119,6 @@ _DUPLICATE_ERROR_SUBSTRING = "cannot create note because it is a duplicate"
 _UNSUPPORTED_ACTION_SUBSTRING = "unsupported action"
 
 
-def _escape_deck_name(deck: str) -> str:
-    """Escape a deck name for use inside a quoted Anki search clause.
-
-    Backslashes, quotes, and Anki's glob metacharacters (``*`` = any run,
-    ``_`` = any single char, which Anki treats as wildcards even inside
-    ``deck:"..."``) are escaped so a name like ``Core_2k`` matches literally.
-    """
-    return deck.replace("\\", "\\\\").replace('"', '\\"').replace("*", "\\*").replace("_", "\\_")
-
-
 def is_transient_anki_transport_error(exc: BaseException) -> bool:
     """Whether *exc* is an AnkiConnect failure a later attempt could survive.
 
@@ -147,6 +137,41 @@ def is_transient_anki_transport_error(exc: BaseException) -> bool:
     if not isinstance(exc, AnkiConnectionError):
         return False
     return isinstance(exc.__cause__, (requests.exceptions.ConnectionError, requests.exceptions.Timeout))
+
+
+#: AnkiConnect ``sync`` hands the work to Anki's own sync and answers; a slow
+#: AnkiWeb round trip must not read as a dead Anki (AI-03).
+_SYNC_TIMEOUT_S = 120
+
+
+def sync_after_run(config: AnkiMinerConfig, cards_created: int) -> bool:
+    """Sync Anki once after a run that added cards (AI-03, owner ruling R6).
+
+    The one rule every run end calls (the mining screens now; the command line
+    after the merge): nothing unless Settings → Cards & Anki → "Sync Anki
+    after mining" is on and the run added at least one card. A failure — Anki
+    closed, no AnkiWeb login — is one WARNING line and never fails the run.
+
+    Returns:
+        True when Anki accepted the sync request; False when skipped or failed.
+    """
+    if not config.sync_anki_after_run or cards_created <= 0:
+        return False
+    try:
+        AnkiService(config).sync()
+    except (AnkiConnectionError, ValueError) as exc:
+        # ValueError: an incomplete field map refuses AnkiService itself.
+        log_summary(
+            logger,
+            "Anki sync after run failed",
+            level=logging.WARNING,
+            cards=cards_created,
+            exc_type=type(exc).__name__,
+            error=str(exc),
+        )
+        return False
+    log_summary(logger, "Anki sync after run", cards=cards_created)
+    return True
 
 
 class AnkiService:
@@ -269,6 +294,10 @@ class AnkiService:
         # re-querying AnkiConnect. Call invalidate_existing_vocabulary_cache()
         # to force a refresh (e.g. after card creation or a manual sync).
         self._existing_vocab_cache: set[str] | None = None
+        # F-01: the same scan narrowed to reviewed cards, cached the same way.
+        # It only scores text (Readability, i+1); the set above stays the
+        # mining exclusion and the Deck Filter duplicate gate.
+        self._reviewed_vocab_cache: set[str] | None = None
 
         # Validate required field keys upfront
         missing = self.REQUIRED_FIELD_KEYS - set(config.anki_fields.keys())
@@ -502,9 +531,37 @@ class AnkiService:
         """
         query = "deck:*"
         for deck in self.config.excluded_decks:
-            query += f' -deck:"{_escape_deck_name(deck)}"'
+            query += f' -deck:"{escape_anki_search(deck)}"'
         logger.debug("Anki vocab query: query=%s", query)
         return query
+
+    def _build_reviewed_query(self) -> str:
+        """The vocab query narrowed to notes with a card reviewed at least once (F-01).
+
+        ``findNotes`` maps card matches to their notes, so a note qualifies when
+        at least one of its cards is not new. No ``-is:suspended`` clause: a
+        card reviewed and later suspended still counts as known (owner ruling
+        C1; many users suspend cards they already know).
+        """
+        return self._build_vocab_query() + " -is:new"
+
+    def get_reviewed_vocabulary(self) -> set[str]:
+        """Card fronts whose note has a card reviewed at least once (F-01).
+
+        The knowledge set for scoring text when Settings → Word Filters →
+        "Count a word as known only after its card has been reviewed" is on.
+        Never the mining exclusion: :meth:`get_existing_vocabulary` keeps every
+        card, so an unreviewed word is still never mined twice. Cached for the
+        session like that set and cleared with it.
+
+        Raises:
+            AnkiConnectionError: on any failure. The caller falls back to the
+                every-card set (``known_word_db.collect_knowledge_forms``); an
+                empty set here would read as "nothing is known".
+        """
+        if self._reviewed_vocab_cache is None:
+            self._reviewed_vocab_cache = self._collect_first_field_forms(self._build_reviewed_query(), warn_empty=False)
+        return self._reviewed_vocab_cache
 
     def find_notes(self, query: str) -> list[int]:
         """Return note IDs matching an Anki search ``query`` (AnkiConnect ``findNotes``)."""
@@ -537,6 +594,19 @@ class AnkiService:
             params={"query": "nid:" + ",".join(str(note_id) for note_id in ids)},
             timeout=15,
         )
+
+    def sync(self) -> None:
+        """Ask Anki to sync the collection with AnkiWeb (AnkiConnect ``sync``).
+
+        AI-03: called through :func:`sync_after_run` only. AnkiConnect starts
+        Anki's own sync; a collection that needs a one-way full sync makes Anki
+        ask the user, which is why the setting is off by default.
+
+        Raises:
+            AnkiConnectionError: AnkiConnect is unreachable or refused.
+        """
+        log_summary(logger, "Anki sync requested")
+        post_action(self.config.ankiconnect_url, "sync", timeout=_SYNC_TIMEOUT_S)
 
     def media_dir_path(self) -> Path | None:
         """Return Anki's ``collection.media`` folder (AnkiConnect ``getMediaDirPath``).
@@ -591,7 +661,7 @@ class AnkiService:
         cardinality, surfaces as an ``AnkiConnectionError``; we then retry each
         note in its own tiny POST (like
         ``AnkiMediaStore._store_media_files_individually``) so one bad chunk
-        doesn't abort the whole restyle.
+        doesn't abort the whole backfill.
         """
         actions = [
             {"action": "updateNoteFields", "version": 6, "params": {"note": {"id": nid, "fields": fields}}}
@@ -706,7 +776,7 @@ class AnkiService:
         key = _strip_for_dedup(value)
         return self._dedup_fold(key) if key and self._dedup_fold is not None else key
 
-    def _collect_first_field_forms(self, query: str) -> set[str]:
+    def _collect_first_field_forms(self, query: str, *, warn_empty: bool = True) -> set[str]:
         """Run ``query`` and return the dedup-normalized in-script expressions.
 
         The findNotes → notesInfo → per-note expression scan shared by
@@ -715,7 +785,9 @@ class AnkiService:
         is decided per note type from the notes themselves
         (``services/expression_field.py``): the first field unless it does not
         hold words. Raises ``AnkiConnectionError`` on transport failure;
-        degradation policy belongs to the callers.
+        degradation policy belongs to the callers. ``warn_empty=False`` skips
+        the empty-collection warning: a collection with no reviewed card is not
+        an empty one.
         """
         note_ids = _expect_list(
             post_action(
@@ -730,10 +802,11 @@ class AnkiService:
         )
 
         if not note_ids:
-            logger.warning(
-                "No notes found in Anki collection. "
-                "If you have cards in Anki, check that AnkiConnect can access them.",
-            )
+            if warn_empty:
+                logger.warning(
+                    "No notes found in Anki collection. "
+                    "If you have cards in Anki, check that AnkiConnect can access them.",
+                )
             return set()
 
         # Get note info in batches to avoid timeouts on large collections.
@@ -808,7 +881,7 @@ class AnkiService:
         silently classify the whole source deck as unknown-but-known-elsewhere
         and produce a wrong plan.
         """
-        query = self._build_vocab_query() + f' -deck:"{_escape_deck_name(deck)}"'
+        query = self._build_vocab_query() + f' -deck:"{escape_anki_search(deck)}"'
         return self._collect_first_field_forms(query)
 
     def invalidate_existing_vocabulary_cache(self) -> None:
@@ -819,6 +892,7 @@ class AnkiService:
         the filter reflects the updated collection.
         """
         self._existing_vocab_cache = None
+        self._reviewed_vocab_cache = None
 
     @property
     def _dict_media_uploaded(self) -> set[str]:

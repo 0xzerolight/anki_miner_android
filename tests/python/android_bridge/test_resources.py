@@ -4314,6 +4314,86 @@ def test_known_words_import_reports_undecodable_bytes_as_unreadable(
     assert failure.value.code == "known_words_unreadable"
 
 
+def _kindle_vocab_db(path: Path) -> Path:
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE WORDS (id TEXT PRIMARY KEY, word TEXT, stem TEXT, lang TEXT,"
+            " category INTEGER, timestamp INTEGER, profileid TEXT)"
+        )
+        connection.executemany(
+            "INSERT INTO WORDS VALUES (?, ?, ?, ?, ?, 0, '')",
+            [
+                ("ja:食べた", "食べた", "食べる", "ja", 100),
+                ("ja:犬", "犬", "犬", "ja", 0),
+                ("de:Haus", "Haus", "Haus", "de", 100),
+            ],
+        )
+    connection.close()
+    return path
+
+
+_LUTE_TERMS = (
+    "term,parent,translation,language,tags,added,status,link_status,pronunciation\n"
+    "食べる,,eat,Japanese,,2024-01-01,5,,\n"
+    "犬,,dog,Japanese,,2024-01-01,1,,\n"
+    "Haus,,house,German,,2024-01-01,99,,\n"
+)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+@pytest.mark.parametrize("language", ("ja", "de"))
+def test_known_words_import_never_reads_kindle_or_lute_exports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    language: str,
+) -> None:
+    """Kindle and Lute/LWT import are desktop-only; Android reads both files as before.
+
+    The bounded parse Android calls is dispatched before the engine's Kindle
+    SQLite sniff and never reaches its Lute/LWT term-table reader, so a
+    ``vocab.db`` stays undecodable bytes and a Lute export stays a generic list
+    of first cells (header included), whatever the mining language.
+    """
+
+    _local_home(tmp_path, monkeypatch)
+    kindle = _kindle_vocab_db(tmp_path / "vocab.db")
+    lute = tmp_path / "lute.csv"
+    lute.write_text(_LUTE_TERMS, encoding="utf-8")
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.preview_known_words(
+            {
+                "operationId": f"known-kindle-{language}",
+                "sourcePath": str(kindle),
+                "sourceFormat": "txt",
+                "language": language,
+            }
+        )
+    assert failure.value.code == "known_words_unreadable"
+
+    preview = decode_envelope(
+        local_resources.preview_known_words(
+            {
+                "operationId": f"known-lute-{language}",
+                "sourcePath": str(lute),
+                "sourceFormat": "csv",
+                "language": language,
+            }
+        ),
+        expected_type="resource.knownwords.previewed",
+    )
+    assert preview.payload == {
+        "format": "generic",
+        "importedCount": 4,
+        "totalEntries": 4,
+        "isGeneric": True,
+        "sampleWords": sorted({"term", "食べる", "犬", "Haus"}),
+    }
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",

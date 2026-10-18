@@ -5,6 +5,7 @@ import importlib.util
 import re
 import sys
 import threading
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -695,9 +696,21 @@ def test_staged_text_rejects_non_book_document_kind(
     assert error.value.code == "invalid_reading_mining_request"
 
 
+@pytest.mark.parametrize(
+    ("series_name", "document_series"),
+    [
+        ("Show", "Show"),
+        # Kotlin's stand-in when the user names no series
+        # (BridgeReadingMiningRepository.DEFAULT_SUBTITLE_SERIES_NAME): never a
+        # series of its own, so the Source field and {series} tag leave it out.
+        ("Subtitles", ""),
+    ],
+)
 def test_subtitle_series_never_leaks_random_staging_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    series_name: str,
+    document_series: str,
 ) -> None:
     job_dir = tmp_path / "reading-job-v1-deadbeef"
     job_dir.mkdir()
@@ -713,12 +726,12 @@ def test_subtitle_series_never_leaks_random_staging_directory(
             tmp_path,
             sourceKind="subtitle",
             sourcePath=str(source),
-            seriesName="Subtitles",
+            seriesName=series_name,
         )
     )
 
     document = reading_mining._load_document(request)
-    assert document.series == "Subtitles"
+    assert document.series == document_series
     assert job_dir.name not in document.series
 
 
@@ -878,21 +891,29 @@ def test_process_reading_receives_exact_desktop_contract_and_cleans_lifo(
     ("kind", "series", "expected_prefix"),
     [
         ("manga", "漫画作品", "漫画作品 — "),
-        ("subtitle", "Subtitles", "Subtitles — "),
+        ("subtitle", "Show", "Show — "),
+        # The engine sanitises each part of "<series> — <episode>" on its own.
+        ("manga", "Title [Digital]", "Title — "),
+        ("subtitle", "[Group] Show (1080p)", "Show — "),
+        # A part that sanitises to nothing is kept as written.
+        ("manga", "[Oshi no Ko]", "[Oshi no Ko] — "),
         # process_reading only prefixes manga and subtitle labels; a book
         # carries the bare episode title, so there is nothing to strip.
         ("book", "Books", None),
-        # A blank series still composes an em dash, because the engine strips
-        # the whole composed label rather than the empty leading segment.
-        ("manga", "", "— "),
+        # A blank series composes no separator, so there is nothing to strip.
+        ("manga", "", None),
+        ("subtitle", "", None),
     ],
 )
 def test_process_reading_hands_the_seam_the_engine_composed_prefix(
+    initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
     kind: str,
     series: str,
     expected_prefix: str | None,
 ) -> None:
+    pytest.importorskip("requests", reason="runtime dependency lane: the prefix is the engine's sanitised series")
+    pytest.importorskip("pysubs2", reason="runtime dependency lane: the prefix is the engine's sanitised series")
     captured: list[object] = []
 
     class RecordingAdapter:
@@ -925,6 +946,96 @@ def test_process_reading_hands_the_seam_the_engine_composed_prefix(
 
     assert reading_mining._process_reading(document, object(), adapters) == "result"
     assert captured == [expected_prefix]
+
+
+@dataclass(frozen=True)
+class _SourceCard:
+    extra_fields: dict[str, str]
+
+
+@pytest.mark.parametrize(
+    ("series_name", "expected"),
+    [
+        ("Show", "episode01 @ 00:01:02"),
+        ("[Group] Show (1080p)", "episode01 @ 00:01:02"),
+        ("Subtitles", "episode01 @ 00:01:02"),
+    ],
+)
+def test_a_subtitle_sources_card_source_field_is_its_episode(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    series_name: str,
+    expected: str,
+) -> None:
+    """v2.0.0's Source field: the series is the deck's business, so the card names the episode."""
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    from anki_miner.orchestration.episode_processor import _position_label, _source_label
+
+    job_dir = tmp_path / "reading-job-v1-a"
+    job_dir.mkdir()
+    source = job_dir / "episode01.srt"
+    source.write_text("1\n00:01:02,000 --> 00:01:03,000\n猫\n", encoding="utf-8")
+    request = reading_mining._parse_request(
+        _request(tmp_path, sourceKind="subtitle", sourcePath=str(source), seriesName=series_name)
+    )
+    document = reading_mining._load_document(request)
+    _assert_source_field(monkeypatch, document, _source_label(document.series, document.episode), 62.0, expected)
+    assert _position_label(62.0, None) == "00:01:02"
+
+
+def test_a_manga_volumes_card_source_field_is_its_volume(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    from anki_miner.orchestration.episode_processor import _source_label
+
+    document = SimpleNamespace(kind="manga", series="Title [Digital]", episode="Vol 1")
+    _assert_source_field(monkeypatch, document, _source_label(document.series, document.episode), 0.0, "Vol 1 @ p.1")
+
+
+def _assert_source_field(
+    monkeypatch: pytest.MonkeyPatch,
+    document: object,
+    label: str,
+    position: float,
+    expected: str,
+) -> None:
+    """What _phase5_create stamps for ``label``, through the adapter's own pre-write step."""
+    from anki_miner.orchestration.episode_processor import _position_label
+
+    strip = anki_adapter_module.AndroidAnkiAdapter._strip_source_prefix
+    captured: list[object] = []
+
+    def adapter(*_args: object, source_prefix: object = None, **_kwargs: object) -> object:
+        captured.append(source_prefix)
+        return nullcontext(object())
+
+    class FakeProcessor:
+        def process_reading(self, *_args: object, **_kwargs: object) -> object:
+            return object()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(anki_adapter_module, "AndroidAnkiAdapter", adapter)
+    monkeypatch.setattr(reading_mining, "_build_processor", lambda *_args, **_kwargs: FakeProcessor())
+    adapters = SimpleNamespace(
+        anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
+        cancel_event=threading.Event(),
+        progress=object(),
+        curate=None,
+    )
+    reading_mining._process_reading(document, SimpleNamespace(), adapters)
+
+    unit_labels = {0: "p.1"} if getattr(document, "kind", None) == "manga" else None
+    written = f"{label} @ {_position_label(position, unit_labels)}"
+    (card,) = strip(SimpleNamespace(_source_prefix=captured[0]), [_SourceCard({"source": written})])
+    assert card.extra_fields["source"] == expected
 
 
 def _reading_lifecycle_harness(

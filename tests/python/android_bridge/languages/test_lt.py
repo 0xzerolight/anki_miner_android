@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from catalog_completeness import assert_catalog_complete
+from catalog_completeness import STARDICT_NOT_VENDORED, assert_catalog_complete
 from language_data_fixtures import (
     assert_tagger_matches,
     install_language_data,
@@ -164,5 +164,5 @@ def test_every_desktop_catalog_row_is_pinned_or_excluded(initialized_bridge_home
             "wty-lt-en": "wty-lt-en-2026.09.20",
             "opensubtitles-lt": "opensubtitles-lt-2018",
         },
-        excluded={},
+        excluded={"freedict-lit-eng": STARDICT_NOT_VENDORED},
     )

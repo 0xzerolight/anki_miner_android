@@ -62,6 +62,12 @@ REQUIRED_ENABLED = frozenset(
         "CONFIG_LIBOPUS_ENCODER",
         "CONFIG_OPUS_MUXER",
         "CONFIG_WAV_MUXER",
+        # normalize_audio_loudness: the engine's clip filter chain is loudnorm
+        # then afade in and out, and loudnorm's 192 kHz output is resampled
+        # back to 48 kHz (aresample, inserted by -ar).
+        "CONFIG_LOUDNORM_FILTER",
+        "CONFIG_AFADE_FILTER",
+        "CONFIG_ARESAMPLE_FILTER",
     }
 )
 

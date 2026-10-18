@@ -30,6 +30,8 @@ from anki_miner.services.deinflection import (
     find_highlight_end_with_trace,
     resolve_dictionary_form,
 )
+from anki_miner.services.lexical_joiner import LexicalJoiner
+from anki_miner.services.lrc_format import register_lrc_format
 from anki_miner.services.masu_stem_nominalizer import MasuStemNominalizer
 from anki_miner.services.morphology import (
     REJECT_KANA_ONLY,
@@ -56,6 +58,8 @@ from anki_miner.services.morphology import (
     resolve_attested_reading,
     resolve_reading_override,
 )
+from anki_miner.services.reading.ruby_hints import apply_author_ruby
+from anki_miner.services.subtitle_cleaner import midpoint_in_ranges, mining_events
 from anki_miner.services.tagger import get_shared_tagger
 from anki_miner.utils import (
     clean_subtitle_text,
@@ -87,6 +91,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# .lrc lyrics load through pysubs2 like any subtitle (MS-08). Idempotent.
+register_lrc_format()
+
 #: pysubs2 formats whose content sniffer only checks the file's first characters
 #: ('<SAMI>' / 'WEBVTT', case-sensitive, with a UTF-8 BOM left in place).
 _PREFIX_SNIFFED_FORMATS = frozenset({"sami", "vtt"})
@@ -113,6 +120,9 @@ PARSE_RELEVANT_CONFIG_FIELDS = (
     "use_whitelist",
     "whitelist_path",
     "bypass_optional_filters",
+    # Songs, signs and drawings leave the loaded events, so the cached line
+    # states differ with it (F-08).
+    "skip_opening_ending",
 )
 
 # Dictionary-attested compound matching (Yomitan longest-match principle):
@@ -727,7 +737,12 @@ class SubtitleParserService:
         self._compound_matcher: CompoundDictionaryMatcher | None = None
         if self._attest is not None and COMPOUND_MATCHING and compound_matching:
             self._compound_matcher = CompoundDictionaryMatcher(
-                self._attest, self._inclusion_rule, force_include=force_include
+                self._attest,
+                self._inclusion_rule,
+                force_include=force_include,
+                # Memoized single-headword probe; the cache it reads is created
+                # later in __init__, before any line is merged.
+                reading_lookup=self._attested_readings if reading_lookup is not None else None,
             )
         # Masu-stem nominalization (see services/masu_stem_nominalizer.py).
         # Shares the same memoized probe; None when no dict is wired, so the
@@ -735,6 +750,12 @@ class SubtitleParserService:
         self._masu_stem_nominalizer: MasuStemNominalizer | None = None
         if self._attest is not None:
             self._masu_stem_nominalizer = MasuStemNominalizer(self._attest)
+        # Grammar-cut words (思わず, 実は, くだらない; see services/lexical_joiner.py).
+        # Attested through the term-OR-reading probe because the kana adjectives
+        # are JMdict readings; None without one keeps the no-dict output unchanged.
+        self._lexical_joiner: LexicalJoiner | None = None
+        if kana_attest_lookup is not None:
+            self._lexical_joiner = LexicalJoiner(kana_attest_lookup, self._inclusion_rule.allowed_pos)
         # Name resources define raw-source boundaries independently of the
         # ordinary dictionary. This pass runs before dictionary matching so an
         # exact name remains available to the late exact name-wordset filter;
@@ -800,6 +821,10 @@ class SubtitleParserService:
         # rejected in one line (すみません) and recovered in another (すみます). Same
         # clear-on-cap bounding as the caches above.
         self._kana_window_cache: dict[str, bool] = {}
+        # F-08 step 2: per-file cue spans to leave out, on the file's own
+        # timeline (set_skip_ranges). Like _line_cache it survives parse_* calls;
+        # unlike it, it is applied at yield, so the cached line states stay whole.
+        self._skip_ranges: dict[Path, tuple[tuple[float, float], ...]] = {}
 
     # ------------------------------------------------------------------
     # Per-parse memoization helpers
@@ -1164,6 +1189,13 @@ class SubtitleParserService:
                 _log_decode(subtitle_file, bom="-", ladder=(), tried=("utf-8",), chosen="utf-8", level=logging.DEBUG)
             if subs.format == "sami":
                 _apply_sami_timing(subs)
+            if isinstance(subs, pysubs2.SSAFile):
+                # Karaoke bursts always collapse (MS-12); songs, signs and drawings
+                # go with the F-08 switch. Done in the loader, so mining, the line
+                # index, the curator's context lines, line expansion and
+                # Readability all read the same lines. A test's MagicMock stand-in
+                # for pysubs2.load is not an SSAFile and is left as it is.
+                subs.events = mining_events(subs.events, skip_non_dialogue=self.config.skip_opening_ending is True)
             return subs
         except FileNotFoundError as e:
             raise SubtitleParseError(f"Subtitle file not found: {subtitle_file}") from e
@@ -1178,6 +1210,24 @@ class SubtitleParserService:
                 "Subtitle parse failed: file=%s exc=%s: %s", subtitle_file, type(e).__name__, e, exc_info=True
             )
             raise SubtitleParseError(f"Failed to parse subtitle file {subtitle_file}: {type(e).__name__}: {e}") from e
+
+    def set_skip_ranges(self, subtitle_file: Path, ranges: Sequence[tuple[float, float]], *, offset: float) -> None:
+        """Leave out *subtitle_file*'s cues whose midpoint falls in *ranges* (F-08 chapters).
+
+        *ranges* are seconds on the media's timeline (the video's opening and
+        ending chapters) and *offset* is the run's subtitle offset, which puts a
+        cue on that timeline. They are stored on the file's own timeline, so
+        every later parse of the file leaves out the same cues whatever offset
+        that call passes: ``parse_raw_entries`` at 0.0 and at the run's offset
+        stay line for line, as line expansion and the ``--api`` run need. The
+        tokenization cache keeps every line; the ranges apply at yield. An empty
+        *ranges* forgets the file.
+        """
+        key = subtitle_file.resolve()
+        if ranges:
+            self._skip_ranges[key] = tuple((low - offset, high - offset) for low, high in ranges)
+        else:
+            self._skip_ranges.pop(key, None)
 
     def _resolve_offset(self, subtitle_offset: float | None) -> float:
         """Per-call offset, falling back to the config value when None."""
@@ -1234,6 +1284,7 @@ class SubtitleParserService:
         """
         offset = self._resolve_offset(subtitle_offset)
         key = subtitle_file.resolve()
+        skip = self._skip_ranges.get(key, ())
         try:
             stat_result = subtitle_file.stat()
             fingerprint = (
@@ -1252,6 +1303,8 @@ class SubtitleParserService:
                 self._line_cache.pop(key)
                 self._line_cache[key] = cached
                 for line_state in cached[1]:
+                    if skip and midpoint_in_ranges(line_state[3], line_state[4], skip):
+                        continue
                     yield self._shifted_line_state(line_state, offset)
                 return
             if cached is not None:
@@ -1282,6 +1335,10 @@ class SubtitleParserService:
             # later parse at a different offset can replay it.
             line_state = self._build_line_state(text, line.start / 1000.0, line.end / 1000.0)
             line_states.append(line_state)
+            # The cache keeps every line; registered chapter spans (F-08) apply
+            # here, on the file's own timeline, as in the replay above.
+            if skip and midpoint_in_ranges(line_state[3], line_state[4], skip):
+                continue
             yield self._shifted_line_state(line_state, offset)
 
         # fingerprint is None only when stat() failed, in which case _load_subs
@@ -1304,7 +1361,8 @@ class SubtitleParserService:
         Returns ``(text, raw_tokens, merged_tokens, start, end, duration)``:
         ``raw_tokens`` is the direct ``self.tagger(text)`` output,
         ``merged_tokens`` is that run through ``_merge_compound_suffixes``, the
-        optional name matcher, and the optional compound matcher; ``duration``
+        optional name matcher, the optional compound matcher, and the masu-stem
+        and grammar-cut passes; ``duration``
         is ``end - start``. The times are whatever the caller passes: the
         subtitle path passes offset-neutral ones and shifts at yield
         (``_shifted_line_state``), the text-unit path passes final ones.
@@ -1334,6 +1392,10 @@ class SubtitleParserService:
         # the two can never fight over the same token.
         if self._masu_stem_nominalizer is not None:
             merged_tokens = self._masu_stem_nominalizer.rewrite_line(merged_tokens)
+        # Also after the matcher: a longer attested span over the same tokens
+        # keeps priority, and the joiner only sees what is still split.
+        if self._lexical_joiner is not None:
+            merged_tokens = self._lexical_joiner.join_line(text, merged_tokens)
         # Dictionary reading attestation for merged compounds (audit F2): fixes
         # rendaku/junction kana on the synthetics; no-op (and no lookup) when
         # no reading_lookup is wired or the line produced no merges.
@@ -1981,6 +2043,7 @@ class SubtitleParserService:
         """
         offset = self._resolve_offset(subtitle_offset)
         subs = self._load_subs(subtitle_file, encodings=encodings)
+        skip = self._skip_ranges.get(subtitle_file.resolve(), ())
 
         entries = []
         for line in subs:
@@ -1989,6 +2052,9 @@ class SubtitleParserService:
                 continue
             text = self._clean_line_text(line.text)
             if not text:
+                continue
+            # The same rule, on the same file timeline, as _iter_parsed_lines.
+            if skip and midpoint_in_ranges(line.start / 1000.0, line.end / 1000.0, skip):
                 continue
 
             start_time = max(0.0, (line.start / 1000.0) + offset)
@@ -2091,6 +2157,7 @@ class SubtitleParserService:
         want_line_index: bool,
         *,
         subtitle_cleanup: bool = False,
+        count_by_lemma: bool = False,
     ) -> tuple[list[TokenizedWord], list[LineLemmas] | None, collections.Counter[str]]:
         """Parse reading-tab text units into mining words, index, and lemma counts.
 
@@ -2132,13 +2199,17 @@ class SubtitleParserService:
                 subtitle-only annotation strip + user regex after normalization,
                 mirroring the video path's ``_clean_line_text``; a cue that
                 collapses to empty is dropped. Default ``False`` (manga/book).
+            count_by_lemma: Key ``counts`` by lemma (``count_lemmas``
+                semantics) instead of card front. Readability sets it, so a
+                book scores on a subtitle file's basis.
 
         Returns:
             ``(words, line_index, counts)``. ``words`` is mined_form-deduped
             (first-occurrence-wins across the whole call, like the subtitle
             entrypoints); ``line_index`` is the ``LineLemmas`` list when
             ``want_line_index`` else ``None``; ``counts`` maps card front
-            (``mined_form``) → total included occurrences (``count_fronts``
+            (``mined_form``), or lemma with ``count_by_lemma``, → total
+            included occurrences (``count_fronts`` / ``count_lemmas``
             semantics, no dedup).
         """
         self._require_engine()
@@ -2152,6 +2223,12 @@ class SubtitleParserService:
         seen_mined_forms: set[str] = set()
         counts: collections.Counter[str] = collections.Counter()
         rejects: dict[str, NotMinedReason] = {}
+        # SK-31: a book's own furigana (ReadingUnit.ruby, EPUB only) replaces the
+        # tokenizer's reading, for a profile that takes author ruby. Function-local
+        # import for the reason __init__ gives: the registry import is circular here.
+        from anki_miner.languages.registry import get_profile
+
+        author_ruby = get_profile(self._tagger_language).takes_author_ruby
 
         for unit in units:
             # Reading/OCR text needs the same pre-tokenization JP normalization
@@ -2191,11 +2268,21 @@ class SubtitleParserService:
             # _iter_token_spans for the drop-rule rationale).
             for token, tok_start, tok_end in self._iter_token_spans(text, merged_tokens):
                 if self._mine_token(token, text, tok_start, tok_end, merged_tokens, raw_tokens):
-                    counts[self._card_front(token, text, tok_start, tok_end, raw_tokens)] += 1
+                    key = (
+                        self._extract_lemma(token)
+                        if count_by_lemma
+                        else self._card_front(token, text, tok_start, tok_end, raw_tokens)
+                    )
+                    counts[key] += 1
 
             line_words, line_lemmas_entry = self._emit_line_words_and_index(
                 line_state, seen_mined_forms, collect_index=want_line_index, rejects=rejects
             )
+            unit_ruby = getattr(unit, "ruby", ())
+            if author_ruby and unit_ruby:
+                # The author's reading settles a reading the dictionary left ambiguous.
+                for front in apply_author_ruby(line_words, unit_ruby):
+                    self._ambiguous_readings.discard(front)
             all_words.extend(line_words)
             if line_lemmas_entry is not None:
                 line_index.append(line_lemmas_entry)
@@ -2233,8 +2320,9 @@ class SubtitleParserService:
         What the curator's Occurrences column reads: it judges a card, and UniDic
         files kanji-variant homographs under one lemma (賭ける and 掛ける under
         掛ける), so a lemma count credits a card with its sibling's lines (audit
-        L3-005). Deck Builder ranks and Readability scores by lemma, and keep
-        :meth:`count_lemmas`.
+        L3-005). Deck Builder ranks and Readability scores by lemma
+        (:meth:`count_lemmas`, or ``parse_text_units(count_by_lemma=True)`` for
+        a book).
         """
         return self._count_occurrences(subtitle_file, by_front=True)
 

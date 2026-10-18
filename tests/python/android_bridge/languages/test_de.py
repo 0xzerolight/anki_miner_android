@@ -170,3 +170,142 @@ def test_every_desktop_catalog_row_is_pinned_or_excluded(initialized_bridge_home
         },
         excluded={},
     )
+
+
+# ---------------------------------------------------------------- manga
+
+
+class _Definitions:
+    """Every term defines; the run's only other lookup seams answer nothing."""
+
+    def get_definitions_batch(
+        self, pairs: list[tuple[str, str | None]], *_args: object, **_kwargs: object
+    ) -> list[str]:
+        return [f"<div>{term}</div>" for term, _lemma in pairs]
+
+    def offline_term_identities(self, _pairs: object) -> dict[object, object]:
+        return {}
+
+    def css_entries(self) -> list[tuple[str, str, str]]:
+        return []
+
+    def clear_run_cache(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+class _Anki:
+    def __init__(self) -> None:
+        self.card_data: list[object] = []
+        self.last_created_note_ids: list[int] = []
+        self.last_created_mined_forms: list[str] = []
+        self.last_created_lemmas: list[str] = []
+        self.last_media_store_failures = 0
+        self.last_skipped_duplicates = 0
+
+    def set_cancelled_check(self, _cancelled: object) -> None:
+        pass
+
+    def verify_card_target(self) -> None:
+        pass
+
+    def create_cards_batch(self, card_data: list[object], progress_callback: object | None = None) -> list[int]:
+        del progress_callback
+        self.card_data = list(card_data)
+        self.last_created_note_ids = list(range(1, len(card_data) + 1))
+        self.last_created_mined_forms = [payload.word.mined_form for payload in self.card_data]
+        self.last_created_lemmas = [payload.word.lemma for payload in self.card_data]
+        return list(self.last_created_note_ids)
+
+
+def test_a_german_mokuro_volume_yields_units_and_cards(de_home: Path, tmp_path: Path) -> None:
+    """Manga OCR reads German through a recogniser, so the loader gates blocks on German's script.
+
+    Desktop ``reading_queue_worker.load_reading_source`` keeps the loader's own
+    Japanese gate only for manga-ocr's language (no ``ocr_recognizer``); with that
+    gate a German volume kept nothing but its untouched Japanese SFX.
+    """
+    del de_home
+    pytest.importorskip("requests", reason="runtime dependency lane: the processor imports the Anki service")
+    import json
+    import os
+
+    import android_bridge.reading_mining as reading_mining
+    from android_bridge.config_map import AndroidPaths, map_config_settings
+    from android_bridge.languages import profile_parser
+    from android_bridge.mining import _word_filter_seams
+    from android_bridge.protocol import encode_message
+    from anki_miner.orchestration.episode_processor import EpisodeProcessor
+    from anki_miner.presenters import NullPresenter
+    from anki_miner.services.word_filter import WordFilterService
+
+    profile = _profile()
+    assert "manga_ocr" in profile.capabilities and profile.ocr_recognizer
+    job = tmp_path / "reading-job-v1-de"
+    job.mkdir()
+    source = job / "volume.mokuro"
+    blocks = [
+        {"box": [1, 2, 30, 40], "lines": ["Der Fuchs", "schläft."]},
+        # A translated volume's sound effect, left in Japanese.
+        {"box": [5, 6, 35, 46], "lines": ["ドドド"]},
+    ]
+    sidecar = {
+        "version": "0.2.4",
+        "title": "Comic",
+        "title_uuid": "title-fixture",
+        "volume": "Band 1",
+        "volume_uuid": "volume-fixture",
+        "pages": [{"version": "0.2.4", "img_width": 1, "img_height": 1, "img_path": "001.png", "blocks": blocks}],
+    }
+    source.write_text(json.dumps(sidecar, ensure_ascii=False), encoding="utf-8")
+    settings = {"language": "de", "anki_note_type": "Basic"}
+    request = reading_mining._parse_request(
+        encode_message(
+            "mining.reading.run",
+            {
+                "sourceKind": "mokuro",
+                "sourcePath": str(source),
+                "imageArchivePath": None,
+                "seriesName": None,
+                "stagingRoot": str(tmp_path),
+                "cacheDir": str(tmp_path),
+                "nativeLibraryDir": "/native",
+                "configSnapshot": {"settings": settings},
+            },
+        )
+    )
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    config = replace(
+        map_config_settings(settings, paths).engine_config,
+        include_known_words=True,
+        bypass_optional_filters=True,
+    )
+
+    loader_kwargs = reading_mining._reading_loader_kwargs(config, "mokuro")
+    assert loader_kwargs["has_target_script"] == profile.script.contains_target_script
+    document = reading_mining._load_document(request, lambda: False, loader_kwargs=loader_kwargs)
+    assert [unit.text for unit in document.units] == ["Der Fuchs schläft."]
+
+    parser = profile_parser(config)
+    anki = _Anki()
+    processor = EpisodeProcessor(
+        config=config,
+        subtitle_parser=parser,
+        word_filter=WordFilterService(config, tagger=parser.tagger, **_word_filter_seams(profile, config)),
+        media_extractor=object(),
+        definition_service=_Definitions(),
+        anki_service=anki,
+        presenter=NullPresenter(),
+        profile=profile,
+    )
+    try:
+        result = processor.process_reading(document)
+    finally:
+        processor.close()
+
+    assert result.errors == []
+    assert result.cards_created == len(anki.card_data) > 0
+    assert {payload.word.sentence for payload in anki.card_data} == {"Der Fuchs schläft."}
+    assert "Fuchs" in {payload.word.mined_form for payload in anki.card_data}

@@ -59,8 +59,9 @@ HR_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_hr",
     custom_fetcher_language="hr",
     papago_speaker=None,
-    # Wiktionary recordings lead once the wiktionary audio kind exists (Stage W); Google TTS until then.
-    default_chain=(AudioSourceEntry(kind="googletts"),),
+    wikimedia_prefixes=("Hr-",),
+    default_chain=(AudioSourceEntry(kind="wikimedia"), AudioSourceEntry(kind="googletts")),
+    edge_voice="hr-HR-GabrijelaNeural",
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
 )
@@ -109,7 +110,10 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=HR_RESCUABLE_TAGS,
         ),
         catalog=HR_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_gender", "aspect_pairs", "lemmatised_frequency"}),
+        capabilities=frozenset(
+            {"pos_tag", "noun_gender", "aspect_pairs", "lemmatised_frequency", "manga_ocr", "video_ocr"}
+        ),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=HR_CARD_FIELDS,
         render_hooks=(
             PosHook(),

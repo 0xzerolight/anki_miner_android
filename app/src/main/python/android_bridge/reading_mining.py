@@ -60,6 +60,9 @@ _ARCHIVE_SUFFIXES = frozenset({".cbz", ".zip"})
 _MAX_READING_REQUEST_UTF8_BYTES = 1_048_576
 _MAX_READING_PATH_UTF8_BYTES = 4_096
 _MAX_READING_LABEL_UTF8_BYTES = 1_024
+# Kotlin's series for a subtitle source the user named none for
+# (BridgeReadingMiningRepository.DEFAULT_SUBTITLE_SERIES_NAME).
+_DEFAULT_SUBTITLE_SERIES_NAME = "Subtitles"
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,41 +226,54 @@ def _read_staged_text(path: Path) -> str:
 
 
 def _reading_loader_kwargs(config: object, source_kind: str) -> dict[str, object]:
-    """``detector.load``'s language seams for a non-ja run (desktop ``load_reading_source``).
+    """``detector.load``'s run seams (desktop ``reading_queue_worker.load_reading_source``).
 
-    The run's decode ladder (and the script check its single-byte leg needs),
-    the language's sentence rules, and the normaliser and bilingual-cue gate its
+    A non-ja run passes its decode ladder (and the script check its single-byte
+    leg needs), its sentence rules, and the normaliser and bilingual-cue gate its
     parser applies, read off a parser built like the run's. A mokuro volume's
-    blocks are gated on the language's script instead. Empty for Japanese,
-    whose call keeps the pre-transition ``detector.load(ref, cancel_check=)``
-    shape: its ladder is the engine default and its parser injects neither
-    seam, the A.5 sweep proved its rules equal to the loaders' own, and its
-    volumes keep the loader's own manga-ocr gate.
+    blocks are gated on the language's script instead, except for manga-ocr's own
+    language (no ``ocr_recognizer``), which keeps the loader's gate. Japanese
+    passes none of these, keeping the pre-transition ``detector.load(ref,
+    cancel_check=)`` shape: its ladder is the engine default and its parser
+    injects neither seam, the A.5 sweep proved its rules equal to the loaders'
+    own, and its volumes keep the loader's manga-ocr gate.
+
+    In every language a subtitle source drops songs, signs and drawings while
+    ``skip_opening_ending`` is on (F-08), as the Video lane's parser does.
     """
 
+    kwargs: dict[str, object] = {}
     language = config_language(config)
-    if language == JAPANESE:
-        return {}
-    from anki_miner.utils.subtitle_encoding import script_check_kwarg
+    if language != JAPANESE:
+        from anki_miner.utils.subtitle_encoding import script_check_kwarg
 
-    profile = get_profile(language)
-    parser = profile_parser(config)
-    ladder = profile.import_encodings
-    kwargs: dict[str, object] = {
-        "encodings": ladder,
-        "rules": profile.sentence_rules,
-        **script_check_kwarg(ladder, profile.script),
-    }
-    if parser.normalize is not None:
-        kwargs["normalize"] = parser.normalize
-    has_target_script = parser.has_target_script
-    if source_kind == "mokuro":
-        # Gate each block on the mining language's script, even where the parser
-        # keeps every line, so a translated volume's untouched SFX (ドドド) stays
-        # out. The OCR-native language keeps the loader's own gate (None).
-        has_target_script = None if "manga_ocr" in profile.capabilities else profile.script.contains_target_script
-    if has_target_script is not None:
-        kwargs["has_target_script"] = has_target_script
+        profile = get_profile(language)
+        parser = profile_parser(config)
+        ladder = profile.import_encodings
+        kwargs.update(
+            {
+                "encodings": ladder,
+                "rules": profile.sentence_rules,
+                **script_check_kwarg(ladder, profile.script),
+            }
+        )
+        if parser.normalize is not None:
+            kwargs["normalize"] = parser.normalize
+        has_target_script = parser.has_target_script
+        if source_kind == "mokuro":
+            # Gate each block on the mining language's script, even where the
+            # parser keeps every line, so a translated volume's untouched SFX
+            # (ドドド) stays out. manga-ocr's own language keeps the loader's gate
+            # (None); a recogniser language gates on its script.
+            has_target_script = (
+                None
+                if "manga_ocr" in profile.capabilities and not profile.ocr_recognizer
+                else profile.script.contains_target_script
+            )
+        if has_target_script is not None:
+            kwargs["has_target_script"] = has_target_script
+    if source_kind == "subtitle" and config.skip_opening_ending is True:
+        kwargs["skip_non_dialogue"] = True
     return kwargs
 
 
@@ -363,8 +379,12 @@ def _load_document(
         # The desktop loader derives series from path.parent.name. Android paths
         # live under nonce-named job directories, so replace only that transport
         # artifact with the stable label supplied by Kotlin before card identity
-        # and Source are computed by process_reading.
-        document.series = request.series_name
+        # and Source are computed by process_reading. Kotlin's stand-in for no
+        # series is no series: blank, it stays out of the Source field (which
+        # the engine composes from the parts that are not blank) and the
+        # {series} tag.
+        series = request.series_name
+        document.series = "" if series == _DEFAULT_SUBTITLE_SERIES_NAME else series
     return document
 
 
@@ -416,12 +436,17 @@ def _process_reading(
         raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
 
     # Mirror process_reading's own condition: manga and subtitle source labels
-    # are composed as "<series> — <episode>", books carry the bare episode
-    # title. The series duplicates what the deck already says, so the seam
-    # strips it. A drift in this condition only makes the strip a no-op.
+    # are composed as "<series> — <episode>" from each part sanitised on its
+    # own, books carry the bare episode title. The series duplicates what the
+    # deck already says, so the seam strips it; a blank one composes no
+    # separator. A drift in this condition only makes the strip a no-op.
     source_prefix = None
     if getattr(document, "kind", None) in ("manga", "subtitle"):
-        source_prefix = f"{getattr(document, 'series', '')} — ".lstrip()
+        from anki_miner.orchestration.episode_processor import sanitize_source_label
+
+        series = getattr(document, "series", "")
+        shown = sanitize_source_label(series) or series.strip()
+        source_prefix = f"{shown} — " if shown else None
 
     stack = ExitStack()
     try:
@@ -508,7 +533,8 @@ def run_reading(
             document = _load_document(
                 request,
                 adapters.cancel_event.is_set,
-                # Omitted for ja, so the call keeps its pre-transition shape.
+                # Omitted when empty (a ja book or volume), so the call keeps its
+                # pre-transition shape.
                 **({"loader_kwargs": loader_kwargs} if loader_kwargs else {}),
             )
             adapters.sentence_context = _sentence_page_context(document)

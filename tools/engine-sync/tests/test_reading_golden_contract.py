@@ -38,7 +38,7 @@ class ReadingGoldenContractTests(unittest.TestCase):
     def test_committed_fixture_is_complete_and_current(self) -> None:
         self.validate(self.fixture)
         self.assertEqual(
-            "480558b4f9bc4d4c34463950ed888aff4253f286bf70379e91b3924fe4e547bb",
+            "61bb1034e2409742d40dd4700844f785689df68827c6885425f436834f31da6a",
             hashlib.sha256(self.fixture_path.read_bytes()).hexdigest(),
         )
         documents = self.fixture["case"]["output"]["documents"]
@@ -90,7 +90,10 @@ class ReadingGoldenContractTests(unittest.TestCase):
     def test_exporter_uses_real_loader_and_process_reading(self) -> None:
         source = self.exporter_path.read_text(encoding="utf-8")
         self.assertIn("refs = detector.detect(source)", source)
-        self.assertIn("document = detector.load(refs[0])", source)
+        self.assertIn("document = detector.load(refs[0], **_loader_kwargs(refs[0].kind))", source)
+        # desktop load_reading_source at the pin: the mokuro gate and the F-08 switch.
+        self.assertIn('"manga_ocr" in profile.capabilities and not profile.ocr_recognizer', source)
+        self.assertIn('kwargs["skip_non_dialogue"] = True', source)
         self.assertIn("result = processor.process_reading(document)", source)
         self.assertIn("WordFilterService(config)", source)
         self.assertNotIn("expected_output", source)

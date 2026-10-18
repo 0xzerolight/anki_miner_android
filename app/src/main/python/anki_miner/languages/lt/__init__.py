@@ -51,8 +51,9 @@ LT_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_lt",
     custom_fetcher_language="lt",
     papago_speaker=None,
-    # Wiktionary native audio is Stage W (not built).
-    default_chain=(AudioSourceEntry(kind="googletts"),),
+    wikimedia_prefixes=("LL-Q9083 (lit)-", "Lt-"),
+    default_chain=(AudioSourceEntry(kind="wikimedia"), AudioSourceEntry(kind="googletts")),
+    edge_voice="lt-LT-OnaNeural",
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
 )
@@ -102,7 +103,8 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=UPOS_RESCUABLE,
         ),
         catalog=LT_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_gender", "lemmatised_frequency"}),
+        capabilities=frozenset({"pos_tag", "noun_gender", "lemmatised_frequency", "manga_ocr", "video_ocr"}),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=LT_CARD_FIELDS,
         # Default gender labels (masculine/feminine): Lithuanian nouns have no neuter.
         render_hooks=(PosHook(), GrammarTagHook(("noun_gender",))),

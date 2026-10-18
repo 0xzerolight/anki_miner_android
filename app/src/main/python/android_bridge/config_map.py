@@ -480,7 +480,8 @@ def _pitch_chain(value: object, constructor: Callable[..., object]) -> tuple[obj
 # the bridge's own chain builder is the one place it becomes a fetcher.
 _ANDROID_TTS_AUDIO_KIND = "android_tts"
 # The profile defaults it stands in for: every non-ja profile's word audio is
-# Google or Edge read-aloud, network services Android does not ship.
+# Google or Edge read-aloud, network services Android does not ship. Most
+# profiles put Wikimedia Commons recordings first; that leg is not ported.
 _SYNTHETIC_PROFILE_AUDIO_KINDS = frozenset({"googletts", "edgetts"})
 
 
@@ -708,8 +709,9 @@ def map_config_settings(
     # cut network kinds the Android builder rejects at run start. Force the
     # field so the default can never leak through: expression audio on Android
     # is exactly the imported local packs the snapshot names, or nothing.
-    # Another language's default is googletts or edgetts alone; its device
-    # voice takes their place.
+    # Another language's default is googletts or edgetts, most behind a
+    # wikimedia leg; the device voice takes the synthetic voice's place and the
+    # wikimedia leg is dropped.
     updates["expression_audio_chain"] = updates.get(
         "expression_audio_chain",
         _default_expression_audio_chain(base, language, AudioSourceEntry),

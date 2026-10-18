@@ -26,7 +26,7 @@ internal object EngineDefaults {
     const val AUDIO_PADDING_SECONDS: Double = 0.3
     const val SCREENSHOT_OFFSET_SECONDS: Double = 1.0
     const val SUBTITLE_OFFSET_SECONDS: Double = 0.0
-    const val AUDIO_BITRATE_KBPS: Int = 192
+    const val AUDIO_BITRATE_KBPS: Int = 96
     val AUDIO_FORMAT: AudioFormat = AudioFormat.MP3
 
     // Animated screenshots.
@@ -40,9 +40,26 @@ internal object EngineDefaults {
     const val ANIMATED_SCREENSHOT_HEIGHT: Int = 720
 
     // Subtitle text handling.
-    const val SUBTITLE_REGEX_FILTER: String = ""
+
+    /**
+     * Desktop's built-in subtitle cleanup (`SUBTITLE_CLEANUP_PIECES`) for a language whose profile
+     * ships no pattern of its own (ja, zh, yue): parenthesised notes, bracketed sound effects, music
+     * marks, a speaker label and a dialogue dash. Python `re` source, never rewritten for `java.util.regex`.
+     */
+    val SUBTITLE_CLEANUP_PIECES: List<String> =
+        listOf(
+            """\([^)]*\)|（[^）]*）""",
+            """\[[^\]]*\]|［[^］]*］""",
+            """[♪♬♫#～〜]+""",
+            """^[^「『:：]+[:：]\s*""",
+            """(?:^|(?<=[.!?…]\s))[-–—]\s+""",
+        )
+
+    /** [SUBTITLE_CLEANUP_PIECES] joined with `|`: desktop's `DEFAULT_SUBTITLE_CLEANUP_PATTERN`. */
+    const val SUBTITLE_REGEX_FILTER: String =
+        """\([^)]*\)|（[^）]*）|\[[^\]]*\]|［[^］]*］|[♪♬♫#～〜]+|^[^「『:：]+[:：]\s*|(?:^|(?<=[.!?…]\s))[-–—]\s+"""
     const val SUBTITLE_REGEX_REPLACEMENT: String = ""
-    const val USE_SUBTITLE_REGEX_FILTER: Boolean = false
+    const val USE_SUBTITLE_REGEX_FILTER: Boolean = true
 
     // Candidate filtering.
     const val USE_KNOWN_WORDS_DATABASE: Boolean = false
@@ -50,7 +67,7 @@ internal object EngineDefaults {
     const val USE_WHITELIST: Boolean = false
     const val EXCLUDE_HIRAGANA_ONLY: Boolean = false
     const val EXCLUDE_KATAKANA_ONLY: Boolean = false
-    const val BOLD_TARGET_IN_SENTENCE: Boolean = false
+    const val BOLD_TARGET_IN_SENTENCE: Boolean = true
 
     /** Off in the engine too since it stopped deduplicating by default; Android always stored `false`. */
     const val DEDUPLICATE_SENTENCES: Boolean = false
@@ -65,7 +82,7 @@ internal object EngineDefaults {
     const val MIN_FREQUENCY_RANK: Int = 0
     const val FREQUENCY_KEEP_UNRANKED: Boolean = false
     const val KNOWN_WORDS_MATCH_KANA_VARIANTS: Boolean = true
-    const val STRICT_CARD_ORDER: Boolean = false
+    const val STRICT_CARD_ORDER: Boolean = true
     const val MERGE_INCOMPLETE_CUES: Boolean = false
 
     /** One occurrence, i.e. no minimum. */

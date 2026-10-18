@@ -872,9 +872,9 @@ class AndroidAnkiAdapter:
         # "cancelled" first, and the engine reads only the event when it
         # classifies the run.
         self._request_cancellation = request_cancellation or (lambda: None)
-        # Engine-composed ``"<series> — "`` prefix on the card source field.
-        # Android's series is a synthetic lane label with no counterpart on
-        # disk, so the composition layer hands the exact prefix down here.
+        # Engine-composed ``"<series> — "`` prefix on the card source field,
+        # which a reading run's composition layer hands down: process_reading
+        # takes no series override, and the deck already names the series.
         self._source_prefix = source_prefix or None
         self.last_created_note_ids: list[int] = []
         # Read back by ``_phase5`` to decide what to record as known. The engine
@@ -2074,28 +2074,27 @@ class AndroidAnkiAdapter:
     def _strip_source_prefix(self, word_data_list: list[Any]) -> list[Any]:
         """Drop the engine's ``"<series> — "`` prefix from the card source field.
 
-        ``process_episode``/``process_reading`` compose the source label as
-        ``f"{series} — {episode}"``. Android's series is a synthetic lane label
-        (SAF hands over a display name, never a parent folder), and
-        ``process_reading`` exposes no override at all, so the prefix is removed
-        here instead — before preflight, so note identity and the create-call
-        size budget both see the value that is actually written.
+        ``process_reading`` composes a manga or subtitle source label as
+        ``"<series> — <episode>"`` and exposes no override, so the reading
+        lane's prefix is removed here instead. The field is ``"<label> @
+        <position>"``, so an empty label (a video with no usable name, whose
+        series the bridge blanks) leaves a leading space, trimmed here too.
+        Both run before preflight, so note identity and the create-call size
+        budget see the value that is actually written.
         """
 
         from dataclasses import replace
 
         prefix = self._source_prefix
-        if not prefix:
-            return word_data_list
         stripped: list[Any] = []
         for item in word_data_list:
             extra_fields = item.extra_fields
             source = extra_fields.get("source") if extra_fields else None
-            if isinstance(source, str) and source.startswith(prefix):
-                item = replace(
-                    item,
-                    extra_fields={**extra_fields, "source": source[len(prefix) :]},
-                )
+            if isinstance(source, str):
+                written = source[len(prefix) :] if prefix and source.startswith(prefix) else source
+                written = written.removeprefix(" ") if written.startswith(" @ ") else written
+                if written != source:
+                    item = replace(item, extra_fields={**extra_fields, "source": written})
             stripped.append(item)
         return stripped
 

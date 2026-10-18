@@ -64,6 +64,22 @@ _ENUM_RESETS: dict[str, tuple[frozenset[str], str]] = {
     "asr_device": (frozenset({"auto", "cuda", "cpu", "vulkan"}), "auto"),
 }
 
+# Built-in subtitle cleanup for a language whose profile ships no pattern of its
+# own (ja, zh, yue): parenthesised notes, [sound effects], music marks, a speaker
+# label and a dialogue dash. The Sentences panel offers them as one checkbox
+# (gui/widgets/panels/sentences_settings_panel.py); the joined pattern is the
+# default subtitle_regex_filter. Patterns cover half- and full-width punctuation.
+SUBTITLE_CLEANUP_PIECES: tuple[str, ...] = (
+    r"\([^)]*\)|（[^）]*）",
+    r"\[[^\]]*\]|［[^］]*］",
+    r"[♪♬♫#～〜]+",
+    r"^[^「『:：]+[:：]\s*",
+    # A dash that opens a speaker turn ("- Hi. - Hello."): at the line start or after
+    # a sentence terminator. Hyphenated words and a mid-sentence dash are untouched.
+    r"(?:^|(?<=[.!?…]\s))[-–—]\s+",
+)
+DEFAULT_SUBTITLE_CLEANUP_PATTERN = "|".join(SUBTITLE_CLEANUP_PIECES)
+
 # Discrete whole-UI zoom presets (whole percents) offered in the Zoom dropdown
 # (gui/widgets/panels/ui_settings_panel.py) and used to snap a folded legacy
 # ui_font_scale value onto the nearest preset (GUIConfigManager._fold_removed_fields).
@@ -145,6 +161,7 @@ class AudioSourceEntry:
         "custom",
         "custom_json",
         "edgetts",
+        "wikimedia",
     ]
     pack_id: str | None = None
     url: str | None = None
@@ -247,9 +264,17 @@ class AnkiMinerConfig:
     )
     ankiconnect_url: str = "http://127.0.0.1:8765"
     # Start Anki at launch when the startup check finds AnkiConnect unreachable
-    # (gui/controllers/anki_auto_open.py). Opt-in. Portable, not language-scoped:
-    # one preference for every mining language.
-    auto_open_anki: bool = False
+    # (gui/controllers/anki_auto_open.py). On by default (fresh installs; a saved
+    # config keeps its value); a missing install or an offscreen session starts
+    # nothing. Portable, not language-scoped: one preference for every mining
+    # language.
+    auto_open_anki: bool = True
+    # AI-03: after a run that added at least one card, ask Anki to sync with
+    # AnkiWeb once (AnkiConnect `sync`). A failed sync is a log warning, never a
+    # failed run. Off by default, and off for a saved config that predates the
+    # field (the dataclass default already says so). Portable, not
+    # language-scoped.
+    sync_anki_after_run: bool = False
     anki_tags: str = "auto-mined"  # Whitespace-separated tags applied to every mined card; empty string means no tags
     # Deck names excluded from known-words detection (Issue #38). Notes in these
     # decks (and their subdecks) are dropped from the findNotes query, so their
@@ -262,7 +287,14 @@ class AnkiMinerConfig:
     media_temp_folder: Path = field(default_factory=lambda: Path(tempfile.gettempdir()) / "anki_miner_temp")
     # Audio extraction settings (Issue #18)
     audio_format: str = "mp3"  # "mp3" | "opus"
-    audio_bitrate: int = 192  # kbps; applies to both mp3 and opus
+    audio_bitrate: int = 96  # kbps, mono clips; applies to both mp3 and opus
+    # F-02: loudness-normalise every sentence clip (single-pass loudnorm, plus a
+    # 30 ms fade in and out); Condense runs the same filter on its output. On for
+    # fresh installs. A saved config that predates the field loads it False
+    # (GUIConfigManager._migrate_dict, keep_legacy_feature_switches), so an
+    # existing user's clips stay byte-identical until they tick it. Portable,
+    # not language-scoped.
+    normalize_audio_loudness: bool = True
 
     # Audio Condenser settings. Persisted defaults for the Condense tab's inline
     # run options; the tab seeds its widgets from these on load and writes them
@@ -415,6 +447,11 @@ class AnkiMinerConfig:
     reading_tts_enabled: bool = False
     reading_tts_google_enabled: bool = True
     reading_tts_papago_enabled: bool = True
+    # F-11: crop a manga card's picture to the sentence's text blocks (their
+    # union, padded 1.5x, clamped to the page; the full page when the unit has no
+    # box). On for fresh installs. A saved config that predates the field loads
+    # it False (keep_legacy_feature_switches). Portable, not language-scoped.
+    crop_manga_to_text: bool = True
 
     # Pitch accent settings. Activation is resource-driven (see the pitch_active
     # property): the lookup runs iff at least one enabled source is in the
@@ -469,6 +506,12 @@ class AnkiMinerConfig:
     # Known word database
     known_words_db_path: Path = field(default_factory=lambda: ANKI_MINER_HOME / "known_words.db")
     use_known_words_db: bool = False
+    # F-01: when True, Readability and the i+1 filter count a word as known only
+    # once its Anki card has been reviewed at least once; mining exclusion and
+    # Deck Filter keep using every card. Off by default, and off for a saved
+    # config that predates the field (the dataclass default already says so).
+    # Portable, not language-scoped.
+    known_from_reviewed_cards: bool = False
     # When True (default), a word whose mined_form is written entirely in kana
     # also counts as known when its dictionary lemma is in the known set — so a
     # subtitle spelling うなずく doesn't re-mine an existing 頷く card. Kana-only
@@ -521,35 +564,46 @@ class AnkiMinerConfig:
     # Python regex applied to each subtitle line after tag/HTML cleanup and
     # before tokenization. Matched text is replaced with subtitle_regex_replacement
     # (empty string = deletion). Both parse paths (raw entries for the viewer
-    # and the mining path) honor the filter.
-    subtitle_regex_filter: str = ""
+    # and the mining path) honor the filter. On by default with the built-in
+    # cleanup (fresh installs; a saved config keeps its value). These are ja's
+    # values; every other profile sets its own in scoped_defaults.
+    subtitle_regex_filter: str = DEFAULT_SUBTITLE_CLEANUP_PATTERN
     subtitle_regex_replacement: str = ""
-    use_subtitle_regex_filter: bool = False
+    use_subtitle_regex_filter: bool = True
+    # F-08: drop the cues that fall inside an opening or ending (named by the
+    # video's chapter titles) before mining. On for fresh installs. A saved
+    # config that predates the field loads it False
+    # (keep_legacy_feature_switches). Portable, not language-scoped: the chapter
+    # names it matches are the same in every mining language.
+    skip_opening_ending: bool = True
 
     # Card formatting
     # When True, wrap the mined target word in <b>...</b> inside the
     # Sentence and SentenceFurigana fields. Match is the exact MeCab span
     # of the mined surface (after compound-merge), not a string search,
     # so duplicated surfaces in the same sentence bold only the morpheme
-    # that was actually mined. See Issue #20.
-    bold_target_in_sentence: bool = False
+    # that was actually mined. See Issue #20. On by default (fresh installs;
+    # a saved config keeps its value): a word with no tracked span falls back
+    # to the plain sentence.
+    bold_target_in_sentence: bool = True
 
     # Card styling (Issue #44). anki_miner emits definition HTML with its own
     # class scheme (`.yomitan-glossary`, `gloss-sc-*`, `data-sc-*`) and ships one
-    # universal glossary stylesheet (resources/glossary.css). Glossary styling is
-    # self-contained per card (the Yomitan model): a `<style>` block — universal
-    # sheet + every enabled dictionary's scoped styles.css — is embedded at the top
-    # of each card's glossary field at card-creation time
-    # (`EpisodeProcessor._phase5_create` → `build_card_style_block`). anki_miner
+    # structural glossary stylesheet (resources/glossary.css). Glossary styling is
+    # self-contained per card (the Yomitan model): a `<style>` block — that sheet
+    # + the scoped styles.css of each dictionary in the field — is embedded as a
+    # trailing block in each glossary/definition field at card-creation time
+    # (`EpisodeProcessor._phase5_create` → `attach_card_style_block`). anki_miner
     # never writes to the note type's card styling.
 
     # Card creation order. When True, the words handed to phase 3 are re-sorted
     # into the order they first appear in the media, so the notes AnkiConnect
-    # receives — and therefore Anki's new-card positions — form a clean series.
-    # Off by default because the sort deliberately overrides three upstream
-    # orderings: the whitelist force-include prepend, the Word Curator's
-    # clicked column sort, and the season-mode merged pool order.
-    strict_card_order: bool = False
+    # receives — and therefore Anki's new-card positions — follow the episode.
+    # On by default (fresh installs; a saved config keeps its value). The sort
+    # deliberately overrides three upstream orderings: the whitelist
+    # force-include prepend, the Word Curator's clicked column sort, and the
+    # season-mode merged pool order; turning it off keeps those.
+    strict_card_order: bool = True
 
     # Deduplication settings. Keeps one card per example sentence: the FIRST
     # mineable word of a line wins and its sentence-mates are dropped. Off by
@@ -557,6 +611,12 @@ class AnkiMinerConfig:
     # with an obligatory overt subject opens nearly every line on a pronoun, so
     # the line's real vocabulary is what gets traded away.
     deduplicate_sentences: bool = False
+    # F-07: when a word occurs in several sentences, card the best-ranked one
+    # instead of the first. On for fresh installs. A saved config that predates
+    # the field loads it False (keep_legacy_feature_switches), so an existing
+    # user's cards keep their sentence until they tick it. Portable, not
+    # language-scoped.
+    pick_best_sentence: bool = True
 
     # i+1 sentence filtering. When True, only mine words that have at least
     # one example sentence containing exactly one unknown lemma.

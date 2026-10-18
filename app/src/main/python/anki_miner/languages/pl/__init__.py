@@ -48,9 +48,9 @@ PL_AUDIO = AudioDefaults(
     sentence_cache_stem_prefix="sentencetts_pl",
     custom_fetcher_language="pl",
     papago_speaker=None,
-    # Wiktionary/Lingua Libre (Pl-, LL-Q809 (pol)-) leads once the wiktionary kind exists (Stage W);
-    # Google TTS until then.
-    default_chain=(AudioSourceEntry(kind="googletts"),),
+    wikimedia_prefixes=("Pl-", "LL-Q809 (pol)-"),
+    default_chain=(AudioSourceEntry(kind="wikimedia"), AudioSourceEntry(kind="googletts")),
+    edge_voice="pl-PL-ZofiaNeural",
     candidates=spaced_audio_candidates,
     speakable=spaced_speakable,
 )
@@ -98,7 +98,10 @@ def build_profile() -> LanguageProfile:
             rescuable_tags=PL_RESCUABLE_TAGS,
         ),
         catalog=PL_CATALOG,
-        capabilities=frozenset({"pos_tag", "noun_gender", "aspect_pairs", "lemmatised_frequency"}),
+        capabilities=frozenset(
+            {"pos_tag", "noun_gender", "aspect_pairs", "lemmatised_frequency", "manga_ocr", "video_ocr"}
+        ),
+        ocr_recognizer="ppocrv6-small",
         card_field_defaults=PL_CARD_FIELDS,
         render_hooks=(
             PosHook(),

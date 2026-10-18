@@ -2019,8 +2019,8 @@ internal class BridgeMiningRepository(
     private fun labelsFor(displayName: String): Pair<String, String> {
         val withoutExtension = displayName.substringBeforeLast('.', displayName)
         // An unusable display name yields an empty episode on purpose: the bridge
-        // strips "<series> — " off the card source field, so a blank episode
-        // leaves a bare "@ 00:12:34" instead of repeating the lane label twice.
+        // hands the engine no series, so a blank episode leaves a bare
+        // "@ 00:12:34" in the card source field instead of the lane label.
         return canonicalRunLabel(withoutExtension) to lane.seriesLabel
     }
 

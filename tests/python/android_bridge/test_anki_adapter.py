@@ -182,6 +182,9 @@ def isolated_services_namespace(initialized_bridge_home: Path) -> Iterator[None]
     # anki_service also imports the response validator now. Nothing can reach it
     # while both posters are hard failures, so it gets the same guard.
     ankiconnect._expect_list = unexpected_http  # type: ignore[attr-defined]
+    # And the deck-name escaper for excluded-deck search clauses. The parity
+    # tests here exclude no deck, so it is never called either.
+    ankiconnect.escape_anki_search = unexpected_http  # type: ignore[attr-defined]
     sys.modules[ankiconnect.__name__] = ankiconnect
     reading_images = types.ModuleType(f"{prefix}.reading.images")
     reading_images.prepare_card_image = unexpected_http  # type: ignore[attr-defined]
@@ -2297,6 +2300,19 @@ def test_create_cards_batch_leaves_a_non_matching_source_alone(
 
     assert len(adapter.create_cards_batch([card])) == 1
     assert _source_field(kotlin) == "漫画作品 — 第一巻 @ p.1"
+
+
+def test_create_cards_batch_trims_the_space_a_blank_source_label_leaves(
+    initialized_bridge_home: Path,
+) -> None:
+    # The Video and Audio lanes hand the engine a blank series, so a file with no
+    # usable name composes an empty label and the field opens " @ ".
+    kotlin = FakeKotlinAnki()
+    card = replace(_card("猫"), extra_fields={"source": " @ 00:12:34"})
+    adapter = _adapter(_source_config(initialized_bridge_home), kotlin)
+
+    assert len(adapter.create_cards_batch([card])) == 1
+    assert _source_field(kotlin) == "@ 00:12:34"
 
 
 def test_create_cards_batch_without_a_source_prefix_is_unchanged(
