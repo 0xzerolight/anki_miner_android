@@ -233,8 +233,9 @@ internal fun nameWordsetsAfterClick(
     if (nameWordsetsState(enabled, catalog) == ToggleableState.On) emptyList() else catalog
 
 /**
- * Desktop's AnkiMobile warning (CC-21), shown only while Opus is the format a run uses: no Opus
- * container plays in AnkiMobile, AnkiDroid and Anki desktop alike.
+ * Desktop's AnkiMobile warning (CC-21), shown only while Opus is the format a run uses. No single
+ * Opus container is documented to play in AnkiMobile, AnkiDroid and Anki desktop alike, so the
+ * option warns about AnkiMobile, where the clips fail, instead of switching containers.
  */
 internal val SettingsDraft.showsOpusWarning: Boolean
     get() = (audioFormat ?: EngineDefaults.AUDIO_FORMAT) == AudioFormat.OPUS
