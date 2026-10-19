@@ -39,7 +39,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
                 "kiwipiepy-model": "0.23.0",
                 "lxml": "6.1.1",
                 "opencc": "1.4.2",
-                "pillow": "12.2.0",
+                "pillow": "12.3.0",
                 "pycantonese": "5.0.0",
                 "pypinyin": "0.55.0",
                 "pysubs2": "1.8.1",
@@ -50,7 +50,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
                 "tzdata": "2026.3",
                 "underthesea": "9.5.0",
                 "underthesea-core": "3.3.2",
-                "urllib3": "2.7.0",
+                "urllib3": "2.8.0",
             },
             {
                 name: versions[name]

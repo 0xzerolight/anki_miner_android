@@ -35,7 +35,7 @@ EXPECTED_DISTRIBUTIONS = {
     "nltk": "3.10.3",
     "numpy": "2.5.0",
     "opencc": "1.4.2",
-    "pillow": "12.2.0",
+    "pillow": "12.3.0",
     "preshed": "3.0.13",
     "pycantonese": "5.0.0",
     "pydantic-core": "2.46.5",
@@ -53,7 +53,7 @@ EXPECTED_DISTRIBUTIONS = {
     "tzdata": "2026.3",
     "underthesea": "9.5.0",
     "underthesea-core": "3.3.2",
-    "urllib3": "2.7.0",
+    "urllib3": "2.8.0",
     "zeyrek": "0.1.3",
 }
 

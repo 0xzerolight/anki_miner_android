@@ -27,10 +27,10 @@ class PythonRuntimeDependenciesInstrumentedTest {
                 "charset-normalizer" to "3.4.7",
                 "idna" to "3.18",
                 "lxml" to "6.1.1",
-                "pillow" to "12.2.0",
+                "pillow" to "12.3.0",
                 "pysubs2" to "1.8.1",
                 "requests" to "2.34.2",
-                "urllib3" to "2.7.0",
+                "urllib3" to "2.8.0",
             )
 
         assertEquals("cpython", snapshot.getString("implementation"))

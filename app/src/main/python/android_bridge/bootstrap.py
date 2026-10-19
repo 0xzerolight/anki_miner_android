@@ -29,9 +29,9 @@ _log_handler_install_error: str | None = None
 # ``composition.toml``'s allowed_external includes ``requests``, and a query
 # string reaches urllib3 percent-encoded (e.g. ``q=%E6%AE%BA%E3%81%99``),
 # where the later redaction pass -- which matches literal CJK -- cannot see
-# it. A flat WARNING ceiling is not enough: urllib3 2.7's connectionpool logs
+# it. A flat WARNING ceiling is not enough: urllib3 2.8's connectionpool logs
 # the retry URL, query string included, at WARNING itself
-# (connectionpool.py:869, hit on any flaky mobile network retry), so that one
+# (connectionpool.py:874, hit on any flaky mobile network retry), so that one
 # child logger needs its own ceiling above WARNING. The rest of urllib3 stays
 # at WARNING because its other warnings (TLS, header parsing) carry no URL and
 # are worth keeping.

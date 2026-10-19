@@ -70,7 +70,7 @@ expected = {
     "lxml": "6.1.1",
     "nltk": "3.10.3",
     "opencc": "1.4.2",
-    "pillow": "12.2.0",
+    "pillow": "12.3.0",
     "pycantonese": "5.0.0",
     "pypinyin": "0.55.0",
     "pysubs2": "1.8.1",
@@ -82,7 +82,7 @@ expected = {
     "tzdata": "2026.3",
     "underthesea": "9.5.0",
     "underthesea-core": "3.3.2",
-    "urllib3": "2.7.0",
+    "urllib3": "2.8.0",
     "zeyrek": "0.1.3",
 }
 for name, version in expected.items():

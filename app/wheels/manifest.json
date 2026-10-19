@@ -52,7 +52,7 @@
       "license": "BSD-3-Clause AND IJG AND Zlib",
       "package": "chaquopy-libjpeg",
       "path": "arm64-v8a/chaquopy_libjpeg-1.5.3-3-py3-none-android_26_arm64_v8a.whl",
-      "sha256": "b06fbfba1072b3aa3b9250be1b5f6a7d703f7b27bdafcb4e5fc34618308b024b",
+      "sha256": "31805bc9de7a2d86b3718e7e9e8f10b4a0662ac9348d2d94ca2bd8b6cac27bd8",
       "source": {
         "filename": "libjpeg-turbo-1.5.3.tar.gz",
         "kind": "runtime-source",
@@ -243,18 +243,18 @@
     },
     {
       "abi": "arm64-v8a",
-      "filename": "pillow-12.2.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "filename": "pillow-12.3.0-0-cp312-cp312-android_26_arm64_v8a.whl",
       "license": "MIT-CMU",
       "package": "pillow",
-      "path": "arm64-v8a/pillow-12.2.0-0-cp312-cp312-android_26_arm64_v8a.whl",
-      "sha256": "245f13549b62423e12c4b1d2b69ac042284ba0fed1aebc8bff13f8c043aca9d8",
+      "path": "arm64-v8a/pillow-12.3.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "f16e3c437099c7ebbc8cc82e105dc30ac4efcc1941dd4da4f8ebe2e6e359cd44",
       "source": {
-        "filename": "pillow-12.2.0.tar.gz",
+        "filename": "pillow-12.3.0.tar.gz",
         "kind": "runtime-source",
-        "sha256": "a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5",
-        "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz"
+        "sha256": "3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce",
+        "url": "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz"
       },
-      "version": "12.2.0"
+      "version": "12.3.0"
     },
     {
       "abi": "arm64-v8a",
@@ -423,18 +423,18 @@
     },
     {
       "abi": "common",
-      "filename": "anyio-4.14.0-py3-none-any.whl",
+      "filename": "anyio-4.14.2-py3-none-any.whl",
       "license": "MIT",
       "package": "anyio",
-      "path": "common/anyio-4.14.0-py3-none-any.whl",
-      "sha256": "dd9b7a2a9799ed6552fde617b2c5df02b7fdd7d88392fc48101e51bae46164d9",
+      "path": "common/anyio-4.14.2-py3-none-any.whl",
+      "sha256": "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494",
       "source": {
-        "filename": "anyio-4.14.0-py3-none-any.whl",
+        "filename": "anyio-4.14.2-py3-none-any.whl",
         "kind": "prebuilt-wheel",
-        "sha256": "dd9b7a2a9799ed6552fde617b2c5df02b7fdd7d88392fc48101e51bae46164d9",
-        "url": "https://files.pythonhosted.org/packages/ba/16/9826f089383c593cdfc4a6e5aca94d9e91ae1692c57af82c3b2aa5e810f7/anyio-4.14.0-py3-none-any.whl"
+        "sha256": "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494",
+        "url": "https://files.pythonhosted.org/packages/da/35/f2287558c17e29fafc8ef3daf819bb9834061cfa43bff8014f7df7f63bdc/anyio-4.14.2-py3-none-any.whl"
       },
-      "version": "4.14.0"
+      "version": "4.14.2"
     },
     {
       "abi": "common",
@@ -1023,18 +1023,18 @@
     },
     {
       "abi": "common",
-      "filename": "urllib3-2.7.0-py3-none-any.whl",
+      "filename": "urllib3-2.8.0-py3-none-any.whl",
       "license": "MIT",
       "package": "urllib3",
-      "path": "common/urllib3-2.7.0-py3-none-any.whl",
-      "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+      "path": "common/urllib3-2.8.0-py3-none-any.whl",
+      "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
       "source": {
-        "filename": "urllib3-2.7.0-py3-none-any.whl",
+        "filename": "urllib3-2.8.0-py3-none-any.whl",
         "kind": "prebuilt-wheel",
-        "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
-        "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl"
+        "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+        "url": "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl"
       },
-      "version": "2.7.0"
+      "version": "2.8.0"
     },
     {
       "abi": "common",
@@ -1147,7 +1147,7 @@
       "license": "BSD-3-Clause AND IJG AND Zlib",
       "package": "chaquopy-libjpeg",
       "path": "x86_64/chaquopy_libjpeg-1.5.3-3-py3-none-android_26_x86_64.whl",
-      "sha256": "b41778ce9f5aa38a80c30eb6120b2d18804bd826df6d2edd2ae3ec55a5f02483",
+      "sha256": "8c0899d0b2f9cc5fbf2ec859c4faf98dbae72b58627971f489a5ff70a8f38b30",
       "source": {
         "filename": "libjpeg-turbo-1.5.3.tar.gz",
         "kind": "runtime-source",
@@ -1338,18 +1338,18 @@
     },
     {
       "abi": "x86_64",
-      "filename": "pillow-12.2.0-0-cp312-cp312-android_26_x86_64.whl",
+      "filename": "pillow-12.3.0-0-cp312-cp312-android_26_x86_64.whl",
       "license": "MIT-CMU",
       "package": "pillow",
-      "path": "x86_64/pillow-12.2.0-0-cp312-cp312-android_26_x86_64.whl",
-      "sha256": "5b0e81ea560242968ffd2ef81dd9be4ce8cd6536113404694dec288a84f557f7",
+      "path": "x86_64/pillow-12.3.0-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "70d47e297b819bd09dbc7f0f92dfe5813cbd4bd98b541739df94d777d5c6de7a",
       "source": {
-        "filename": "pillow-12.2.0.tar.gz",
+        "filename": "pillow-12.3.0.tar.gz",
         "kind": "runtime-source",
-        "sha256": "a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5",
-        "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz"
+        "sha256": "3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce",
+        "url": "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz"
       },
-      "version": "12.2.0"
+      "version": "12.3.0"
     },
     {
       "abi": "x86_64",

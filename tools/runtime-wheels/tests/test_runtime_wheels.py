@@ -214,7 +214,7 @@ class LockContractTests(unittest.TestCase):
                 "requests": "2.34.2",
                 "pysubs2": "1.8.1",
                 "charset-normalizer": "3.4.7",
-                "urllib3": "2.7.0",
+                "urllib3": "2.8.0",
                 "idna": "3.18",
                 "certifi": "2026.6.17",
             },

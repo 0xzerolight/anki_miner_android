@@ -30,18 +30,18 @@
       "version": "0.8.0"
     },
     "anyio": {
-      "filename": "anyio-4.14.0-py3-none-any.whl",
+      "filename": "anyio-4.14.2-py3-none-any.whl",
       "kind": "prebuilt-wheel",
       "license": {
         "expression": "MIT",
         "members": {
-          "anyio-4.14.0.dist-info/licenses/LICENSE": "5361ac9dc58f2ef5fd2e9b09c68297c17f04950909bbc8023bdb82eacf22c2b0"
+          "anyio-4.14.2.dist-info/licenses/LICENSE": "5361ac9dc58f2ef5fd2e9b09c68297c17f04950909bbc8023bdb82eacf22c2b0"
         }
       },
       "package": "anyio",
-      "sha256": "dd9b7a2a9799ed6552fde617b2c5df02b7fdd7d88392fc48101e51bae46164d9",
-      "url": "https://files.pythonhosted.org/packages/ba/16/9826f089383c593cdfc4a6e5aca94d9e91ae1692c57af82c3b2aa5e810f7/anyio-4.14.0-py3-none-any.whl",
-      "version": "4.14.0"
+      "sha256": "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494",
+      "url": "https://files.pythonhosted.org/packages/da/35/f2287558c17e29fafc8ef3daf819bb9834061cfa43bff8014f7df7f63bdc/anyio-4.14.2-py3-none-any.whl",
+      "version": "4.14.2"
     },
     "blis": {
       "filename": "blis-1.3.3.tar.gz",
@@ -556,18 +556,18 @@
       "url": "https://github.com/NixOS/patchelf/releases/download/0.18.0/patchelf-0.18.0-x86_64.tar.gz"
     },
     "pillow": {
-      "filename": "pillow-12.2.0.tar.gz",
+      "filename": "pillow-12.3.0.tar.gz",
       "kind": "runtime-source",
       "license": {
         "expression": "MIT-CMU",
         "members": {
-          "pillow-12.2.0/LICENSE": "15181e7363dca9aed78b79bebebc7fde7f1814b8bd311ea3b87ae8ccadfc185b"
+          "pillow-12.3.0/LICENSE": "15181e7363dca9aed78b79bebebc7fde7f1814b8bd311ea3b87ae8ccadfc185b"
         }
       },
       "package": "pillow",
-      "sha256": "a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5",
-      "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz",
-      "version": "12.2.0"
+      "sha256": "3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce",
+      "url": "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz",
+      "version": "12.3.0"
     },
     "preshed": {
       "filename": "preshed-3.0.13.tar.gz",
@@ -955,18 +955,18 @@
       "version": "3.3.2"
     },
     "urllib3": {
-      "filename": "urllib3-2.7.0-py3-none-any.whl",
+      "filename": "urllib3-2.8.0-py3-none-any.whl",
       "kind": "prebuilt-wheel",
       "license": {
         "expression": "MIT",
         "members": {
-          "urllib3-2.7.0.dist-info/licenses/LICENSE.txt": "130e3a64d5fdd5d096a752694634a7d9df284469de86e5732100268041e3d686"
+          "urllib3-2.8.0.dist-info/licenses/LICENSE.txt": "130e3a64d5fdd5d096a752694634a7d9df284469de86e5732100268041e3d686"
         }
       },
       "package": "urllib3",
-      "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
-      "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl",
-      "version": "2.7.0"
+      "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+      "url": "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl",
+      "version": "2.8.0"
     },
     "wasabi": {
       "filename": "wasabi-1.1.3-py3-none-any.whl",

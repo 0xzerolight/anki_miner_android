@@ -15,10 +15,10 @@ EXPECTED_VERSIONS = {
     "charset-normalizer": "3.4.7",
     "idna": "3.18",
     "lxml": "6.1.1",
-    "pillow": "12.2.0",
+    "pillow": "12.3.0",
     "pysubs2": "1.8.1",
     "requests": "2.34.2",
-    "urllib3": "2.7.0",
+    "urllib3": "2.8.0",
 }
 
 
