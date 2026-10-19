@@ -111,8 +111,13 @@ Contributions of any kind are welcome.
 
 - Build from source and dev setup: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md).
+- Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 - Bug reports and feature requests -> [Issues](https://github.com/0xzerolight/anki_miner_android/issues).
 - Security vulnerabilities -> [private advisory](https://github.com/0xzerolight/anki_miner_android/security/advisories/new), not a public issue. See [SECURITY.md](SECURITY.md).
+
+General questions and discussion -> [Discussions](https://github.com/0xzerolight/anki_miner_android/discussions) or [Discord](https://discord.com/invite/aDtQyZzUVP).
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for everyone who has contributed.
 
 Main project: [Anki Miner](https://github.com/0xzerolight/anki_miner).
 

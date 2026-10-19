@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or general discussion
+    url: https://github.com/0xzerolight/anki_miner_android/discussions
+    about: Ask a question or chat about the project. For bugs and feature requests, use the issue templates above.
+  - name: Discord
+    url: https://discord.com/invite/aDtQyZzUVP
+    about: Chat with other users on the Anki Miner Discord server.

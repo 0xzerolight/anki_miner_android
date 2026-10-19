@@ -42,6 +42,15 @@ body:
       required: true
 
   - type: input
+    id: mining_language
+    attributes:
+      label: Mining language
+      description: The language you mine in (chosen in setup), if the bug involves mining.
+      placeholder: e.g. Japanese, Cantonese, Arabic
+    validations:
+      required: false
+
+  - type: input
     id: ankidroid_version
     attributes:
       label: AnkiDroid version
@@ -59,11 +68,20 @@ body:
     validations:
       required: true
 
+  - type: upload
+    id: diagnostics
+    attributes:
+      label: Diagnostics bundle
+      description: Settings → Diagnostics bundle → Share builds a redacted ZIP of the app's logs. Check it for private information before uploading.
+    validations:
+      required: false
+      accept: ".zip,.log,.txt"
+
   - type: textarea
     id: logs
     attributes:
-      label: Logs / error output
-      description: Use Settings → Share engine log to grab the log text. Review it for private information (file names, paths) before pasting.
+      label: Logs / error output (optional paste alternative)
+      description: If you cannot attach the bundle, paste any relevant log output or error messages. Review it for private information (file names, paths) before pasting.
       render: shell
     validations:
       required: false
