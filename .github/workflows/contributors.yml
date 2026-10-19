@@ -1,0 +1,93 @@
+name: Check CONTRIBUTORS.md
+
+# Reports when CONTRIBUTORS.md has drifted from the live participant list. It
+# does NOT commit: a bot push to main would skip CI and bypass review, so the
+# maintainer refreshes the file locally using the command this workflow prints
+# in its job summary.
+#
+# Schedule + dispatch only: drift is reported once a day at most, and this
+# maintainer-housekeeping job stays off contributor PRs, where a red X would say
+# nothing about their code.
+
+on:
+  schedule:
+    # Daily, off the hour to avoid the cron rush.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+# Read-only: nothing here writes to the repository.
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  discussions: read
+
+concurrency:
+  group: update-contributors
+  # Queue rather than cancel -- a cancelled run reports as a failure, which is
+  # indistinguishable from real drift.
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: "20"
+
+      - name: Regenerate CONTRIBUTORS.md
+        id: update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/update_contributors.mjs
+
+      - name: Report drift
+        env:
+          NEW_LOGINS: ${{ steps.update.outputs.new_logins }}
+          REPO: ${{ github.repository }}
+        run: |
+          if git diff --quiet CONTRIBUTORS.md; then
+            echo "CONTRIBUTORS.md is up to date."
+            echo "CONTRIBUTORS.md is up to date." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "## CONTRIBUTORS.md is out of date"
+            echo
+            if [ -n "$NEW_LOGINS" ]; then
+              echo "New contributors not yet listed:"
+              echo
+              IFS=',' read -ra logins <<< "$NEW_LOGINS"
+              for login in "${logins[@]}"; do
+                echo "- @${login}"
+              done
+              echo
+            else
+              echo "Avatar or ordering changes only; no new logins."
+              echo
+            fi
+            echo "Refresh it locally and commit:"
+            echo
+            echo '```bash'
+            echo "GITHUB_TOKEN=\$(gh auth token) \\"
+            echo "GITHUB_REPOSITORY=${REPO} \\"
+            echo "node scripts/update_contributors.mjs"
+            echo '```'
+            echo
+            echo "<details><summary>Pending diff</summary>"
+            echo
+            echo '```diff'
+            git --no-pager diff -- CONTRIBUTORS.md
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "CONTRIBUTORS.md is out of date; see the job summary."
+          exit 1
