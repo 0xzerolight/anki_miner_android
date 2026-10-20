@@ -1,17 +1,19 @@
 version: 2
 updates:
-  # pip is graph-only. Without a pip entry GitHub never re-runs the Python
-  # dependency graph on push, so alerts on bumped packages stay open. The limit
-  # of 0 stops version-update PRs: Dependabot would bump requirements-*.in and
-  # leave the hash-pinned requirements-*.lock files it cannot regenerate, and
-  # that pair fails the workflow's `--require-hashes` install step. Regenerate
-  # locks by hand instead:
+  # pip is graph-only. GitHub re-runs the Python dependency graph on push only
+  # while a pip entry is active, so alerts on bumped packages would stay open;
+  # open-pull-requests-limit 0 counts as inactive. Ignoring every dependency
+  # stops the PRs instead: Dependabot would bump requirements-*.in and leave the
+  # hash-pinned requirements-*.lock files it cannot regenerate, and that pair
+  # fails the workflow's `--require-hashes` install step. Regenerate locks by
+  # hand instead:
   #   uv pip compile requirements-<name>.in --generate-hashes --python-version 3.13
   - package-ecosystem: pip
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
 
   # gradle is excluded: every bump invalidates gradle/verification-metadata.xml
   # and fails the `--dependency-verification strict` build until the checksums
