@@ -9,6 +9,8 @@
 # The lock installs with --no-deps, as Chaquopy does: pymorphy3 declares its
 # Russian dictionaries, which Android downloads as language data instead.
 # jieba has no upstream wheel: the lock pins the repacked app/wheels/common one.
+# Pins shared with app/wheels move together: runtime_dependencies_probe.py
+# expects the same versions on the host and on the device.
 pytest==9.0.3
 jsonschema==4.26.0
 requests==2.34.2
