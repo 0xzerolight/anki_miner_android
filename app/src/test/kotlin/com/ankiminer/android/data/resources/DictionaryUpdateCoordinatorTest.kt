@@ -237,17 +237,28 @@ class DictionaryUpdateCoordinatorTest {
         }
 
     @Test
-    fun `a cancelled install ends the run without a stamp`() =
+    fun `a cancelled install ends the run and the week`() =
         runTest {
-            val fixture = Fixture(this)
-            fixture.resources.checkAnswer = { found(JITENDEX, JMDICT) }
-            fixture.resources.installAnswer = { "resource_operation_cancelled" }
+            val manual = Fixture(this)
+            manual.resources.checkAnswer = { found(JITENDEX, JMDICT) }
+            manual.resources.installAnswer = { "resource_operation_cancelled" }
 
-            fixture.coordinator.runNow()
+            manual.coordinator.runNow()
 
-            assertEquals(1, fixture.resources.installs.size)
-            assertNull(fixture.stamp.checkedAt)
-            assertNull(fixture.coordinator.state.value.result)
+            assertEquals(1, manual.resources.installs.size)
+            assertEquals(NOW, manual.stamp.checkedAt)
+            assertNull(manual.coordinator.state.value.result)
+
+            // Cancelled from the mining tabs' progress card: the next launch must not start it again.
+            val automatic = Fixture(this)
+            automatic.resources.checkAnswer = { found(JMDICT) }
+            automatic.resources.installAnswer = { "resource_operation_cancelled" }
+
+            automatic.coordinator.runAutomaticIfDue()
+
+            assertEquals(1, automatic.resources.installs.size)
+            assertEquals(NOW, automatic.stamp.checkedAt)
+            assertNull(automatic.coordinator.state.value.result)
         }
 
     @Test

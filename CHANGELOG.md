@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cancelling an automatic dictionary update no longer restarts it at every launch.** A cancelled install now counts as that week's run, as a finished one does. The run fills every mining tab with its progress card, so Cancel means "not now", and JMdict publishes nearly every day, so every launch used to find an update again. Update Now (Settings → Resources → Dictionaries) still runs at any time.
+
 ## [2.1.1] - 2026-10-22
 
 ### Fixed

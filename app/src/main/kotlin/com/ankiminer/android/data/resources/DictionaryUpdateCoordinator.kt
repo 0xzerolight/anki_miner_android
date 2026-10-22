@@ -82,9 +82,11 @@ internal interface DictionaryUpdateActions {
  * and joins a run already going.
  *
  * Stamping follows desktop: a check that reached a publisher and found nothing, or an install run
- * that ran its course (an item failing on its own included), ends the week. An unreachable check,
- * a deferred install (busy, no foreground start, metered) or a cancelled one does not, so the
- * next due run tries again.
+ * that ran its course (an item failing on its own included), ends the week. An unreachable check
+ * or a deferred install (busy, no foreground start, metered) does not, so the next due run tries
+ * again. Unlike desktop, a cancelled install ends the week too: desktop's automatic run is hidden,
+ * but this one holds every mining tab behind its progress card, so a cancel means "not now", and
+ * JMdict publishes nearly daily, so without the stamp every launch would start it again.
  */
 internal class DictionaryUpdateCoordinator(
     private val resources: ResourceManager,
@@ -268,7 +270,11 @@ internal class DictionaryUpdateCoordinator(
             when (code) {
                 null -> updated += update.title
                 in DEFERRED_INSTALL_CODES -> return DictionaryUpdateResult.Busy
-                "resource_operation_cancelled" -> return null
+                "resource_operation_cancelled" -> {
+                    // The user's "not now": ends the week, or the next launch would start it again.
+                    recordStamp()
+                    return null
+                }
                 "resource_update_stale" -> Unit
                 else -> failed += update.title
             }
