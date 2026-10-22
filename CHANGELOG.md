@@ -4,9 +4,11 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-22
+
 ### Fixed
 
-- **The bundled image, network and async libraries are updated to fix published security advisories.** They are now Pillow 12.3.0, urllib3 2.8.0 and AnyIO 4.14.2.
+- **The bundled Pillow, urllib3 and AnyIO libraries are updated to fix published security advisories.** Pillow is now 12.3.0, urllib3 2.8.0 and AnyIO 4.14.2.
 
 ## [2.1.0] - 2026-10-18
 
