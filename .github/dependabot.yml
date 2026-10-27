@@ -5,9 +5,9 @@ updates:
   # open-pull-requests-limit 0 counts as inactive. Ignoring every dependency
   # stops the PRs instead: Dependabot would bump requirements-*.in and leave the
   # hash-pinned requirements-*.lock files it cannot regenerate, and that pair
-  # fails the workflow's `--require-hashes` install step. Regenerate locks by
-  # hand instead:
-  #   uv pip compile requirements-<name>.in --generate-hashes --python-version 3.13
+  # fails the workflow's `--require-hashes` install step. security-relock.yml
+  # relocks vulnerable pins instead; .github/scripts/security_relock.py holds
+  # each lock's compile flags.
   - package-ecosystem: pip
     directory: "/"
     schedule:

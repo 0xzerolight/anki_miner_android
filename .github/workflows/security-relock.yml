@@ -1,0 +1,85 @@
+name: Security relock
+
+# Dependabot reads only the requirements-*.in pins and cannot regenerate the
+# hash-locked requirements-*.lock files (see .github/dependabot.yml), so a CVE in
+# a host pin stays open until someone relocks. This audits the locks once a day
+# and, when a pin has a patched release, moves it (.github/scripts/security_relock.py)
+# and opens an auto-merging PR. The merge still waits for main's required checks.
+#
+# Runtime-lane pins that also ship in app/wheels are skipped: moving a device
+# wheel is the full runtime-wheel rebuild, so their alerts stay for a hand bump.
+
+on:
+  schedule:
+    - cron: "43 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: anki-miner-android-security-relock
+
+jobs:
+  relock:
+    name: Relock vulnerable pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install the relock toolchain
+        run: python -m pip install "uv==0.11.22" "pip-audit==2.10.1" "packaging==26.2"
+
+      - name: Relock the vulnerable pins
+        id: relock
+        run: |
+          set -euo pipefail
+          python .github/scripts/security_relock.py > "$RUNNER_TEMP/advisories.md"
+          cat "$RUNNER_TEMP/advisories.md"
+          if [ -s "$RUNNER_TEMP/advisories.md" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          git diff --stat
+
+      - name: Open the relock PR
+        if: steps.relock.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch=security-relock
+          title="fix(deps): relock host pins with known vulnerabilities"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "$title" -m "$(cat "$RUNNER_TEMP/advisories.md")"
+          git push --force origin "$branch"
+          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --head "$branch" --title "$title" --body-file "$RUNNER_TEMP/advisories.md"
+          fi
+          gh pr merge "$branch" --auto --squash --delete-branch
+          # GitHub holds the pull_request CI run on a PR opened or pushed with
+          # GITHUB_TOKEN until it is approved (conclusion action_required), and the
+          # required checks only count that run. Wait for it to appear and approve it.
+          head_sha="$(git rev-parse HEAD)"
+          for _ in $(seq 30); do
+            run="$(gh run list --workflow pull-request.yml --event pull_request --commit "$head_sha" \
+              --json databaseId,conclusion --jq '.[0] | select(.) | "\(.databaseId) \(.conclusion)"')"
+            [ -n "$run" ] && break
+            sleep 10
+          done
+          if [ -z "$run" ]; then
+            echo "::error::no pull_request CI run appeared for $head_sha"
+            exit 1
+          fi
+          read -r run_id conclusion <<< "$run"
+          if [ "$conclusion" = "action_required" ]; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/approve"
+          fi
