@@ -73,7 +73,7 @@ wasabi==1.1.3
 weasel==1.0.0
 wrapt==2.4.1
 # Host only: spaCy declares it, desktop pins it, the APK never imports it.
-setuptools==83.0.0
+setuptools==84.1.0
 # Korean (D3): the upstream abi3 kiwipiepy wheel (its numpy and tqdm
 # requirements are listed above) and the model (sdist only, so the one source
 # build in the lane; app/wheels ships kiwipiepy without numpy and Android
