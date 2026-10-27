@@ -6,6 +6,10 @@ vulnerable pin moves to the lowest release that fixes all of its advisories: the
 requirements-*.in pin is rewritten when the package is pinned there, otherwise the
 lock takes a constraint, and the lock is recompiled with the flags that reproduce it
 byte for byte. Prints one markdown line per moved pin; no output means no change.
+
+The host-test and runtime locks pin one hash per package, the file their Linux x86_64
+lane installs, while uv emits the hash of every wheel and the sdist; a recompiled
+entry with more than one hash is cut back to that file's.
 """
 
 from __future__ import annotations
@@ -15,17 +19,21 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from packaging.utils import canonicalize_name
+from packaging.tags import compatible_tags, cpython_tags, platform_tags
+from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 
 
 @dataclass(frozen=True)
 class Lock:
     name: str
+    python: str
     compile_args: tuple[str, ...]
+    one_hash: bool = False
     # The runtime lane's pins that also ship in app/wheels must match the device
     # (runtime_dependencies_probe.py), and moving a device wheel is the full
     # runtime-wheel rebuild, so those stay for a hand bump.
@@ -33,15 +41,19 @@ class Lock:
 
 
 LOCKS = (
-    Lock("requirements-lint", ("--python-version", "3.13", "--only-binary", ":all:")),
-    Lock("requirements-host-test", ("--python-version", "3.13", "--only-binary", ":all:")),
+    Lock("requirements-lint", "3.13", ("--only-binary", ":all:")),
+    Lock("requirements-host-test", "3.13", ("--only-binary", ":all:"), one_hash=True),
     # pymorphy3's Russian dictionaries are language data on Android, so the lock omits them.
     Lock(
         "requirements-runtime-host-test",
-        ("--python-version", "3.12", "--no-emit-package", "pymorphy3-dicts-ru"),
+        "3.12",
+        ("--no-emit-package", "pymorphy3-dicts-ru"),
+        one_hash=True,
         skip_shipped=True,
     ),
 )
+
+ENTRY = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==(\S+)((?: \\\n    --hash=sha256:[0-9a-f]{64})+)$", re.MULTILINE)
 
 
 def shipped_packages() -> set[str]:
@@ -66,6 +78,43 @@ def fixed_version(vulns: list[dict]) -> Version | None:
             return None
         floors.append(min(Version(v) for v in vuln["fix_versions"]))
     return max(floors)
+
+
+def installed_file_hash(name: str, version: str, python: str) -> str:
+    """The sha256 of the file pip installs for name==version on this CPython and platform."""
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json") as response:
+        files = json.load(response)["urls"]
+    major, minor = (int(part) for part in python.split("."))
+    platforms = list(platform_tags())
+    supported = [
+        *cpython_tags((major, minor), platforms=platforms),
+        *compatible_tags((major, minor), f"cp{major}{minor}", platforms),
+    ]
+    rank = {tag: index for index, tag in enumerate(supported)}
+    wheels = []
+    for file in files:
+        if file["packagetype"] == "bdist_wheel":
+            ranks = [rank[tag] for tag in parse_wheel_filename(file["filename"])[3] if tag in rank]
+            if ranks:
+                wheels.append((min(ranks), file["digests"]["sha256"]))
+    if wheels:
+        return min(wheels)[1]
+    if any(file["packagetype"] == "bdist_wheel" for file in files):
+        # The lanes install with --only-binary, so an sdist hash would fail them.
+        raise SystemExit(f"{name}=={version} has no wheel for CPython {python} on this platform")
+    # Published as an sdist alone, like kiwipiepy-model.
+    (sdist,) = (file["digests"]["sha256"] for file in files if file["packagetype"] == "sdist")
+    return sdist
+
+
+def keep_one_hash(body: str, python: str) -> str:
+    def trim(entry: re.Match[str]) -> str:
+        name, version, hashes = entry.groups()
+        if hashes.count("--hash") == 1:
+            return entry.group(0)
+        return f"{name}=={version} \\\n    --hash=sha256:{installed_file_hash(name, version, python)}"
+
+    return ENTRY.sub(trim, body)
 
 
 def relock(lock: Lock, moves: dict[str, Version]) -> None:
@@ -93,12 +142,15 @@ def relock(lock: Lock, moves: dict[str, Version]) -> None:
         subprocess.run(
             [
                 "uv", "pip", "compile", str(in_path), "--generate-hashes", "--no-header", "--no-annotate",
-                "--quiet", *lock.compile_args, *upgrades, "-c", str(constraint_file), "-o", str(output),
+                "--quiet", "--python-version", lock.python, *lock.compile_args, *upgrades,
+                "-c", str(constraint_file), "-o", str(output),
             ],
             check=True,
         )  # fmt: skip
         # uv ends the file with a comment naming the --no-emit-package exclusions.
         body = output.read_text().split("\n\n", 1)[0].rstrip("\n") + "\n"
+    if lock.one_hash:
+        body = keep_one_hash(body, lock.python)
     lock_path.write_text(header + body)
 
 
