@@ -150,7 +150,7 @@ class VendoredWheelManifestTests(unittest.TestCase):
                 for member in source.infolist():
                     payload = source.read(member)
                     if member.filename.endswith(".dist-info/METADATA"):
-                        payload = payload.replace(b"Version: 2026.6.17", b"Version: 9999")
+                        payload = payload.replace(b"Version: 2026.10.23", b"Version: 9999")
                     target.writestr(member, payload)
             rewritten.replace(wheel)
 
@@ -161,7 +161,7 @@ class VendoredWheelManifestTests(unittest.TestCase):
             )
 
             self.assertNotEqual(0, result.returncode)
-            self.assertIn("source version 2026.6.17 does not match wheel version 9999", result.stderr)
+            self.assertIn("source version 2026.10.23 does not match wheel version 9999", result.stderr)
 
     def test_repacked_wheel_records_upstream_source_and_is_bound_to_the_repack_lock(self) -> None:
         document = json.loads(MANIFEST.read_text(encoding="utf-8"))

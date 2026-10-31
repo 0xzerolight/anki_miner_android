@@ -20,7 +20,7 @@ val androidNdkVersion = "28.2.13676358"
 // The language-pack wheels from tools/runtime-wheels/repack_wheels.py are
 // bound by repacked-wheels.lock instead.
 val runtimeWheelBuildKey =
-    "ca283ed1fd2a7f5ec2990bfd7c9fc70961564936a879724bcfd98788b9353275"
+    "dcd8d14d70c8da7f084db021b30bcdc39d356697ca604c4fd39a376c05eedfd8"
 val s1aWheelBuildKey =
     "fcebd0499b2b9e8cacf622f7516676b2230d8507a24785578fe335dd04577325"
 

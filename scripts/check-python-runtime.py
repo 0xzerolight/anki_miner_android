@@ -17,7 +17,7 @@ from PIL import features
 
 EXPECTED_DISTRIBUTIONS = {
     "blis": "1.3.3",
-    "certifi": "2026.6.17",
+    "certifi": "2026.10.23",
     "charset-normalizer": "3.4.7",
     "click": "8.1.8",
     "cloudpickle": "3.1.2",
@@ -32,10 +32,10 @@ EXPECTED_DISTRIBUTIONS = {
     "lxml": "6.1.1",
     "markupsafe": "3.0.3",
     "murmurhash": "1.0.15",
-    "nltk": "3.10.3",
+    "nltk": "3.10.4",
     "numpy": "2.5.0",
     "opencc": "1.4.2",
-    "pillow": "12.3.0",
+    "pillow": "13.0.0",
     "preshed": "3.0.13",
     "pycantonese": "5.0.0",
     "pydantic-core": "2.46.5",

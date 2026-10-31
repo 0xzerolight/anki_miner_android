@@ -11,11 +11,11 @@ import time
 
 
 EXPECTED_VERSIONS = {
-    "certifi": "2026.6.17",
+    "certifi": "2026.10.23",
     "charset-normalizer": "3.4.7",
     "idna": "3.18",
     "lxml": "6.1.1",
-    "pillow": "12.3.0",
+    "pillow": "13.0.0",
     "pysubs2": "1.8.1",
     "requests": "2.34.2",
     "urllib3": "2.8.0",

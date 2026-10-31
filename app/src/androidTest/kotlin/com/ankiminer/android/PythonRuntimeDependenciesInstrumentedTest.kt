@@ -23,11 +23,11 @@ class PythonRuntimeDependenciesInstrumentedTest {
             )
         val expectedVersions =
             mapOf(
-                "certifi" to "2026.6.17",
+                "certifi" to "2026.10.23",
                 "charset-normalizer" to "3.4.7",
                 "idna" to "3.18",
                 "lxml" to "6.1.1",
-                "pillow" to "12.3.0",
+                "pillow" to "13.0.0",
                 "pysubs2" to "1.8.1",
                 "requests" to "2.34.2",
                 "urllib3" to "2.8.0",

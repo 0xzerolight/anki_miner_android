@@ -216,7 +216,7 @@ class LockContractTests(unittest.TestCase):
                 "charset-normalizer": "3.4.7",
                 "urllib3": "2.8.0",
                 "idna": "3.18",
-                "certifi": "2026.6.17",
+                "certifi": "2026.10.23",
             },
             {
                 name: version

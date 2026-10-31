@@ -56,7 +56,7 @@ from PIL import features
 assert platform.python_implementation() == "CPython"
 assert platform.python_version() == "3.12.13"
 expected = {
-    "certifi": "2026.6.17",
+    "certifi": "2026.10.23",
     "charset-normalizer": "3.4.7",
     "click": "8.1.8",
     "cloudpickle": "3.1.2",
@@ -68,9 +68,9 @@ expected = {
     "kiwipiepy": "0.23.2",
     "kiwipiepy-model": "0.23.0",
     "lxml": "6.1.1",
-    "nltk": "3.10.3",
+    "nltk": "3.10.4",
     "opencc": "1.4.2",
-    "pillow": "12.3.0",
+    "pillow": "13.0.0",
     "pycantonese": "5.0.0",
     "pypinyin": "0.55.0",
     "pysubs2": "1.8.1",

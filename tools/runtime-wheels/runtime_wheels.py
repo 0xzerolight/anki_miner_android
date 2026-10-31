@@ -86,7 +86,7 @@ COMMON_SPECS = {
     ),
     "urllib3": ("2.8.0", "urllib3-2.8.0-py3-none-any.whl"),
     "idna": ("3.18", "idna-3.18-py3-none-any.whl"),
-    "certifi": ("2026.6.17", "certifi-2026.6.17-py3-none-any.whl"),
+    "certifi": ("2026.10.23", "certifi-2026.10.23-py3-none-any.whl"),
     # F1: zeyrek and its nltk closure (click, joblib, tqdm and colorama are
     # nltk's; cloudpickle is joblib's).
     "click": ("8.1.8", "click-8.1.8-py3-none-any.whl"),
@@ -94,7 +94,7 @@ COMMON_SPECS = {
     "colorama": ("0.4.6", "colorama-0.4.6-py2.py3-none-any.whl"),
     "defusedxml": ("0.7.1", "defusedxml-0.7.1-py2.py3-none-any.whl"),
     "joblib": ("1.6.0", "joblib-1.6.0-py3-none-any.whl"),
-    "nltk": ("3.10.3", "nltk-3.10.3-py3-none-any.whl"),
+    "nltk": ("3.10.4", "nltk-3.10.4-py3-none-any.whl"),
     "tqdm": ("4.68.3", "tqdm-4.68.3-py3-none-any.whl"),
     "zeyrek": ("0.1.3", "zeyrek-0.1.3-py2.py3-none-any.whl"),
     # F2: the spaCy stack's pure closure, including what desktop's base bundle
@@ -171,7 +171,7 @@ NATIVE_SPECS = {
         "source": "libxslt",
     },
     "pillow": {
-        "version": "12.3.0",
+        "version": "13.0.0",
         "build": "0",
         "python": "cp312",
         "abi": "cp312",
@@ -299,7 +299,7 @@ NATIVE_SPECS = {
 }
 
 SOURCE_SPECS = {
-    "certifi": ("prebuilt-wheel", "certifi", "2026.6.17"),
+    "certifi": ("prebuilt-wheel", "certifi", "2026.10.23"),
     "chaquopy": ("build-tool-source", None, None),
     "charset-normalizer": ("prebuilt-wheel", "charset-normalizer", "3.4.7"),
     "freetype": ("runtime-source", "chaquopy-freetype", "2.14.1"),
@@ -310,7 +310,7 @@ SOURCE_SPECS = {
     "libxslt": ("runtime-source", "chaquopy-libxslt", "1.1.43"),
     "lxml": ("runtime-source", "lxml", "6.1.1"),
     "patchelf": ("build-tool-binary", None, None),
-    "pillow": ("runtime-source", "pillow", "12.3.0"),
+    "pillow": ("runtime-source", "pillow", "13.0.0"),
     "pysubs2": ("prebuilt-wheel", "pysubs2", "1.8.1"),
     "python-arm64-v8a": ("python-target", None, None),
     "python-x86_64": ("python-target", None, None),
@@ -321,7 +321,7 @@ SOURCE_SPECS = {
     "colorama": ("prebuilt-wheel", "colorama", "0.4.6"),
     "defusedxml": ("prebuilt-wheel", "defusedxml", "0.7.1"),
     "joblib": ("prebuilt-wheel", "joblib", "1.6.0"),
-    "nltk": ("prebuilt-wheel", "nltk", "3.10.3"),
+    "nltk": ("prebuilt-wheel", "nltk", "3.10.4"),
     "regex": ("runtime-source", "regex", "2026.9.10"),
     "tqdm": ("prebuilt-wheel", "tqdm", "4.68.3"),
     "zeyrek": ("prebuilt-wheel", "zeyrek", "0.1.3"),

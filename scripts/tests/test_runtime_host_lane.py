@@ -29,7 +29,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
         self.assertEqual(direct, {name: versions[name] for name in direct})
         self.assertEqual(
             {
-                "certifi": "2026.6.17",
+                "certifi": "2026.10.23",
                 "charset-normalizer": "3.4.7",
                 "cloudpickle": "3.1.2",
                 "idna": "3.18",
@@ -39,7 +39,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
                 "kiwipiepy-model": "0.23.0",
                 "lxml": "6.1.1",
                 "opencc": "1.4.2",
-                "pillow": "12.3.0",
+                "pillow": "13.0.0",
                 "pycantonese": "5.0.0",
                 "pypinyin": "0.55.0",
                 "pysubs2": "1.8.1",

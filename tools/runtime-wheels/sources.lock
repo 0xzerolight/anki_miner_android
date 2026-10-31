@@ -72,18 +72,18 @@
       "version": "2.0.10"
     },
     "certifi": {
-      "filename": "certifi-2026.6.17-py3-none-any.whl",
+      "filename": "certifi-2026.10.23-py3-none-any.whl",
       "kind": "prebuilt-wheel",
       "license": {
         "expression": "MPL-2.0",
         "members": {
-          "certifi-2026.6.17.dist-info/licenses/LICENSE": "e93716da6b9c0d5a4a1df60fe695b370f0695603d21f6f83f053e42cfc10caf7"
+          "certifi-2026.10.23.dist-info/licenses/LICENSE": "e93716da6b9c0d5a4a1df60fe695b370f0695603d21f6f83f053e42cfc10caf7"
         }
       },
       "package": "certifi",
-      "sha256": "2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db",
-      "url": "https://files.pythonhosted.org/packages/ef/2f/c5464532e965badff2f4c4c1a3a83f5697f0d7c407ed0cda44aaa99bb451/certifi-2026.6.17-py3-none-any.whl",
-      "version": "2026.6.17"
+      "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+      "url": "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl",
+      "version": "2026.10.23"
     },
     "chaquopy": {
       "filename": "chaquopy-e01057c72fdd737f202bd1be1de85af51e06cad0.tar.gz",
@@ -485,18 +485,18 @@
       "version": "1.0.15"
     },
     "nltk": {
-      "filename": "nltk-3.10.3-py3-none-any.whl",
+      "filename": "nltk-3.10.4-py3-none-any.whl",
       "kind": "prebuilt-wheel",
       "license": {
         "expression": "Apache-2.0",
         "members": {
-          "nltk-3.10.3.dist-info/licenses/LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+          "nltk-3.10.4.dist-info/licenses/LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
         }
       },
       "package": "nltk",
-      "sha256": "ff9598a8e20518ee0d557745890cc4435b9578489e2dcbc69c4f81fa060caf7c",
-      "url": "https://files.pythonhosted.org/packages/b6/6d/ebd2af4640b12168fdf0cb74b6118df2f32a2f62ec7e0c06fbfd80706639/nltk-3.10.3-py3-none-any.whl",
-      "version": "3.10.3"
+      "sha256": "769ba5413f265b7d3e87cd163cc28efa01e29eeef8bb6080bc907949d9fcfb51",
+      "url": "https://files.pythonhosted.org/packages/a2/04/e7816813e409ca874ba2fcc35455db0e4130b79eb277e1f9edd270ca3c69/nltk-3.10.4-py3-none-any.whl",
+      "version": "3.10.4"
     },
     "numpy": {
       "filename": "numpy-2.5.0.tar.gz",
@@ -556,18 +556,18 @@
       "url": "https://github.com/NixOS/patchelf/releases/download/0.18.0/patchelf-0.18.0-x86_64.tar.gz"
     },
     "pillow": {
-      "filename": "pillow-12.3.0.tar.gz",
+      "filename": "pillow-13.0.0.tar.gz",
       "kind": "runtime-source",
       "license": {
         "expression": "MIT-CMU",
         "members": {
-          "pillow-12.3.0/LICENSE": "15181e7363dca9aed78b79bebebc7fde7f1814b8bd311ea3b87ae8ccadfc185b"
+          "pillow-13.0.0/LICENSE": "15181e7363dca9aed78b79bebebc7fde7f1814b8bd311ea3b87ae8ccadfc185b"
         }
       },
       "package": "pillow",
-      "sha256": "3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce",
-      "url": "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz",
-      "version": "12.3.0"
+      "sha256": "cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510",
+      "url": "https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz",
+      "version": "13.0.0"
     },
     "preshed": {
       "filename": "preshed-3.0.13.tar.gz",

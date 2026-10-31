@@ -6,6 +6,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Fixed
 
+- **The bundled Pillow, NLTK and certifi libraries are updated to fix published security advisories.** Pillow is now 13.0.0, NLTK 3.10.4 and certifi 2026.10.23.
 - **Cancelling an automatic dictionary update no longer restarts it at every launch.** A cancelled install now counts as that week's run, as a finished one does. The run fills every mining tab with its progress card, so Cancel means "not now", and JMdict publishes nearly every day, so every launch used to find an update again. Update Now (Settings → Resources → Dictionaries) still runs at any time.
 
 ## [2.1.1] - 2026-10-22
