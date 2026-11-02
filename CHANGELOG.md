@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-11-02
+
 ### Fixed
 
 - **The bundled Pillow, NLTK and certifi libraries are updated to fix published security advisories.** Pillow is now 13.0.0, NLTK 3.10.4 and certifi 2026.10.23.
