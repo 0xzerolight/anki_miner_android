@@ -122,6 +122,7 @@ internal data class KnownTraversalScope(
     val excludedDecks: List<String>,
     val fieldOrdinals: List<KnownFieldOrdinals> = emptyList(),
     val markReviewed: Boolean = false,
+    val ignoreSuspended: Boolean = false,
 )
 
 internal data class KnownPageLease(

@@ -233,6 +233,33 @@ class ProviderQueryContractTest {
                 ),
             )
         }
+        // Ignoring suspended cards appends desktop's `-is:suspended` to the outside-the-exclusions
+        // and reviewed searches, which then run with no excluded deck at all; the extra candidates
+        // are the notes with a suspended card.
+        listOf(
+            ProviderSelection.SuspendedNotes to "is:suspended",
+            ProviderSelection.NotesOutsideDecks(emptyList(), listOf(3L, 12L), excludeSuspended = true) to
+                "nid:3,12 -is:suspended",
+            ProviderSelection.NotesOutsideDecks(listOf("Core_2k"), listOf(3L), excludeSuspended = true) to
+                "nid:3 -deck:\"Core\\_2k\" -is:suspended",
+            ProviderSelection.ReviewedNotes(emptyList(), excludeSuspended = true) to "-is:new -is:suspended",
+            ProviderSelection.ReviewedNotes(listOf("Core_2k"), excludeSuspended = true) to
+                "-is:new -deck:\"Core\\_2k\" -is:suspended",
+        ).forEach { (selection, expected) ->
+            assertEquals(
+                CompiledProviderSelection(expected, null),
+                compileProviderSelection(
+                    ProviderQuery(
+                        endpoint = ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection = selection,
+                    ),
+                    noteIdColumn = "_id",
+                    modelIdColumn = "mid",
+                    checksumColumn = "csum",
+                ),
+            )
+        }
     }
 
     @Test
@@ -257,6 +284,21 @@ class ProviderQueryContractTest {
                     ProviderEndpoint.NOTES_BROWSER,
                     projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
                     selection = ProviderSelection.ReviewedNotes(emptyList()),
+                ),
+                ProviderQuery(
+                    ProviderEndpoint.NOTES_BROWSER,
+                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    selection = ProviderSelection.ReviewedNotes(emptyList(), excludeSuspended = true),
+                ),
+                ProviderQuery(
+                    ProviderEndpoint.NOTES_BROWSER,
+                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    selection = ProviderSelection.SuspendedNotes,
+                ),
+                ProviderQuery(
+                    ProviderEndpoint.NOTES_BROWSER,
+                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    selection = ProviderSelection.NotesOutsideDecks(emptyList(), listOf(1L), excludeSuspended = true),
                 ),
                 ProviderQuery(
                     ProviderEndpoint.NOTES_BROWSER,
@@ -328,7 +370,7 @@ class ProviderQueryContractTest {
                 ),
             )
 
-        assertEquals(16, legal.size)
+        assertEquals(19, legal.size)
         assertTrue(legal.all(ProviderQueryShapes::isAllowed))
     }
 
@@ -401,6 +443,20 @@ class ProviderQueryContractTest {
                         ProviderEndpoint.NOTES_V2,
                         projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
                         selection = ProviderSelection.ReviewedNotes(emptyList()),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_V2,
+                        projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                        selection = ProviderSelection.SuspendedNotes,
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection = ProviderSelection.NotesOutsideDecks(emptyList(), emptyList(), excludeSuspended = true),
                     )
                 },
                 {

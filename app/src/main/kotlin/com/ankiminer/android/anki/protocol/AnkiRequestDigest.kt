@@ -107,6 +107,7 @@ private class CanonicalRequestWriter {
                 }
                 // Written only when on, so an unmarked scan keeps the digest it always had.
                 if (scope.markReviewed) ascii(",\"markReviewed\":true")
+                if (scope.ignoreSuspended) ascii(",\"ignoreSuspended\":true")
             }
 
             NoteTypesScope -> stringField("kind", "noteTypes")

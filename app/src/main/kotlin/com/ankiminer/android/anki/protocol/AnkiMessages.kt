@@ -85,6 +85,12 @@ internal data class KnownVocabularyScope(
      * card outside the excluded decks; nothing is filtered. Off is absent on the wire.
      */
     val markReviewed: Boolean = false,
+    /**
+     * Part of the traversal's immutable scope. On, a note whose every card is suspended or in an
+     * excluded deck leaves the result, and [markReviewed] skips suspended cards: desktop's
+     * `deck:* -deck:"X" -is:suspended`. Off is absent on the wire.
+     */
+    val ignoreSuspended: Boolean = false,
 ) : ScanScope
 
 /** Every note type's ID, name and ordered field names, read once before a known-vocabulary traversal. */
