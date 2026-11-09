@@ -3,7 +3,7 @@
 # commit e2ed450c2f11a591922822e77f008e70a87daf0c.
 #
 # Copyright (C) 2024-2026  Yomitan Authors
-# Copyright (C) 2026  anki_miner contributors (Python port)
+# Ported to Python in 2026.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -258,7 +258,9 @@ class Deinflector:
 # Window-stop bounds for find_highlight_end (candidate-COUNT bounds only;
 # the deinflection validator is the correctness guarantee).
 _EXTENDABLE_POS1 = ("動詞", "形容詞")
-_INFLECTIONAL_TAIL_POS1 = frozenset({"助動詞", "助詞", "動詞", "形容詞"})
+# 形状詞 and 接尾辞 carry the appearance そう and the nominal さ/がる (動き|そう,
+# 温か|さ, 恥ずかし|がら|ない), which the table deinflects as -そう, -さ and -がる.
+_INFLECTIONAL_TAIL_POS1 = frozenset({"助動詞", "助詞", "動詞", "形容詞", "形状詞", "接尾辞"})
 # 食べさせられたくありませんでした has a supported 14-char tail after 食べ.
 _WINDOW_CAP_CHARS = 14
 
@@ -318,7 +320,7 @@ def find_highlight_end_with_trace(
 
     Window stops (bounds only, never the correctness guarantee): a
     following raw token must be adjacent in ``text``, pure hiragana,
-    inflectional POS (助動詞/助詞/動詞/形容詞 — a 名詞 like こと stops the
+    inflectional POS (助動詞/助詞/動詞/形容詞/形状詞/接尾辞 — a 名詞 like こと stops the
     window), and within ``tok_end + _WINDOW_CAP_CHARS`` chars.
     """
     feature = getattr(token, "feature", None)
@@ -337,7 +339,7 @@ def find_highlight_end_with_trace(
     if not targets:
         return tok_end, ()
 
-    deinflector = get_japanese_deinflector()
+    deinflector = get_highlight_deinflector()
     mask = deinflector.mask_for_ctype(getattr(feature, "cType", None))
     additional_mask = mask
     if (
@@ -441,7 +443,7 @@ def resolve_dictionary_form(
     """
     if term_rules_lookup is None or not inflected_surface or not orth_base:
         return orth_base
-    deinflector = get_japanese_deinflector()
+    deinflector = get_highlight_deinflector()
     candidates = {
         (result.text, result.conditions)
         for result in deinflector.transform(inflected_surface)
@@ -548,3 +550,48 @@ def get_japanese_deinflector() -> Deinflector:
     from anki_miner.services.japanese_transforms import CONDITIONS, TRANSFORMS
 
     return Deinflector(CONDITIONS, TRANSFORMS)
+
+
+def _te_auxiliary_transforms() -> list[dict[str, Any]]:
+    """て / で + the auxiliary verbs Yomitan's table has no transform for, back to the te-form.
+
+    Modelled on the table's own ``-いる`` rules, with each auxiliary's own
+    conjugation class as the condition, so the chain goes on past it:
+    教えてもらえます is ``-て, -もらう, potential, -ます``. The same set as
+    monosashi's deinflection supplements (its SPEC §4.1).
+    """
+    from anki_miner.services.japanese_transforms import suffix_inflection
+
+    def te(auxiliaries: list[str], condition: str) -> list[dict[str, Any]]:
+        return [suffix_inflection(t + aux, t, [condition], ["-て"]) for aux in auxiliaries for t in ("て", "で")]
+
+    return [
+        {"id": "-みる", "name": "-みる", "rules": te(["みる"], "v1")},
+        {"id": "-くる", "name": "-くる", "rules": te(["くる", "来る"], "vk")},
+        # Contracted いく too: てく, and てった / てってる whole, since the table
+        # undoes った to く only for 行く itself. A bare てって would read the
+        # quotative って after a te-form (待ってって) as the verb.
+        {
+            "id": "-いく",
+            "name": "-いく",
+            "rules": [*te(["いく", "行く", "ゆく", "く"], "v5"), *te(["った"], "-た"), *te(["ってる"], "v1p")],
+        },
+        {"id": "-ある", "name": "-ある", "rules": te(["ある"], "v5")},
+        {"id": "-あげる", "name": "-あげる", "rules": te(["あげる", "上げる"], "v1")},
+        {"id": "-くれる", "name": "-くれる", "rules": te(["くれる", "呉れる"], "v1")},
+        {"id": "-もらう", "name": "-もらう", "rules": te(["もらう", "貰う"], "v5")},
+        {"id": "-ほしい", "name": "-ほしい", "rules": te(["ほしい", "欲しい"], "adj-i")},
+    ]
+
+
+@lru_cache(maxsize=1)
+def get_highlight_deinflector() -> Deinflector:
+    """The Yomitan table plus て + auxiliary verbs, for a mined verb's span and front.
+
+    A learner reads 教えてくれた as one verb, so its highlight runs to the end
+    of the chain, as it already does through ている, てしまう and ておく, which
+    the table has. The dictionary lookup ladder keeps the table alone.
+    """
+    from anki_miner.services.japanese_transforms import CONDITIONS, TRANSFORMS
+
+    return Deinflector(CONDITIONS, [*TRANSFORMS, *_te_auxiliary_transforms()])

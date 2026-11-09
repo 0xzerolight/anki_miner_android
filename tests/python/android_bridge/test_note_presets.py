@@ -211,6 +211,33 @@ def test_anki_miner_note_applies_in_every_language(validator: Draft202012Validat
     assert payload["extraFields"]["noun_gender"] == "Gender"
 
 
+#: Desktop ``CAPABILITY_FIELD_KEYS``: the keys only a furigana or pitch language fills.
+FURIGANA_AND_PITCH_KEYS = {
+    "expression_furigana": "ExpressionFurigana",
+    "sentence_furigana": "SentenceFurigana",
+    "pitch_position": "PitchPosition",
+    "pitch_category": "PitchCategories",
+    "pitch_graph": "",
+    "pitch_text": "",
+}
+
+
+def test_anki_miner_note_leaves_furigana_and_pitch_unmapped_outside_japanese(
+    validator: Draft202012Validator,
+) -> None:
+    """Desktop 1de62f6f6: a hidden mapping the language cannot fill blocks the pre-run check."""
+    chinese = _result(AMN_FIELDS, "zh")
+    validator.validate(chinese)
+    assert chinese["preset"]["id"] == "anki_miner_note"
+    assert {key: chinese["fields"][key] for key in FURIGANA_AND_PITCH_KEYS} == dict.fromkeys(
+        FURIGANA_AND_PITCH_KEYS, ""
+    )
+    assert chinese["fields"]["word"] == "Expression"
+
+    japanese = _result(AMN_FIELDS, "ja")
+    assert {key: japanese["fields"][key] for key in FURIGANA_AND_PITCH_KEYS} == FURIGANA_AND_PITCH_KEYS
+
+
 @pytest.mark.parametrize("language", ["de", "he"])
 def test_a_field_named_pos_maps_to_part_of_speech_in_a_spaced_language(language: str) -> None:
     payload = _result(["Expression", "Sentence", "POS"], language)

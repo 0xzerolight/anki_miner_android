@@ -233,10 +233,10 @@ def _reading_loader_kwargs(config: object, source_kind: str) -> dict[str, object
     parser applies, read off a parser built like the run's. A mokuro volume's
     blocks are gated on the language's script instead, except for manga-ocr's own
     language (no ``ocr_recognizer``), which keeps the loader's gate. Japanese
-    passes none of these, keeping the pre-transition ``detector.load(ref,
-    cancel_check=)`` shape: its ladder is the engine default and its parser
-    injects neither seam, the A.5 sweep proved its rules equal to the loaders'
-    own, and its volumes keep the loader's manga-ocr gate.
+    passes only its parser's script gate (romaji lines of a two-line cue), and
+    a volume not even that: its ladder is the engine default, its parser has no
+    normaliser, the A.5 sweep proved its rules equal to the loaders' own, and
+    its volumes keep the loader's manga-ocr gate.
 
     In every language a subtitle source drops songs, signs and drawings while
     ``skip_opening_ending`` is on (F-08), as the Video lane's parser does.
@@ -272,6 +272,8 @@ def _reading_loader_kwargs(config: object, source_kind: str) -> dict[str, object
             )
         if has_target_script is not None:
             kwargs["has_target_script"] = has_target_script
+    elif source_kind != "mokuro":
+        kwargs["has_target_script"] = get_profile(JAPANESE).script.contains_target_script
     if source_kind == "subtitle" and config.skip_opening_ending is True:
         kwargs["skip_non_dialogue"] = True
     return kwargs
@@ -533,7 +535,7 @@ def run_reading(
             document = _load_document(
                 request,
                 adapters.cancel_event.is_set,
-                # Omitted when empty (a ja book or volume), so the call keeps its
+                # Omitted when empty (a ja volume), so the call keeps its
                 # pre-transition shape.
                 **({"loader_kwargs": loader_kwargs} if loader_kwargs else {}),
             )

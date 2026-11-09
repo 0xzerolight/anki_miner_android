@@ -528,6 +528,51 @@ class GoldenContractTests(unittest.TestCase):
         )
         self.assertFalse(marker.exists())
 
+    def test_bootstrap_lets_the_engine_read_its_package_data(self) -> None:
+        """Desktop's kana word list loads ``ja.tsv`` through ``importlib.resources`` at import."""
+        bootstrap = (
+            Path(__file__).resolve().parents[1] / "engine_sync/_golden_bootstrap.py"
+        )
+        data = self.engine / "anki_miner/data"
+        data.mkdir()
+        (data / "__init__.py").write_text("", encoding="utf-8")
+        (data / "words.tsv").write_text("もう\t副詞\n", encoding="utf-8")
+        marker = self.root / "words-read"
+        self.exporter.write_text(
+            "\n".join(
+                (
+                    "import sys",
+                    "from importlib.resources import files",
+                    "from pathlib import Path",
+                    f"sys.path.insert(0, {str(self.engine)!r})",
+                    "text = files('anki_miner.data').joinpath('words.tsv').read_text(encoding='utf-8')",
+                    f"Path({str(marker)!r}).write_text(text, encoding='utf-8')",
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        environment = dict(os.environ)
+        environment["PYTHONHASHSEED"] = "0"
+        result = REAL_RUN(
+            [
+                sys.executable,
+                "-s",
+                "-P",
+                "-B",
+                str(bootstrap),
+                str(self.exporter),
+                str(self.engine),
+            ],
+            cwd=self.root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "もう\t副詞\n")
+
     def test_check_mode_reports_drift_without_writing(self) -> None:
         self._prepare_fake_exporter()
         output = self.root / "golden.json"
