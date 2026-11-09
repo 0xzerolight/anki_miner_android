@@ -333,6 +333,8 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.normalizeAudioLoudness, value.normalizeAudioLoudness)
                 candidate.setOrRemove(Keys.cropMangaToText, value.cropMangaToText)
                 candidate.setOrRemove(Keys.knownFromReviewedCards, value.knownFromReviewedCards)
+                candidate.setOrRemove(Keys.ignoreSuspendedCards, value.ignoreSuspendedCards)
+                candidate.setOrRemove(Keys.mineNumberCounters, value.mineNumberCounters)
                 candidate[Keys.secondarySubtitleEnabled] = value.secondarySubtitleEnabled
                 candidate.setOrRemove(Keys.pitchCategoryFormat, value.pitchCategoryFormat?.wireValue)
                 candidate.setOrRemove(Keys.maxParallelWorkers, value.maxParallelWorkers)
@@ -576,6 +578,8 @@ class DataStoreAppSettingsRepository internal constructor(
                     normalizeAudioLoudness = decoder.read(Keys.normalizeAudioLoudness, null, { it }),
                     cropMangaToText = decoder.read(Keys.cropMangaToText, null, { it }),
                     knownFromReviewedCards = decoder.read(Keys.knownFromReviewedCards, null, { it }),
+                    ignoreSuspendedCards = decoder.read(Keys.ignoreSuspendedCards, null, { it }),
+                    mineNumberCounters = decoder.read(Keys.mineNumberCounters, null, { it }),
                     secondarySubtitleEnabled =
                         decoder.read(Keys.secondarySubtitleEnabled, false, { it }),
                     pitchCategoryFormat =
@@ -797,6 +801,8 @@ class DataStoreAppSettingsRepository internal constructor(
             val normalizeAudioLoudness = register(booleanPreferencesKey("normalize_audio_loudness"))
             val cropMangaToText = register(booleanPreferencesKey("crop_manga_to_text"))
             val knownFromReviewedCards = register(booleanPreferencesKey("known_from_reviewed_cards"))
+            val ignoreSuspendedCards = register(booleanPreferencesKey("ignore_suspended_cards"))
+            val mineNumberCounters = register(booleanPreferencesKey("mine_number_counters"))
             val secondarySubtitleEnabled =
                 register(booleanPreferencesKey("secondary_subtitle_enabled"))
             val pitchCategoryFormat = register(stringPreferencesKey("pitch_category_format"))

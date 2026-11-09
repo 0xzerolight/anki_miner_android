@@ -187,6 +187,13 @@ data class AppSettings(
     val cropMangaToText: Boolean? = null,
     val knownFromReviewedCards: Boolean? = null,
     /**
+     * Desktop 3.12.0's two switches, portable and global, both off by default for every install
+     * (no upgrader split). [ignoreSuspendedCards] leaves a note whose every card is suspended out of
+     * the known words; [mineNumberCounters] mines a number with its counter (Japanese only).
+     */
+    val ignoreSuspendedCards: Boolean? = null,
+    val mineNumberCounters: Boolean? = null,
+    /**
      * Shows the Video tab's second subtitle picker. Kotlin-only: the engine now reads its own
      * `secondary_subtitle_enabled` to pick a translation track itself (through the deferred
      * `audio_condenser`), so the snapshot mapper must never emit it; `test_config_map.py` pins it.
@@ -259,6 +266,8 @@ data class AppSettings(
             normalizeAudioLoudness = null,
             cropMangaToText = null,
             knownFromReviewedCards = null,
+            ignoreSuspendedCards = null,
+            mineNumberCounters = null,
             secondarySubtitleEnabled = false,
             pitchCategoryFormat = null,
             maxParallelWorkers = null,
@@ -883,6 +892,8 @@ internal object EngineSettingsSnapshotMapper {
         settings.normalizeAudioLoudness?.let { values["normalize_audio_loudness"] = bool(it) }
         settings.cropMangaToText?.let { values["crop_manga_to_text"] = bool(it) }
         settings.knownFromReviewedCards?.let { values["known_from_reviewed_cards"] = bool(it) }
+        settings.ignoreSuspendedCards?.let { values["ignore_suspended_cards"] = bool(it) }
+        settings.mineNumberCounters?.let { values["mine_number_counters"] = bool(it) }
         // secondarySubtitleEnabled is deliberately absent: it only gates the Video tab's picker.
         settings.pitchCategoryFormat?.let { values["pitch_category_format"] = text(it.wireValue) }
         settings.maxParallelWorkers?.let { values["max_parallel_workers"] = integer(it) }

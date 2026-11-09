@@ -784,6 +784,11 @@
     <string name="settings_known_words">Использовать локальную БД известных слов</string>
     <string name="settings_known_from_reviewed_cards">Считать слово известным только после повторения его карточки</string>
     <string name="settings_known_from_reviewed_cards_help">Правило предложений i+1 считает слово известным, только если его карточку в Anki повторили хотя бы раз. Майнинг по-прежнему пропускает каждое слово, у которого уже есть карточка.</string>
+    <string name="settings_ignore_suspended_cards">Игнорировать приостановленные карточки</string>
+    <string name="settings_ignore_suspended_cards_help">Слова, у которых все карточки в Anki приостановлены, считаются неизвестными: их можно майнить снова, а правило предложений i+1 считает их новыми. Заметка, у которой есть хотя бы одна неприостановленная карточка, по-прежнему считается известной.</string>
+    <string name="settings_numbers">Числа</string>
+    <string name="settings_mine_number_counters">Майнить числа вместе со счётными словами</string>
+    <string name="settings_mine_number_counters_help">Создаёт карточку для числа и счётного слова с чтением, учитывающим звуковые изменения (3本 さんぼん, 4人 よにん), и определением по счётному слову. Одна карточка на число.</string>
     <string name="settings_bold_target">Выделять целевое слово жирным в предложении</string>
     <string name="settings_max_duration">Максимальная длительность предложения (секунды)</string>
     <string name="settings_max_characters">Максимум символов в предложении</string>

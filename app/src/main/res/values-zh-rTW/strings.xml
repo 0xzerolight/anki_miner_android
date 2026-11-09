@@ -766,6 +766,11 @@
     <string name="settings_known_words">使用本機已知單字資料庫</string>
     <string name="settings_known_from_reviewed_cards">僅在卡片複習過後才將單字視為已知</string>
     <string name="settings_known_from_reviewed_cards_help">i+1 句子規則只會在單字的 Anki 卡片至少複習過一次時才將其視為已知。採集時仍會略過所有已有卡片的單字。</string>
+    <string name="settings_ignore_suspended_cards">忽略已暫停的卡片</string>
+    <string name="settings_ignore_suspended_cards_help">Anki 卡片全部被暫停的單字會視為未知：可以再次採集，i+1 句子規則也會將其視為新字。只要筆記還有一張未暫停的卡片，就仍視為已知。</string>
+    <string name="settings_numbers">數字</string>
+    <string name="settings_mine_number_counters">採集時把數字和量詞一起收錄</string>
+    <string name="settings_mine_number_counters_help">為數字及其量詞製作卡片，讀音包含音變（3本 さんぼん、4人 よにん），釋義取自量詞。每個數字一張卡片。</string>
     <string name="settings_bold_target">在句子中將目標單字加粗</string>
     <string name="settings_max_duration">最大句子時長（秒）</string>
     <string name="settings_max_characters">最大句子字元數</string>

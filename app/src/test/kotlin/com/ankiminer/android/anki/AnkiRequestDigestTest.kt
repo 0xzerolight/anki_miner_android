@@ -72,6 +72,11 @@ class AnkiRequestDigestTest {
         val digests = acceptedDigests()
         assertNotEquals(digests.getValue("scan_known_integer"), digests.getValue("scan_known_null_cursor"))
         assertNotEquals(digests.getValue("scan_known_null_cursor"), digests.getValue("scan_known_mark_reviewed"))
+        assertNotEquals(digests.getValue("scan_known_null_cursor"), digests.getValue("scan_known_ignore_suspended"))
+        assertNotEquals(
+            digests.getValue("scan_known_mark_reviewed"),
+            digests.getValue("scan_known_mark_reviewed_ignore_suspended"),
+        )
         assertNotEquals(digests.getValue("verify_escaping"), digests.getValue("verify_empty_fields"))
         assertNotEquals(digests.getValue("verify_escaping"), digests.getValue("verify_reordered_fields"))
         assertNotEquals(digests.getValue("create_fields_reverse"), digests.getValue("create_empty_changed"))

@@ -242,6 +242,8 @@
         "normalize_audio_loudness": {"type": "boolean"},
         "crop_manga_to_text": {"type": "boolean"},
         "known_from_reviewed_cards": {"type": "boolean"},
+        "ignore_suspended_cards": {"type": "boolean"},
+        "mine_number_counters": {"type": "boolean"},
         "reading_min_occurrence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
         "max_parallel_workers": {"type": "integer", "minimum": 1, "maximum": 32},
         "language": {

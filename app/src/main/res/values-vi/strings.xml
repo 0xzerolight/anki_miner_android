@@ -766,6 +766,11 @@
     <string name="settings_known_words">Dùng CSDL từ đã biết cục bộ</string>
     <string name="settings_known_from_reviewed_cards">Chỉ tính một từ là đã biết sau khi thẻ của nó đã được ôn</string>
     <string name="settings_known_from_reviewed_cards_help">Quy tắc câu i+1 chỉ tính một từ là đã biết khi thẻ Anki của nó đã được ôn ít nhất một lần. Khai thác vẫn bỏ qua mọi từ đã có thẻ.</string>
+    <string name="settings_ignore_suspended_cards">Bỏ qua thẻ bị tạm ngưng</string>
+    <string name="settings_ignore_suspended_cards_help">Những từ có mọi thẻ Anki đều bị tạm ngưng được tính là chưa biết: có thể khai thác lại, và quy tắc câu i+1 coi chúng là từ mới. Một ghi chú có ít nhất một thẻ không bị tạm ngưng vẫn được tính là đã biết.</string>
+    <string name="settings_numbers">Số</string>
+    <string name="settings_mine_number_counters">Khai thác số cùng lượng từ đi kèm</string>
+    <string name="settings_mine_number_counters_help">Tạo thẻ cho một số cùng lượng từ của nó, đọc theo biến âm (3本 さんぼん, 4人 よにん) và được định nghĩa theo lượng từ. Mỗi số một thẻ.</string>
     <string name="settings_bold_target">In đậm từ mục tiêu trong câu</string>
     <string name="settings_max_duration">Thời lượng câu tối đa (giây)</string>
     <string name="settings_max_characters">Số ký tự câu tối đa</string>

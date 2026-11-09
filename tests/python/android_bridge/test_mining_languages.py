@@ -16,6 +16,7 @@ import os
 import threading
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import android_bridge.mining as mining
 import pytest
@@ -373,6 +374,14 @@ def _curated_japanese_run(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cue: str, tokens: list[object]
 ) -> dict[str, str]:
     """Each word curation offers on a one-cue ja run through the bridge's composition, front to sentence."""
+    words = _curated_japanese_words(monkeypatch, tmp_path, cue, tokens)
+    return {word.mined_form: word.sentence for word in words}
+
+
+def _curated_japanese_words(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cue: str, tokens: list[object], **settings: object
+) -> list[Any]:
+    """The words curation offers on a one-cue ja run through the bridge's composition."""
     from dataclasses import replace
 
     import anki_miner.services.definition_service as definition_service
@@ -383,14 +392,14 @@ def _curated_japanese_run(
     monkeypatch.setattr(definition_service, "DefinitionService", _AttestedEverywhere)
     subtitle = tmp_path / "episode.srt"
     subtitle.write_text(f"1\n00:00:01,000 --> 00:00:02,000\n{cue}\n", encoding="utf-8")
-    config = replace(_japanese_config(tmp_path), include_known_words=True)
+    config = replace(_japanese_config(tmp_path, **settings), include_known_words=True)
     assert any(entry.kind == "indexed" and entry.enabled for entry in config.dictionary_chain)
     adapters = SimpleNamespace(presenter=NullPresenter(), cancel_event=threading.Event())
     processor = mining._build_processor(config, adapters, SimpleNamespace(verify_card_target=lambda: None))
-    curated: dict[str, str] = {}
+    curated: list[Any] = []
 
-    def curate(words: list[object]) -> None:
-        curated.update((word.mined_form, word.sentence) for word in words)
+    def curate(words: list[Any]) -> None:
+        curated.extend(words)
         return None  # cancel: phases 3-5 never run
 
     try:
@@ -424,6 +433,33 @@ def test_a_japanese_run_mines_a_kana_word_on_the_bundled_list(
     curated = _curated_japanese_run(monkeypatch, tmp_path, "もう猫", tokens)
 
     assert set(curated) == {"もう", "猫"}
+
+
+def _counter_tokens() -> list[object]:
+    """unidic's 4人来た: the numeral, the counter suffix, then the verb and its auxiliary."""
+    four = _tagger_token("4", "名詞", "数詞")
+    person = _tagger_token("人", "接尾辞", "名詞的")
+    person.feature.pos3 = "助数詞"
+    four.feature.pos3 = "*"
+    return [four, person, _tagger_token("来る", "動詞", "非自立可能"), _tagger_token("た", "助動詞", "*")]
+
+
+@pytest.mark.parametrize("on", [True, False], ids=["on", "off"])
+def test_a_japanese_run_mines_a_number_with_its_counter_only_when_asked(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    on: bool,
+) -> None:
+    """Desktop 18a48fc62: the snapshot's mine_number_counters reaches the parser through config_map."""
+    _runtime_lane()
+
+    words = _curated_japanese_words(monkeypatch, tmp_path, "4人来る", _counter_tokens(), mine_number_counters=on)
+
+    readings = {word.mined_form: word.expression_reading for word in words}
+    if on:
+        assert readings["4人"] == "よにん"
+    else:
+        assert "4人" not in readings
 
 
 def test_japanese_composition_keeps_the_known_words_file_and_language(

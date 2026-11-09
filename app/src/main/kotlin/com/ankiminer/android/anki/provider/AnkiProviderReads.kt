@@ -277,14 +277,21 @@ internal class AnkiProviderReadService(
                 excludedDecks = scope.excludedDecks,
                 fieldOrdinals = scope.fieldOrdinals,
                 markReviewed = scope.markReviewed,
+                ignoreSuspended = scope.ignoreSuspended,
             )
         val lease =
             if (scope.cursor == null) {
                 val initialization = registry.beginKnownTraversal(owner, traversalScope)
                 try {
                     val excludedScopes = existingExcludedScopes(traversalScope, cancellation)
-                    val excluded = excludedNoteIds(excludedScopes, cancellation)
-                    val reviewed = if (traversalScope.markReviewed) reviewedNoteIds(excludedScopes, cancellation) else null
+                    val ignoreSuspended = traversalScope.ignoreSuspended
+                    val excluded = excludedNoteIds(excludedScopes, ignoreSuspended, cancellation)
+                    val reviewed =
+                        if (traversalScope.markReviewed) {
+                            reviewedNoteIds(excludedScopes, ignoreSuspended, cancellation)
+                        } else {
+                            null
+                        }
                     registry.finishKnownTraversalInitialization(owner, initialization, excluded, reviewed)
                 } catch (error: RuntimeException) {
                     registry.abortKnownTraversalInitialization(owner, initialization)
@@ -331,19 +338,28 @@ internal class AnkiProviderReadService(
         return minimalExistingDeckScopes(scope.excludedDecks, targets.readAllDeckNames(cancellation))
     }
 
+    /**
+     * The notes the walk leaves out. The candidates are every note with a card in an excluded deck
+     * and, with [ignoreSuspended], every note with a suspended card (desktop's `-is:suspended`);
+     * [removeNotesWithCardsOutside] then keeps a candidate only while none of its cards counts.
+     */
     private fun excludedNoteIds(
         minimalScopes: List<String>,
+        ignoreSuspended: Boolean,
         cancellation: AnkiCancellation,
     ): Set<Long> {
-        if (minimalScopes.isEmpty()) return emptySet()
+        val candidateSearches =
+            minimalScopes.map(ProviderSelection::ExcludedDeck) +
+                listOfNotNull(ProviderSelection.SuspendedNotes.takeIf { ignoreSuspended })
+        if (candidateSearches.isEmpty()) return emptySet()
         val excluded = HashSet<Long>()
-        for (deckName in minimalScopes) {
+        for (selection in candidateSearches) {
             ensureActive(cancellation)
             val query =
                 ProviderQuery(
                     endpoint = ProviderEndpoint.NOTES_BROWSER,
                     projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
-                    selection = ProviderSelection.ExcludedDeck(deckName),
+                    selection = selection,
                     deadline = ProviderReadDeadline.BULK,
                 )
             // AnkiDroid's browser-search URI reports a search with zero matches as a null
@@ -369,17 +385,20 @@ internal class AnkiProviderReadService(
                 }
             }
         }
-        removeNotesWithCardsOutside(excluded, minimalScopes, cancellation)
+        removeNotesWithCardsOutside(excluded, minimalScopes, ignoreSuspended, cancellation)
         return excluded
     }
 
     /**
      * The notes the reviewed marks are true for, read once when a marking walk starts: desktop's
      * `deck:* -deck:"X" -is:new`, so a note counts only through a card that is not new and sits
-     * outside every exclusion. The walk holds one ID per reviewed note until it ends.
+     * outside every exclusion. With [ignoreSuspended] that card must also be unsuspended, as
+     * desktop's reviewed query inherits `-is:suspended`. The walk holds one ID per reviewed note
+     * until it ends.
      */
     private fun reviewedNoteIds(
         excludedScopes: List<String>,
+        ignoreSuspended: Boolean,
         cancellation: AnkiCancellation,
     ): Set<Long> {
         ensureActive(cancellation)
@@ -387,7 +406,7 @@ internal class AnkiProviderReadService(
             ProviderQuery(
                 endpoint = ProviderEndpoint.NOTES_BROWSER,
                 projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
-                selection = ProviderSelection.ReviewedNotes(excludedScopes),
+                selection = ProviderSelection.ReviewedNotes(excludedScopes, ignoreSuspended),
                 deadline = ProviderReadDeadline.BULK,
             )
         // A null cursor is AnkiDroid's zero-match answer: nothing has been reviewed yet.
@@ -410,11 +429,14 @@ internal class AnkiProviderReadService(
      * `deck:* -deck:"X"`, which keeps a note that has any card outside the exclusions; dropping
      * such a note here hid a studied word from known words, and the excluded-deck admission then
      * created a duplicate note for it. The candidates go back through the same search negated, in
-     * bounded ascending chunks, and every hit is taken off the excluded set.
+     * bounded ascending chunks, and every hit is taken off the excluded set. With
+     * [ignoreSuspended] the search also negates `is:suspended`, so only an unsuspended card outside
+     * the exclusions keeps a note.
      */
     private fun removeNotesWithCardsOutside(
         excluded: MutableSet<Long>,
         excludedScopes: List<String>,
+        ignoreSuspended: Boolean,
         cancellation: AnkiCancellation,
     ) {
         for (chunk in excluded.sorted().chunked(ProviderQueryShapes.NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS)) {
@@ -423,7 +445,7 @@ internal class AnkiProviderReadService(
                 ProviderQuery(
                     endpoint = ProviderEndpoint.NOTES_BROWSER,
                     projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
-                    selection = ProviderSelection.NotesOutsideDecks(excludedScopes, chunk),
+                    selection = ProviderSelection.NotesOutsideDecks(excludedScopes, chunk, ignoreSuspended),
                     deadline = ProviderReadDeadline.BULK,
                 )
             // A null cursor is AnkiDroid's zero-match answer: the whole chunk stays excluded.

@@ -1327,6 +1327,10 @@ class AndroidAnkiAdapter:
         if mark_reviewed:
             # Absent when off, so a scan without marks keeps its bytes and request digest.
             scope["markReviewed"] = True
+        if self._ignore_suspended_cards():
+            # Desktop's -is:suspended on the vocab query, and so on the reviewed one. Absent when
+            # off, like markReviewed.
+            scope["ignoreSuspended"] = True
         payload = self._callbacks.scan_first_fields({"scope": scope})
         result = _expect_exact_keys(
             payload,
@@ -1495,7 +1499,8 @@ class AndroidAnkiAdapter:
         card, so an unreviewed word is still never mined twice. Desktop's
         ``deck:* -deck:"X" -is:new``: a note counts when one of its cards outside
         the excluded decks is not new, so a card reviewed and later suspended
-        still counts. Cached for the run like that set and cleared with it.
+        still counts unless ``ignore_suspended_cards`` is on. Cached for the run
+        like that set and cleared with it.
 
         Raises:
             AnkiConnectionError: on a provider failure. The engine's
@@ -3179,9 +3184,18 @@ class AndroidAnkiAdapter:
             "maxEnvelopeUtf8Bytes": _MAX_CREATE_ENVELOPE_UTF8_BYTES,
         }
 
+    def _ignore_suspended_cards(self) -> bool:
+        return bool(self.config.ignore_suspended_cards)
+
     def _excluded_deck_admission(self) -> bool:
-        """Desktop ``create_cards_batch``'s rule: excluded decks admit notes against the known words."""
-        return bool(self.config.excluded_decks and not self.config.allow_duplicate_cards)
+        """Desktop ``AnkiService._scan_is_narrowed``: notes are admitted against the known words.
+
+        Excluded decks and ignored suspended cards both leave notes out of the scan that Anki's
+        duplicate rule still sees; ``allow_duplicate_cards`` already lets every note past that rule.
+        """
+        return bool(
+            (self.config.excluded_decks or self._ignore_suspended_cards()) and not self.config.allow_duplicate_cards
+        )
 
     def _admit_against_excluded_decks(
         self, pending_notes: Sequence[_PendingNote], seen: set[str]

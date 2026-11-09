@@ -239,6 +239,10 @@
         "markReviewed": {
           "const": true,
           "$comment": "Absent when off. On, every returned note carries reviewed: whether it has a card that is not new outside the excluded decks (desktop's deck:* -deck:\"X\" -is:new, matched card by card). Nothing is filtered. Part of the traversal's immutable scope, like fieldOrdinals."
+        },
+        "ignoreSuspended": {
+          "const": true,
+          "$comment": "Absent when off. On, a note whose every card is suspended or in an excluded deck leaves the known words, and the reviewed marks skip suspended cards (desktop's deck:* -deck:\"X\" -is:suspended, matched card by card). Part of the traversal's immutable scope, like markReviewed."
         }
       }
     },

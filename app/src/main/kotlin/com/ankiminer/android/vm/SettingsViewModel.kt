@@ -255,6 +255,8 @@ internal data class SettingsDraft(
     val normalizeAudioLoudness: Boolean?,
     val cropMangaToText: Boolean?,
     val knownFromReviewedCards: Boolean?,
+    val ignoreSuspendedCards: Boolean? = null,
+    val mineNumberCounters: Boolean? = null,
     val scriptVariant: String? = null,
     val readingToneColor: Boolean? = null,
     val secondarySubtitleEnabled: Boolean,
@@ -445,6 +447,8 @@ internal data class SettingsDraft(
             normalizeAudioLoudness = normalizeAudioLoudness,
             cropMangaToText = cropMangaToText,
             knownFromReviewedCards = knownFromReviewedCards,
+            ignoreSuspendedCards = ignoreSuspendedCards,
+            mineNumberCounters = mineNumberCounters,
             scriptVariant = scriptVariant,
             readingToneColor = readingToneColor,
             secondarySubtitleEnabled = secondarySubtitleEnabled,
@@ -693,6 +697,8 @@ internal data class SettingsDraft(
                 normalizeAudioLoudness = settings.normalizeAudioLoudness,
                 cropMangaToText = settings.cropMangaToText,
                 knownFromReviewedCards = settings.knownFromReviewedCards,
+                ignoreSuspendedCards = settings.ignoreSuspendedCards,
+                mineNumberCounters = settings.mineNumberCounters,
                 scriptVariant = settings.scriptVariant,
                 readingToneColor = settings.readingToneColor,
                 secondarySubtitleEnabled = settings.secondarySubtitleEnabled,
@@ -833,6 +839,10 @@ private fun SettingsDraft.rebaseChangesSince(
                 knownFromReviewedCards,
                 persisted.knownFromReviewedCards,
             ),
+        ignoreSuspendedCards =
+            changedValue(baseline.ignoreSuspendedCards, ignoreSuspendedCards, persisted.ignoreSuspendedCards),
+        mineNumberCounters =
+            changedValue(baseline.mineNumberCounters, mineNumberCounters, persisted.mineNumberCounters),
         scriptVariant = changedValue(baseline.scriptVariant, scriptVariant, persisted.scriptVariant),
         readingToneColor =
             changedValue(baseline.readingToneColor, readingToneColor, persisted.readingToneColor),

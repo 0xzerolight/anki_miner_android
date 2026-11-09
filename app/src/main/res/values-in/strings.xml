@@ -766,6 +766,11 @@
     <string name="settings_known_words">Gunakan DB kata yang dikenal lokal</string>
     <string name="settings_known_from_reviewed_cards">Anggap kata dikenal hanya setelah kartunya diulas</string>
     <string name="settings_known_from_reviewed_cards_help">Aturan kalimat i+1 menganggap kata dikenal hanya jika kartu Anki-nya sudah diulas setidaknya sekali. Mining tetap melewati setiap kata yang sudah memiliki kartu.</string>
+    <string name="settings_ignore_suspended_cards">Abaikan kartu yang ditangguhkan</string>
+    <string name="settings_ignore_suspended_cards_help">Kata yang semua kartu Anki-nya ditangguhkan dianggap belum dikenal: kata itu bisa di-mining lagi, dan aturan kalimat i+1 memperlakukannya sebagai kata baru. Catatan yang punya setidaknya satu kartu yang tidak ditangguhkan tetap dianggap dikenal.</string>
+    <string name="settings_numbers">Angka</string>
+    <string name="settings_mine_number_counters">Mining angka beserta kata penggolongnya</string>
+    <string name="settings_mine_number_counters_help">Membuat kartu untuk angka beserta kata penggolongnya, dibaca dengan perubahan bunyinya (3本 さんぼん, 4人 よにん) dan didefinisikan oleh kata penggolong. Satu kartu per angka.</string>
     <string name="settings_bold_target">Tebalkan kata target dalam kalimat</string>
     <string name="settings_max_duration">Durasi kalimat maksimum (detik)</string>
     <string name="settings_max_characters">Karakter kalimat maksimum</string>

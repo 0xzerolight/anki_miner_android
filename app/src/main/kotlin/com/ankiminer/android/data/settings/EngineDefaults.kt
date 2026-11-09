@@ -93,6 +93,10 @@ internal object EngineDefaults {
     const val CROP_MANGA_TO_TEXT: Boolean = true
     const val KNOWN_FROM_REVIEWED_CARDS: Boolean = false
 
+    // Desktop 3.12.0, off for every install.
+    const val IGNORE_SUSPENDED_CARDS: Boolean = false
+    const val MINE_NUMBER_COUNTERS: Boolean = false
+
     /** One occurrence, i.e. no minimum. */
     const val READING_MINIMUM_OCCURRENCE: Int = 1
     const val MAX_PARALLEL_WORKERS: Int = 6

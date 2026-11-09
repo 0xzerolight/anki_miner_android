@@ -101,6 +101,12 @@ class AnkiDroidS2CapabilityInstrumentedTest {
         // The reviewed-marks scan needs one reviewed card: the direct note's. The adapter's note
         // stays new.
         reviewOnlyCard(deckId, directNoteId)
+        // A reviewed note whose only card is then suspended: known and reviewed until "ignore
+        // suspended cards" takes it out of both walks.
+        val suspendedNoteId =
+            requireNotNull(api.addNote(modelId, deckId, arrayOf(SUSPENDED_EXPRESSION, "", ""), setOf(PROBE_TAG)))
+        reviewOnlyCard(deckId, suspendedNoteId)
+        suspendOnlyCard(suspendedNoteId)
 
         assertTrue(providerCallbacks.registerRun(RUN_ID))
         val callbacks = ProbeMutationCallbacks(context, providerCallbacks, api, deckId, modelId)
@@ -134,6 +140,16 @@ class AnkiDroidS2CapabilityInstrumentedTest {
             val reviewedAfter = rawStrings(summary.getJSONArray("reviewedAfter"))
             assertTrue(reviewedAfter.contains(DIRECT_EXPRESSION))
             assertFalse(reviewedAfter.contains("猫"))
+            assertTrue(reviewedAfter.contains(SUSPENDED_EXPRESSION))
+            assertTrue(rawStrings(summary.getJSONArray("knownAfter")).contains(SUSPENDED_EXPRESSION))
+            // AnkiDroid answers the `is:suspended` candidate search and the `-is:suspended`
+            // outside and reviewed searches: the suspended-only note leaves both sets.
+            val knownIgnoring = rawStrings(summary.getJSONArray("knownIgnoringSuspended"))
+            assertTrue(knownIgnoring.containsAll(listOf(DIRECT_EXPRESSION, "猫")))
+            assertFalse(knownIgnoring.contains(SUSPENDED_EXPRESSION))
+            val reviewedIgnoring = rawStrings(summary.getJSONArray("reviewedIgnoringSuspended"))
+            assertTrue(reviewedIgnoring.contains(DIRECT_EXPRESSION))
+            assertFalse(reviewedIgnoring.contains(SUSPENDED_EXPRESSION))
             assertEquals(setOf(adapterAudio, adapterImage), callbacks.storedMediaNames)
             assertArrayEquals(
                 arrayOf("猫", "<img src=\"$adapterImage\">", "[sound:$adapterAudio]"),
@@ -259,6 +275,27 @@ class AnkiDroidS2CapabilityInstrumentedTest {
                 null,
             ).use { cursor -> cursor == null || !cursor.moveToFirst() }
         assertFalse("the probe could not review its direct note's card", stillNew)
+    }
+
+    /** Suspends the note's only card through AnkiDroid's schedule URI and proves it took. */
+    private fun suspendOnlyCard(noteId: Long) {
+        val resolver = context.contentResolver
+        val suspend =
+            ContentValues().apply {
+                put(FlashCardsContract.ReviewInfo.NOTE_ID, noteId)
+                put(FlashCardsContract.ReviewInfo.CARD_ORD, 0)
+                put(FlashCardsContract.ReviewInfo.SUSPEND, 1)
+            }
+        assertEquals(1, resolver.update(FlashCardsContract.ReviewInfo.CONTENT_URI, suspend, null, null))
+        val suspended =
+            resolver.query(
+                FlashCardsContract.Note.CONTENT_URI,
+                arrayOf(FlashCardsContract.Note._ID),
+                "nid:$noteId is:suspended",
+                null,
+                null,
+            ).use { cursor -> cursor != null && cursor.moveToFirst() }
+        assertTrue("the probe could not suspend its note's card", suspended)
     }
 
     private fun rawStrings(values: JSONArray): Set<String> =
@@ -427,6 +464,7 @@ class AnkiDroidS2CapabilityInstrumentedTest {
         private const val DECK_NAME = "Anki Miner S2 Probe"
         private const val MODEL_NAME = "Anki Miner S2 Probe Model"
         private const val DIRECT_EXPRESSION = "直接確認"
+        private const val SUSPENDED_EXPRESSION = "停止確認"
         private const val PROBE_TAG = "anki_miner_s2_probe"
         private val MODEL_FIELDS = arrayOf("Expression", "Picture", "SentenceAudio")
         private const val MP3_SHA256 = "5a61c64e1884e766f20f5e38b87c199a4a93a53f6ff834d933794656da199285"

@@ -331,6 +331,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_excluded_decks,
         ),
         entry(
+            "word_filters.ignore_suspended_cards",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_ignore_suspended_cards,
+            R.string.settings_ignore_suspended_cards_help,
+        ),
+        entry(
             "word_filters.wordsets",
             SettingsCategory.WORD_FILTERS,
             "filtering-options",
@@ -344,6 +351,14 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "filtering-options",
             R.string.settings_script_type,
             keywords = listOf("hiragana", "katakana", "kana"),
+        ),
+        entry(
+            "word_filters.number_counters",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_mine_number_counters,
+            R.string.settings_mine_number_counters_help,
+            keywords = listOf("Numbers", "counter"),
         ),
         entry(
             "word_filters.hangul_only",
@@ -564,7 +579,8 @@ internal fun availableSettingsSearchEntries(
                 "resources.device_voice" -> language.activeCode != LanguageScope.JAPANESE
                 "language.script_variant" -> language.scriptVariants.isNotEmpty()
                 "anki.reading_tone_color" -> language.showsToneColor
-                "word_filters.kana_variants", "word_filters.script_type" -> language.showsKanaFilters
+                "word_filters.kana_variants", "word_filters.script_type", "word_filters.number_counters" ->
+                    language.showsKanaFilters
                 "word_filters.hangul_only", "word_filters.hanja_containing" -> language.showsHangulFilters
                 "word_filters.wordsets" -> language.showsNameWordsets
                 "diagnostics.unidic" ->

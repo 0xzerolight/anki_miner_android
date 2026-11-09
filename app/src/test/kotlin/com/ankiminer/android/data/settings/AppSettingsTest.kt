@@ -866,6 +866,24 @@ class AppSettingsTest {
     }
 
     @Test
+    fun suspendedAndCounterSwitchesReachTheSnapshotOnlyWhenSet() {
+        val set =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(ignoreSuspendedCards = true, mineNumberCounters = false),
+                emptyList(),
+            ).settings
+        val unset = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList()).settings
+
+        assertEquals(
+            mapOf(
+                "ignore_suspended_cards" to BridgeJsonValue.Bool(true),
+                "mine_number_counters" to BridgeJsonValue.Bool(false),
+            ),
+            set - unset.keys,
+        )
+    }
+
+    @Test
     fun secondarySubtitleToggleNeverReachesTheEngine() {
         // Kotlin-only: it gates the Video tab's second picker. The engine never reads it and the
         // bridge rejects it as an unknown config field.

@@ -1823,6 +1823,27 @@ class BridgeJsonCodecTest {
         }
     }
 
+    @Test
+    fun `accepts the suspended and counter switches and rejects a non-boolean one`() {
+        val switches = listOf("ignore_suspended_cards", "mine_number_counters")
+        val decoded =
+            BridgeJsonCodec.decode(
+                videoRunWithSettings(switches.joinToString(",") { """"$it":true""" }),
+            ) as BridgeMessage.VideoRun
+
+        assertEquals(
+            switches.associateWith { BridgeJsonValue.Bool(true) },
+            decoded.request.configSnapshot.settings,
+        )
+        switches.forEach { key ->
+            assertEquals(
+                key,
+                BridgeProtocolCategory.INVALID_PAYLOAD,
+                protocolFailure { BridgeJsonCodec.decode(videoRunWithSettings(""""$key":1""")) }.category,
+            )
+        }
+    }
+
     private fun videoRunWithSettings(settings: String): String =
         """{"schemaVersion":1,"type":"mining.video.run","payload":{"videoPath":"/proc/self/fd/8",""" +
             """"subtitlePath":"/cache/subtitle.SRT","secondarySubtitlePath":null,"secondarySubtitleOffsetMs":0,""" +

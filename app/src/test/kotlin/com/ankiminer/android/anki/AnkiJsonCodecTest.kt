@@ -391,6 +391,32 @@ class AnkiJsonCodecTest {
     }
 
     @Test
+    fun `ignoring suspended cards is opt-in on the known scan only`() {
+        val ignoring = knownVocabularyPayload().replace("\"cursor\":", "\"ignoreSuspended\":true,\"cursor\":")
+        val request = decode(AnkiOperation.SCAN_FIRST_FIELDS, ignoring) as ScanFirstFieldsRequest
+        assertTrue((request.scope as KnownVocabularyScope).ignoreSuspended)
+        val keeping = decode(AnkiOperation.SCAN_FIRST_FIELDS, knownVocabularyPayload()) as ScanFirstFieldsRequest
+        assertFalse((keeping.scope as KnownVocabularyScope).ignoreSuspended)
+        // Off is the key's absence, so each meaning has one spelling on the wire.
+        assertCategory(AnkiProtocolCategory.INVALID_VALUE) {
+            decode(
+                AnkiOperation.SCAN_FIRST_FIELDS,
+                knownVocabularyPayload().replace("\"cursor\":", "\"ignoreSuspended\":false,\"cursor\":"),
+            )
+        }
+        assertCategory(AnkiProtocolCategory.INVALID_PAYLOAD) {
+            decode(
+                AnkiOperation.SCAN_FIRST_FIELDS,
+                """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"noteTypes","ignoreSuspended":true,"limits":{"maxItems":1024,"maxTotalUtf8Bytes":524288}}}""",
+            )
+        }
+        val both =
+            knownVocabularyPayload().replace("\"cursor\":", "\"markReviewed\":true,\"ignoreSuspended\":true,\"cursor\":")
+        val bothScope = (decode(AnkiOperation.SCAN_FIRST_FIELDS, both) as ScanFirstFieldsRequest).scope
+        assertEquals(true to true, (bothScope as KnownVocabularyScope).let { it.markReviewed to it.ignoreSuspended })
+    }
+
+    @Test
     fun `validates all aligned partial-result variants before generation`() {
         val mediaError = AnkiErrorDetail(AnkiErrorCode.POST_COMMIT_UNCERTAIN, "Provider result is uncertain", false)
         val media =

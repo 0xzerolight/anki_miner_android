@@ -59,18 +59,32 @@ internal sealed interface ProviderSelection {
      * Which of [noteIds] still have a card outside every deck in [deckNames], compiled to the
      * browser search `nid:1,2 -deck:"A" -deck:"B"` inside the production gateway. AnkiDroid runs
      * a deck search card by card, so a note matches when any one of its cards is outside them all.
+     * [excludeSuspended] appends `-is:suspended`, so that card must also be unsuspended; only then
+     * may [deckNames] be empty.
      */
     data class NotesOutsideDecks(
         val deckNames: List<String>,
         val noteIds: List<Long>,
+        val excludeSuspended: Boolean = false,
     ) : ProviderSelection
 
     /**
      * Notes with a card that is not new and sits outside every deck in [excludedDeckNames], compiled
      * to the browser search `-is:new -deck:"A" -deck:"B"` inside the production gateway: desktop's
      * reviewed-card query (`deck:* -deck:"X" -is:new`). AnkiDroid matches it card by card.
+     * [excludeSuspended] appends `-is:suspended`, as desktop's query inherits it from the vocab one.
      */
-    data class ReviewedNotes(val excludedDeckNames: List<String>) : ProviderSelection
+    data class ReviewedNotes(
+        val excludedDeckNames: List<String>,
+        val excludeSuspended: Boolean = false,
+    ) : ProviderSelection
+
+    /**
+     * Notes with a suspended card, compiled to the browser search `is:suspended`: the candidates
+     * "ignore suspended cards" adds to the excluded-deck ones before [NotesOutsideDecks] keeps
+     * those with a card that is unsuspended and outside every exclusion.
+     */
+    data object SuspendedNotes : ProviderSelection
 
     /** Exact positive note ID compiled to the global cards browser query inside the gateway. */
     data class CardsForNote(val noteId: Long) : ProviderSelection
@@ -278,6 +292,7 @@ internal object ProviderQueryShapes {
             is ProviderSelection.ExcludedDeck,
             is ProviderSelection.NotesOutsideDecks,
             is ProviderSelection.ReviewedNotes,
+            ProviderSelection.SuspendedNotes,
             is ProviderSelection.CardsForNote,
             -> false
         }
@@ -287,13 +302,16 @@ internal object ProviderQueryShapes {
         when (selection) {
             is ProviderSelection.ExcludedDeck -> selection.deckName.isValidDeckName()
             is ProviderSelection.NotesOutsideDecks ->
-                selection.deckNames.size in 1..AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT &&
+                // Without the suspended clause an empty deck list would match every listed note.
+                selection.deckNames.size in
+                    (if (selection.excludeSuspended) 0 else 1)..AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT &&
                     selection.deckNames.all { it.isValidDeckName() } &&
                     selection.noteIds.size in 1..NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS &&
                     selection.noteIds.isStrictlyIncreasingPositive()
             is ProviderSelection.ReviewedNotes ->
                 selection.excludedDeckNames.size <= AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT &&
                     selection.excludedDeckNames.all { it.isValidDeckName() }
+            ProviderSelection.SuspendedNotes -> true
             else -> false
         }
 

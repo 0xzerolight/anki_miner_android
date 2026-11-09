@@ -1426,6 +1426,7 @@ class AnkiJsonCodecBoundaryTest {
                                     )
                                 },
                                 markReviewed = "markReviewed" in scope && scope.boolean("markReviewed"),
+                                ignoreSuspended = "ignoreSuspended" in scope && scope.boolean("ignoreSuspended"),
                             )
                         }
                         "noteTypes" -> NoteTypesScope

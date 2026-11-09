@@ -179,6 +179,8 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "normalize_audio_loudness": True,
         "crop_manga_to_text": True,
         "known_from_reviewed_cards": False,
+        "ignore_suspended_cards": False,
+        "mine_number_counters": False,
         "reading_min_occurrence": 2,
         "max_parallel_workers": 4,
         "language": "ja",
@@ -2570,6 +2572,7 @@ def test_known_scan_reviewed_marks_validate(schemas: dict[str, dict[str, Any]]) 
     validator = Draft202012Validator(schemas["anki"])
 
     validator.validate(_marked_known_scan())
+    validator.validate(_marked_known_scan(ignoreSuspended=True))
     validator.validate(
         _marked_known_page(
             {"modelId": 1, "fields": ["猫"], "reviewed": True},
@@ -2594,8 +2597,28 @@ def test_known_scan_reviewed_marks_validate(schemas: dict[str, dict[str, Any]]) 
         },
         _marked_known_page({"modelId": 1, "fields": ["猫"], "reviewed": 1}),
         _marked_known_page({"modelId": 1, "fields": ["猫"], "reviewed": None}),
+        _marked_known_scan(ignoreSuspended=False),
+        _marked_known_scan(ignoreSuspended="true"),
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "scope": {
+                "kind": "noteTypes",
+                "limits": {"maxItems": 1024, "maxTotalUtf8Bytes": 524288},
+                "ignoreSuspended": True,
+            },
+        },
     ],
-    ids=["mark-false", "mark-string", "mark-on-note-types", "reviewed-integer", "reviewed-null"],
+    ids=[
+        "mark-false",
+        "mark-string",
+        "mark-on-note-types",
+        "reviewed-integer",
+        "reviewed-null",
+        "suspended-false",
+        "suspended-string",
+        "suspended-on-note-types",
+    ],
 )
 def test_known_scan_reviewed_marks_are_strict(schemas: dict[str, dict[str, Any]], payload: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):

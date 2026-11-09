@@ -1373,7 +1373,7 @@ object BridgeJsonCodec {
                 "max_sentence_duration_seconds", "max_sentence_chars", "reading_min_occurrence", "max_parallel_workers",
                 "language", "script_variant", "reading_tone_color",
                 "pick_best_sentence", "skip_opening_ending", "normalize_audio_loudness", "crop_manga_to_text",
-                "known_from_reviewed_cards",
+                "known_from_reviewed_cards", "ignore_suspended_cards", "mine_number_counters",
             )
         if (!known.containsAll(settings.keys)) fail(BridgeProtocolCategory.INVALID_PAYLOAD, "config settings contain an unknown field")
         val language = settings["language"]?.let { miningLanguage(it) } ?: JAPANESE_LANGUAGE
@@ -1425,7 +1425,7 @@ object BridgeJsonCodec {
             "bold_target_in_sentence", "deduplicate_sentences", "use_i_plus_one_filter",
             "frequency_keep_unranked", "known_words_match_kana_variants", "strict_card_order", "merge_incomplete_cues",
             "pick_best_sentence", "skip_opening_ending", "normalize_audio_loudness", "crop_manga_to_text",
-            "known_from_reviewed_cards",
+            "known_from_reviewed_cards", "ignore_suspended_cards", "mine_number_counters",
             -> bool(value, key)
             "blacklist_path", "whitelist_path" -> if (value !is BridgeJsonValue.Null) absolutePath(value, key)
             // Desktop v3.8.0 removed Jisho: every dictionary is an indexed one.

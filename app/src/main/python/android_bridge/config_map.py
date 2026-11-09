@@ -82,6 +82,11 @@ _BOOL_FIELDS = frozenset(
         "normalize_audio_loudness",
         "crop_manga_to_text",
         "known_from_reviewed_cards",
+        # Desktop 3.12.0, off for every install. ignore_suspended_cards reaches
+        # AndroidAnkiAdapter's known scan (ignoreSuspended) and its admission;
+        # mine_number_counters the Japanese parser.
+        "ignore_suspended_cards",
+        "mine_number_counters",
     }
 )
 _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {

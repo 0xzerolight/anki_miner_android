@@ -87,6 +87,22 @@ class SettingsDraftDesktopRowsTest {
     }
 
     @Test
+    fun suspendedAndCounterSwitchesRoundTripAndSaveImmediately() {
+        val base = AppSettings(ignoreSuspendedCards = true, mineNumberCounters = true)
+        val before = draft()
+
+        assertEquals(base, draft(base).toSettings(base))
+        assertEquals(
+            base,
+            before.copy(ignoreSuspendedCards = true, mineNumberCounters = true).toSettings(AppSettings()),
+        )
+        assertEquals(
+            SettingsWriteCadence.IMMEDIATE,
+            settingsWriteCadence(before, before.copy(mineNumberCounters = true)),
+        )
+    }
+
+    @Test
     fun aNegativeMinimumIsReportedOnItsOwnField() {
         val edited = draft().copy(minFrequency = "-1")
 

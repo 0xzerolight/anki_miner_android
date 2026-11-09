@@ -56,6 +56,8 @@ class SettingsBackupCodecTest {
             normalizeAudioLoudness = true,
             cropMangaToText = false,
             knownFromReviewedCards = true,
+            ignoreSuspendedCards = true,
+            mineNumberCounters = true,
             secondarySubtitleEnabled = true,
             pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
             maxParallelWorkers = 4,
@@ -575,6 +577,27 @@ class SettingsBackupCodecTest {
         assertEquals(populated.skipOpeningEnding, applied.settings.skipOpeningEnding)
         assertEquals(populated.normalizeAudioLoudness, applied.settings.normalizeAudioLoudness)
         assertEquals(populated.cropMangaToText, applied.settings.cropMangaToText)
+    }
+
+    @Test
+    fun `a backup from before the suspended and counter switches keeps their current values`() {
+        // v2.1.x wrote format 5 at schema 4 without either key; a file that lacks a key keeps it.
+        val json = formatFiveBackup(schemaVersion = 4, settings = """"mining_language":"ja",""")
+
+        listOf(populated, AppSettings(ignoreSuspendedCards = false, mineNumberCounters = false)).forEach { current ->
+            val applied = with(SettingsBackupCodec) { parse(json).applyTo(current, ResourceManagerState()) }
+
+            assertEquals(current.ignoreSuspendedCards, applied.settings.ignoreSuspendedCards)
+            assertEquals(current.mineNumberCounters, applied.settings.mineNumberCounters)
+        }
+        // A new backup carries both, null when unset, and they apply over the current values.
+        val cleared =
+            with(SettingsBackupCodec) {
+                parse(SettingsBackupCodec.encode(AppSettings(), "2.2.0", ResourceManagerState()))
+                    .applyTo(populated, ResourceManagerState())
+            }
+        assertEquals(null, cleared.settings.ignoreSuspendedCards)
+        assertEquals(null, cleared.settings.mineNumberCounters)
     }
 
     @Test

@@ -778,6 +778,11 @@
     <string name="settings_known_words">Usar la BD local de palabras conocidas</string>
     <string name="settings_known_from_reviewed_cards">Contar una palabra como conocida solo después de repasar su tarjeta</string>
     <string name="settings_known_from_reviewed_cards_help">La regla de oraciones i+1 cuenta una palabra como conocida solo cuando su tarjeta de Anki se ha repasado al menos una vez. La minería sigue omitiendo cada palabra que ya tiene tarjeta.</string>
+    <string name="settings_ignore_suspended_cards">Ignorar tarjetas suspendidas</string>
+    <string name="settings_ignore_suspended_cards_help">Las palabras cuyas tarjetas de Anki están todas suspendidas cuentan como desconocidas: se pueden volver a minar y la regla de oraciones i+1 las trata como nuevas. Una nota con alguna tarjeta no suspendida sigue contando como conocida.</string>
+    <string name="settings_numbers">Números</string>
+    <string name="settings_mine_number_counters">Minar números con sus contadores</string>
+    <string name="settings_mine_number_counters_help">Crea una tarjeta para un número y su contador, leída con sus cambios fonéticos (3本 さんぼん, 4人 よにん) y definida por el contador. Una tarjeta por número.</string>
     <string name="settings_bold_target">Resaltar el objetivo en su oración</string>
     <string name="settings_max_duration">Duración máxima de la oración (segundos)</string>
     <string name="settings_max_characters">Caracteres máximos de la oración</string>

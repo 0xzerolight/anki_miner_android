@@ -108,7 +108,7 @@ def test_a_note_type_alone_keeps_all_142_desktop_defaults_except_targeted_androi
         field.name: getattr(expected, field.name) for field in desktop_fields
     }
     assert mapped.android_tts_enabled is False
-    # Desktop 3.12.0's two switches, unmapped so far: both stay at the desktop default.
+    # Desktop 3.12.0's two switches: unset, both stay at the desktop default.
     assert mapped.engine_config.ignore_suspended_cards is False
     assert mapped.engine_config.mine_number_counters is False
 
@@ -384,7 +384,9 @@ def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
     assert "jisho_delay" not in exposed
     # Plus the 2026-10 feature batch's five switches (_FEATURE_BATCH_FIELDS).
     assert set(_FEATURE_BATCH_FIELDS) <= exposed
-    assert len(exposed) == 58
+    # Plus desktop 3.12.0's two switches (_DESKTOP_3_12_FIELDS).
+    assert set(_DESKTOP_3_12_FIELDS) <= exposed
+    assert len(exposed) == 60
     assert exposed <= {field.name for field in fields(AnkiMinerConfig)}
 
 
@@ -411,6 +413,28 @@ def test_feature_batch_fields_reach_the_engine_config(tmp_path: Path) -> None:
     mapped = map_config_settings({**_NOTE_TYPE, **_FEATURE_BATCH_FIELDS}, _paths(tmp_path))
 
     assert {name: getattr(mapped.engine_config, name) for name in _FEATURE_BATCH_FIELDS} == _FEATURE_BATCH_FIELDS
+
+
+# Desktop 3.12.0's two switches, each set to its non-default value. Both are off for every install.
+# ``ignore_suspended_cards`` reaches AndroidAnkiAdapter's known scan; ``mine_number_counters`` the
+# Japanese parser.
+_DESKTOP_3_12_FIELDS = {
+    "ignore_suspended_cards": True,
+    "mine_number_counters": True,
+}
+
+
+def test_desktop_3_12_fields_reach_the_engine_config(tmp_path: Path) -> None:
+    from anki_miner.config import AnkiMinerConfig
+
+    defaults = AnkiMinerConfig()
+    assert {name: getattr(defaults, name) for name in _DESKTOP_3_12_FIELDS} == {
+        name: not value for name, value in _DESKTOP_3_12_FIELDS.items()
+    }
+
+    mapped = map_config_settings({**_NOTE_TYPE, **_DESKTOP_3_12_FIELDS}, _paths(tmp_path))
+
+    assert {name: getattr(mapped.engine_config, name) for name in _DESKTOP_3_12_FIELDS} == _DESKTOP_3_12_FIELDS
 
 
 def test_wave_b_fields_reach_the_engine_config(tmp_path: Path) -> None:
@@ -492,6 +516,8 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
         ({"known_words_match_kana_variants": 0}, "invalid_config_field"),
         ({"pick_best_sentence": "false"}, "invalid_config_field"),
         ({"known_from_reviewed_cards": 1}, "invalid_config_field"),
+        ({"ignore_suspended_cards": "true"}, "invalid_config_field"),
+        ({"mine_number_counters": None}, "invalid_config_field"),
         ({"secondary_subtitle_enabled": True}, "unknown_config_field"),
         # Desktop's AnkiConnect sync after a run (AI-03) is not ported.
         ({"sync_anki_after_run": True}, "unknown_config_field"),

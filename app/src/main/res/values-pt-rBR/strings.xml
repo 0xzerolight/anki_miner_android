@@ -778,6 +778,11 @@
     <string name="settings_known_words">Usar o BD local de palavras conhecidas</string>
     <string name="settings_known_from_reviewed_cards">Considerar uma palavra conhecida só depois que o cartão dela for revisado</string>
     <string name="settings_known_from_reviewed_cards_help">A regra de frases i+1 considera uma palavra conhecida só quando o cartão do Anki dela tiver sido revisado pelo menos uma vez. A mineração continua ignorando toda palavra que já tem cartão.</string>
+    <string name="settings_ignore_suspended_cards">Ignorar cartões suspensos</string>
+    <string name="settings_ignore_suspended_cards_help">Palavras cujos cartões do Anki estão todos suspensos contam como desconhecidas: podem ser mineradas de novo, e a regra de frases i+1 as trata como novas. Uma nota com algum cartão não suspenso continua contando como conhecida.</string>
+    <string name="settings_numbers">Números</string>
+    <string name="settings_mine_number_counters">Minerar números com seus contadores</string>
+    <string name="settings_mine_number_counters_help">Cria um cartão para um número e seu contador, lido com as mudanças de som (3本 さんぼん, 4人 よにん) e definido pelo contador. Um cartão por número.</string>
     <string name="settings_bold_target">Destacar o alvo na frase</string>
     <string name="settings_max_duration">Duração máxima da frase (segundos)</string>
     <string name="settings_max_characters">Máximo de caracteres na frase</string>

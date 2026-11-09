@@ -468,6 +468,7 @@ internal object AnkiJsonCodec {
             var cursorSeen = false
             var cursor: KnownVocabularyCursor? = null
             var markReviewed = false
+            var ignoreSuspended = false
             var modelName: String? = null
             var firstFieldName: String? = null
             var candidates: List<DuplicateCandidate>? = null
@@ -482,6 +483,7 @@ internal object AnkiJsonCodec {
                     "fieldOrdinals",
                     "cursor",
                     "markReviewed",
+                    "ignoreSuspended",
                     "modelName",
                     "firstFieldName",
                     "candidates",
@@ -509,6 +511,13 @@ internal object AnkiJsonCodec {
                         }
                         markReviewed = true
                     }
+                    "ignoreSuspended" -> {
+                        // Off is the key's absence, so false has no spelling on the wire.
+                        if (!readBoolean("known-vocabulary suspended exclusion")) {
+                            fail(AnkiProtocolCategory.INVALID_VALUE, "ignoreSuspended must be true when present")
+                        }
+                        ignoreSuspended = true
+                    }
                     "modelName" -> modelName = readString("model name")
                     "firstFieldName" -> firstFieldName = readString("first field name")
                     "candidates" -> candidates = readArray(AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT, 1, "duplicate candidates") { readDuplicateCandidate() }
@@ -523,7 +532,7 @@ internal object AnkiJsonCodec {
             }
             return when (kind) {
                 "knownVocabulary" -> {
-                    requireExactSeen(seen - "markReviewed", setOf("kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"), "known-vocabulary scope")
+                    requireExactSeen(seen - "markReviewed" - "ignoreSuspended", setOf("kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"), "known-vocabulary scope")
                     if (!cursorSeen) missingPayload("cursor")
                     requireExactLimits(
                         limits!!,
@@ -534,7 +543,7 @@ internal object AnkiJsonCodec {
                             "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES.toLong(),
                         ),
                     )
-                    KnownVocabularyScope(excludedDecks!!, cursor, fieldOrdinals!!, markReviewed)
+                    KnownVocabularyScope(excludedDecks!!, cursor, fieldOrdinals!!, markReviewed, ignoreSuspended)
                 }
                 "noteTypes" -> {
                     requireExactSeen(seen, setOf("kind", "limits"), "note-type scope")

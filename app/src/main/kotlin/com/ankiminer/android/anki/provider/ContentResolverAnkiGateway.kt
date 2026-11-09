@@ -684,6 +684,8 @@ internal fun compileProviderSelection(
             CompiledProviderSelection(notesOutsideDecksSelection(selection), null)
         is ProviderSelection.ReviewedNotes ->
             CompiledProviderSelection(reviewedNotesSelection(selection), null)
+        ProviderSelection.SuspendedNotes ->
+            CompiledProviderSelection("is:suspended", null)
         is ProviderSelection.CardsForNote ->
             CompiledProviderSelection("nid:${selection.noteId}", null)
         is ProviderSelection.NoteIds -> {
@@ -727,6 +729,7 @@ private fun notesOutsideDecksSelection(selection: ProviderSelection.NotesOutside
             append(" -")
             append(excludedDeckSelection(deckName))
         }
+        if (selection.excludeSuspended) append(" -is:suspended")
     }
 
 private fun reviewedNotesSelection(selection: ProviderSelection.ReviewedNotes): String =
@@ -736,4 +739,5 @@ private fun reviewedNotesSelection(selection: ProviderSelection.ReviewedNotes): 
             append(" -")
             append(excludedDeckSelection(deckName))
         }
+        if (selection.excludeSuspended) append(" -is:suspended")
     }

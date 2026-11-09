@@ -476,6 +476,8 @@ class LanguageScopeTest {
                 "normalizeAudioLoudness" to BOOLEANS,
                 "cropMangaToText" to BOOLEANS,
                 "knownFromReviewedCards" to BOOLEANS,
+                "ignoreSuspendedCards" to BOOLEANS,
+                "mineNumberCounters" to BOOLEANS,
                 "secondarySubtitleEnabled" to listOf(true, false),
                 "pitchCategoryFormat" to listOf(null, PitchCategoryFormat.ROMAJI),
                 "maxParallelWorkers" to listOf(null, 2),
