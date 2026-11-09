@@ -111,6 +111,8 @@
     <string name="curation_clip_play">このクリップだけを再生</string>
     <string name="curation_clip_stop">クリップのプレビューを停止</string>
     <string name="curation_clip_reset">クリップをリセット</string>
+    <string name="curation_clip_start_here">再生位置をクリップの開始にする</string>
+    <string name="curation_clip_end_here">再生位置をクリップの終了にする</string>
     <string name="curation_copied_word">単語をコピーしました</string>
     <string name="curation_copied_sentence">例文をコピーしました</string>
     <string name="curation_preview_play_description">動画を再生</string>

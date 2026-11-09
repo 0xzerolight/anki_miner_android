@@ -111,6 +111,8 @@
     <string name="curation_clip_play">Chỉ phát đoạn này</string>
     <string name="curation_clip_stop">Dừng xem trước đoạn</string>
     <string name="curation_clip_reset">Đặt lại đoạn</string>
+    <string name="curation_clip_start_here">Bắt đầu đoạn tại vị trí phát</string>
+    <string name="curation_clip_end_here">Kết thúc đoạn tại vị trí phát</string>
     <string name="curation_copied_word">Đã sao chép từ</string>
     <string name="curation_copied_sentence">Đã sao chép câu</string>
     <string name="curation_preview_play_description">Phát video</string>

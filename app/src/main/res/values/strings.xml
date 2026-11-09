@@ -118,6 +118,8 @@
     <string name="curation_clip_play">Play just this clip</string>
     <string name="curation_clip_stop">Stop the clip preview</string>
     <string name="curation_clip_reset">Reset clip</string>
+    <string name="curation_clip_start_here">Start the clip at the playhead</string>
+    <string name="curation_clip_end_here">End the clip at the playhead</string>
     <string name="curation_copied_word">Copied word</string>
     <string name="curation_copied_sentence">Copied sentence</string>
     <string name="curation_preview_play_description">Play video</string>

@@ -111,6 +111,8 @@
     <string name="curation_clip_play">Reproducir solo este clip</string>
     <string name="curation_clip_stop">Detener la vista previa del clip</string>
     <string name="curation_clip_reset">Restablecer clip</string>
+    <string name="curation_clip_start_here">Iniciar el clip en la posición de reproducción</string>
+    <string name="curation_clip_end_here">Terminar el clip en la posición de reproducción</string>
     <string name="curation_copied_word">Palabra copiada</string>
     <string name="curation_copied_sentence">Frase copiada</string>
     <string name="curation_preview_play_description">Reproducir vídeo</string>

@@ -111,6 +111,8 @@
     <string name="curation_clip_play">僅播放此片段</string>
     <string name="curation_clip_stop">停止片段預覽</string>
     <string name="curation_clip_reset">重設片段</string>
+    <string name="curation_clip_start_here">將片段起點設為播放位置</string>
+    <string name="curation_clip_end_here">將片段終點設為播放位置</string>
     <string name="curation_copied_word">已複製單字</string>
     <string name="curation_copied_sentence">已複製句子</string>
     <string name="curation_preview_play_description">播放影片</string>

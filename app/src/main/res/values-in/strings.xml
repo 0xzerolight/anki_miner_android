@@ -111,6 +111,8 @@
     <string name="curation_clip_play">Putar klip ini saja</string>
     <string name="curation_clip_stop">Hentikan pratinjau klip</string>
     <string name="curation_clip_reset">Atur ulang klip</string>
+    <string name="curation_clip_start_here">Mulai klip di posisi putar</string>
+    <string name="curation_clip_end_here">Akhiri klip di posisi putar</string>
     <string name="curation_copied_word">Kata disalin</string>
     <string name="curation_copied_sentence">Kalimat disalin</string>
     <string name="curation_preview_play_description">Putar video</string>

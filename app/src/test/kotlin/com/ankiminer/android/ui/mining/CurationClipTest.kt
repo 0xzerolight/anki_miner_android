@@ -87,24 +87,60 @@ class CurationClipTest {
     }
 
     @Test
-    fun `an override the recomputed travel no longer contains is dropped, and one it still contains survives`() {
-        // Legal when audio_padding is 5.0s: default (7.7, 20.0), travel (4.7, 23.0) comfortably
-        // contains the stored override.
+    fun `an override outside the default travel widens the travel instead of being dropped`() {
+        // Legal when audio_padding is 5.0s, or set at the playhead: the user lowers padding to
+        // 0.1s, so the default travel (9.6, 18.1) no longer reaches the stored override. The
+        // travel spans both instead, so the override still shows inside its own travel.
         val stale = CurationClipWindow(5.0, 6.0)
-        val wide = clipWindowUiState(12.7, 15.0, 5.0, override = stale)!!
-        assertEquals(5.0, wide.window.startSeconds, 1e-9)
-        assertEquals(6.0, wide.window.endSeconds, 1e-9)
-        assertTrue(wide.overridden)
-
-        // The user opens Settings and lowers padding to 0.1s, which pulls travel up to
-        // (9.6, 18.1) - past the same stored override. The default reseeds instead of
-        // returning a window outside its own travel.
         val narrow = clipWindowUiState(12.7, 15.0, 0.1, override = stale)!!
-        assertEquals(12.6, narrow.window.startSeconds, 1e-9)
-        assertEquals(15.1, narrow.window.endSeconds, 1e-9)
-        assertTrue(narrow.window.startSeconds >= narrow.travelStartSeconds)
-        assertTrue(narrow.window.endSeconds <= narrow.travelEndSeconds)
-        assertFalse(narrow.overridden)
+        assertEquals(5.0, narrow.window.startSeconds, 1e-9)
+        assertEquals(6.0, narrow.window.endSeconds, 1e-9)
+        assertEquals(2.0, narrow.travelStartSeconds, 1e-9)
+        assertEquals(18.1, narrow.travelEndSeconds, 1e-9)
+        assertTrue(narrow.overridden)
+    }
+
+    @Test
+    fun `an end set at a playhead ten seconds past the line lands exactly there`() {
+        val state = clipWindowUiState(12.7, 15.0, 0.3, override = null)!!
+        val moved = clipWindowAtPlayhead(state.window, 25.3, end = true)
+        assertEquals(12.4, moved.startSeconds, 1e-9)
+        assertEquals(25.3, moved.endSeconds, 1e-9)
+
+        val reseated = clipWindowUiState(12.7, 15.0, 0.3, CurationClipWindow(moved.startSeconds, moved.endSeconds))!!
+        assertEquals(moved, reseated.window)
+        assertEquals(9.4, reseated.travelStartSeconds, 1e-9)
+        assertEquals(28.3, reseated.travelEndSeconds, 1e-9)
+    }
+
+    @Test
+    fun `a start set at a playhead ten seconds before the line lands exactly there`() {
+        val state = clipWindowUiState(12.7, 15.0, 0.3, override = null)!!
+        val moved = clipWindowAtPlayhead(state.window, 2.4, end = false)
+        assertEquals(2.4, moved.startSeconds, 1e-9)
+        assertEquals(15.3, moved.endSeconds, 1e-9)
+
+        val reseated = clipWindowUiState(12.7, 15.0, 0.3, CurationClipWindow(moved.startSeconds, moved.endSeconds))!!
+        assertEquals(moved, reseated.window)
+        assertEquals(0.0, reseated.travelStartSeconds, 1e-9)
+    }
+
+    @Test
+    fun `an edge set past the other end keeps the minimum length by moving the other end`() {
+        val window = ClipWindowSeconds(12.4, 15.3)
+        assertEquals(ClipWindowSeconds(12.1, 12.3), clipWindowAtPlayhead(window, 12.3, end = true))
+        assertEquals(ClipWindowSeconds(15.2, 15.4), clipWindowAtPlayhead(window, 15.2, end = false))
+    }
+
+    @Test
+    fun `an edge set beyond the maximum length pulls the other end along`() {
+        assertEquals(ClipWindowSeconds(20.0, 50.0), clipWindowAtPlayhead(ClipWindowSeconds(12.4, 15.3), 50.0, end = true))
+        assertEquals(ClipWindowSeconds(0.0, 30.0), clipWindowAtPlayhead(ClipWindowSeconds(40.0, 45.0), 0.0, end = false))
+    }
+
+    @Test
+    fun `a playhead before the start of the file sets the start at zero`() {
+        assertEquals(ClipWindowSeconds(0.0, 15.3), clipWindowAtPlayhead(ClipWindowSeconds(12.4, 15.3), -1.0, end = false))
     }
 
     @Test

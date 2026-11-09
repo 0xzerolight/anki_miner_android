@@ -31,8 +31,9 @@ import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 
 /**
- * The per-word audio trim row: a continuous range slider over the clip's travel, a play/stop
- * button that previews exactly the in-flight window, and an explicit reset.
+ * The per-word audio trim row: a continuous range slider over the clip's travel with a
+ * set-at-playhead button either side, a play/stop button that previews exactly the in-flight
+ * window, and an explicit reset.
  *
  * Renders whenever the caller has a legal [state] to show - the player-and-timings gate lives in
  * the caller (mirrors [CurationExpansionControls]).
@@ -47,6 +48,11 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
  * [coerceClipWindow] has already legalised the drag - the one place a [CurationClipWindow] can be
  * built without risk. [onPlay] takes the raw [ClipWindowSeconds] for the same reason: playing the
  * window currently on screen must not require it to already be wire-legal.
+ *
+ * A button either side of the slider puts that end at the preview's playhead ([readPlayhead],
+ * desktop's start-here/end-here): for the exact moment a drag keeps missing, found in the player
+ * first. It never pauses: an end is set while listening, against the line still playing. The
+ * result goes through [clipWindowAtPlayhead], which already keeps it wire-legal.
  */
 @Composable
 internal fun CurationClipControls(
@@ -58,10 +64,13 @@ internal fun CurationClipControls(
     playTestTag: String,
     resetTestTag: String,
     readoutTestTag: String,
+    startHereTestTag: String,
+    endHereTestTag: String,
     onWindowChange: (CurationClipWindow) -> Unit,
     onReset: () -> Unit,
     onPlay: (ClipWindowSeconds) -> Unit,
     onStop: () -> Unit,
+    readPlayhead: () -> Double?,
     modifier: Modifier = Modifier,
 ) {
     // remember(state.window) re-seeds `live` whenever the source window changes (a new candidate,
@@ -69,6 +78,15 @@ internal fun CurationClipControls(
     // value, which is what keeps it from fighting the recomposition.
     var live by remember(state.window) { mutableStateOf(state.window) }
     val rangeDescription = stringResource(R.string.curation_clip_range_description)
+    val setEdgeAtPlayhead: (Boolean) -> Unit = { end ->
+        readPlayhead()?.let { playhead ->
+            val moved = clipWindowAtPlayhead(live, playhead, end)
+            live = moved
+            if (moved != state.window) {
+                onWindowChange(CurationClipWindow(moved.startSeconds, moved.endSeconds))
+            }
+        }
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
@@ -85,6 +103,16 @@ internal fun CurationClipControls(
                 horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconButton(
+                    onClick = { setEdgeAtPlayhead(false) },
+                    enabled = enabled,
+                    modifier = Modifier.minimumInteractiveComponentSize().testTag(startHereTestTag),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_clip_start_here),
+                        contentDescription = stringResource(R.string.curation_clip_start_here),
+                    )
+                }
                 RangeSlider(
                     value = live.startSeconds.toFloat()..live.endSeconds.toFloat(),
                     onValueChange = { range ->
@@ -119,6 +147,16 @@ internal fun CurationClipControls(
                         Modifier.weight(1f).testTag(sliderTestTag)
                             .semantics { contentDescription = rangeDescription },
                 )
+                IconButton(
+                    onClick = { setEdgeAtPlayhead(true) },
+                    enabled = enabled,
+                    modifier = Modifier.minimumInteractiveComponentSize().testTag(endHereTestTag),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_clip_end_here),
+                        contentDescription = stringResource(R.string.curation_clip_end_here),
+                    )
+                }
                 IconButton(
                     onClick = { if (playing) onStop() else onPlay(live) },
                     enabled = enabled,

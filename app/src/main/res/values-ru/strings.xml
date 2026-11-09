@@ -111,6 +111,8 @@
     <string name="curation_clip_play">Воспроизвести только этот клип</string>
     <string name="curation_clip_stop">Остановить предпросмотр клипа</string>
     <string name="curation_clip_reset">Сбросить клип</string>
+    <string name="curation_clip_start_here">Начать клип с текущей позиции</string>
+    <string name="curation_clip_end_here">Закончить клип на текущей позиции</string>
     <string name="curation_copied_word">Слово скопировано</string>
     <string name="curation_copied_sentence">Предложение скопировано</string>
     <string name="curation_preview_play_description">Воспроизвести видео</string>

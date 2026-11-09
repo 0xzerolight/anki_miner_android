@@ -111,6 +111,8 @@
     <string name="curation_clip_play">Nur diesen Clip abspielen</string>
     <string name="curation_clip_stop">Clip-Vorschau stoppen</string>
     <string name="curation_clip_reset">Clip zurücksetzen</string>
+    <string name="curation_clip_start_here">Clip an der Abspielposition beginnen</string>
+    <string name="curation_clip_end_here">Clip an der Abspielposition beenden</string>
     <string name="curation_copied_word">Wort kopiert</string>
     <string name="curation_copied_sentence">Satz kopiert</string>
     <string name="curation_preview_play_description">Video abspielen</string>

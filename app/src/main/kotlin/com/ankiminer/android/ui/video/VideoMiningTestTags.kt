@@ -70,6 +70,10 @@ object VideoMiningTestTags {
 
     fun candidateClipReset(candidateId: String): String = "candidate_clip_reset:$candidateId"
 
+    fun candidateClipStartHere(candidateId: String): String = "candidate_clip_start_here:$candidateId"
+
+    fun candidateClipEndHere(candidateId: String): String = "candidate_clip_end_here:$candidateId"
+
     fun candidateClipReadout(candidateId: String): String = "candidate_clip_readout:$candidateId"
 
     fun sentence(

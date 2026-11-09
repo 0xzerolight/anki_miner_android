@@ -111,6 +111,8 @@
     <string name="curation_clip_play">Lire uniquement cet extrait</string>
     <string name="curation_clip_stop">Arrêter l\'aperçu de l\'extrait</string>
     <string name="curation_clip_reset">Réinitialiser l\'extrait</string>
+    <string name="curation_clip_start_here">Commencer l\'extrait à la tête de lecture</string>
+    <string name="curation_clip_end_here">Terminer l\'extrait à la tête de lecture</string>
     <string name="curation_copied_word">Mot copié</string>
     <string name="curation_copied_sentence">Phrase copiée</string>
     <string name="curation_preview_play_description">Lire la vidéo</string>

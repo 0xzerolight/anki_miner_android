@@ -295,6 +295,13 @@ fun VideoMiningScreen(
             player?.playRange(window.startSeconds, window.endSeconds)
         }
         val onStopClipRange: () -> Unit = { player?.pause() }
+        // Read on press, not from the last position tick: the press may land between two ticks.
+        val readPlayhead: () -> Double? = {
+            player?.let {
+                it.tick()
+                it.positionSeconds.value
+            }
+        }
 
         val playerState = targetCuration?.player
         if (player != null && targetCuration != null && playerState != null) {
@@ -410,6 +417,7 @@ fun VideoMiningScreen(
                     onResetClipWindow = onResetClipWindow,
                     onPlayClipRange = onPlayClipRange,
                     onStopClipRange = onStopClipRange,
+                    readPlayhead = readPlayhead,
                     copy = copy,
                     wordLabel = wordLabel,
                     sentenceLabel = sentenceLabel,
@@ -774,6 +782,7 @@ private fun LazyListScope.curationItems(
     onResetClipWindow: (String) -> Unit,
     onPlayClipRange: (ClipWindowSeconds) -> Unit,
     onStopClipRange: () -> Unit,
+    readPlayhead: () -> Double?,
     copy: (String, String, String?) -> Unit,
     wordLabel: String,
     sentenceLabel: String,
@@ -996,10 +1005,13 @@ private fun LazyListScope.curationItems(
                         playTestTag = VideoMiningTestTags.candidateClipPlay(candidate.candidateId),
                         resetTestTag = VideoMiningTestTags.candidateClipReset(candidate.candidateId),
                         readoutTestTag = VideoMiningTestTags.candidateClipReadout(candidate.candidateId),
+                        startHereTestTag = VideoMiningTestTags.candidateClipStartHere(candidate.candidateId),
+                        endHereTestTag = VideoMiningTestTags.candidateClipEndHere(candidate.candidateId),
                         onWindowChange = { onSetClipWindow(candidate.candidateId, it) },
                         onReset = { onResetClipWindow(candidate.candidateId) },
                         onPlay = onPlayClipRange,
                         onStop = onStopClipRange,
+                        readPlayhead = readPlayhead,
                     )
                 }
             }
