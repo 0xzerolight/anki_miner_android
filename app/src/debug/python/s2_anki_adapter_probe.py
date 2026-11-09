@@ -73,6 +73,11 @@ def run(
         adapter.invalidate_existing_vocabulary_cache()
         after = sorted(adapter.get_existing_vocabulary())
         reviewed_after = sorted(adapter.get_reviewed_vocabulary())
+        # The same walks with "ignore suspended cards": the -is:suspended searches.
+        adapter.config = replace(config, ignore_suspended_cards=True)
+        adapter.invalidate_existing_vocabulary_cache()
+        known_ignoring_suspended = sorted(adapter.get_existing_vocabulary())
+        reviewed_ignoring_suspended = sorted(adapter.get_reviewed_vocabulary())
         return json.dumps(
             {
                 "created": created,
@@ -81,6 +86,8 @@ def run(
                 "knownAfter": after,
                 "reviewedBefore": reviewed_before,
                 "reviewedAfter": reviewed_after,
+                "knownIgnoringSuspended": known_ignoring_suspended,
+                "reviewedIgnoringSuspended": reviewed_ignoring_suspended,
                 "audioFilename": media.audio_filename,
                 "imageFilename": media.screenshot_filename,
             },
