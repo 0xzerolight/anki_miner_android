@@ -67,6 +67,8 @@ MIRRORED_FIELDS = {
     "NORMALIZE_AUDIO_LOUDNESS": "normalize_audio_loudness",
     "CROP_MANGA_TO_TEXT": "crop_manga_to_text",
     "KNOWN_FROM_REVIEWED_CARDS": "known_from_reviewed_cards",
+    "IGNORE_SUSPENDED_CARDS": "ignore_suspended_cards",
+    "MINE_NUMBER_COUNTERS": "mine_number_counters",
 }
 
 # Kotlin enum entry -> the wire string the engine stores. Keeps the two enum-valued mirrors

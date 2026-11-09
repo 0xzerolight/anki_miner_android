@@ -136,6 +136,8 @@ internal object SettingsBackupCodec {
             "normalize_audio_loudness",
             "crop_manga_to_text",
             "known_from_reviewed_cards",
+            "ignore_suspended_cards",
+            "mine_number_counters",
             "secondary_subtitle_enabled",
             // Appearance travels: a built-in palette always resolves on the receiving device, and
             // dynamic colour simply falls back where the platform cannot supply it.

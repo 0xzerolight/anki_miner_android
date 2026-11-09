@@ -424,6 +424,8 @@ class AppSettingsRepositoryTest {
             assertEquals(false, settings.cropMangaToText)
             // Off on desktop too, so nothing to keep.
             assertNull(settings.knownFromReviewedCards)
+            assertNull(settings.ignoreSuspendedCards)
+            assertNull(settings.mineNumberCounters)
             // Japanese had no built-in cleanup: the toggle goes off and the pattern stays unset, so
             // the draft's blank-to-null normalisation cannot turn it back on.
             assertEquals(false, settings.useSubtitleRegexFilter)
@@ -719,6 +721,8 @@ class AppSettingsRepositoryTest {
                 normalizeAudioLoudness = null,
                 cropMangaToText = null,
                 knownFromReviewedCards = null,
+                ignoreSuspendedCards = null,
+                mineNumberCounters = null,
                 secondarySubtitleEnabled = false,
                 pitchCategoryFormat = null,
                 maxParallelWorkers = null,
@@ -944,6 +948,8 @@ class AppSettingsRepositoryTest {
             normalizeAudioLoudness = true,
             cropMangaToText = false,
             knownFromReviewedCards = true,
+            ignoreSuspendedCards = true,
+            mineNumberCounters = true,
             // Non-default, or corrupting the key would quarantine to the value already stored.
             secondarySubtitleEnabled = true,
             pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
@@ -1149,6 +1155,11 @@ class AppSettingsRepositoryTest {
                 "known_from_reviewed_cards",
                 original.copy(knownFromReviewedCards = defaults.knownFromReviewedCards),
             ),
+            corruptBoolean(
+                "ignore_suspended_cards",
+                original.copy(ignoreSuspendedCards = defaults.ignoreSuspendedCards),
+            ),
+            corruptBoolean("mine_number_counters", original.copy(mineNumberCounters = defaults.mineNumberCounters)),
             corruptBoolean(
                 "secondary_subtitle_enabled",
                 original.copy(secondarySubtitleEnabled = defaults.secondarySubtitleEnabled),
