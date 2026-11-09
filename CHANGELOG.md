@@ -4,6 +4,33 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- **"Ignore suspended cards" (Settings -> Word filters).** A word whose only AnkiDroid cards are suspended counts as unknown: it can be mined again, and the i+1 sentence rule treats it as new. A note with any unsuspended card still counts as known. Off by default.
+- **"Mine numbers with their counters" (Settings -> Word filters, Japanese).** A number and its counter make one card fronted as the line writes it (4人, 一個, ３本), read with the counter's sound changes (よにん, いっこ, さんぼん) and defined by the counter's own dictionary entry. About 30 common counters are covered; a decimal or a fraction is left as before. Off by default.
+- **Set a clip's start or end at the playhead (Word Curation).** Two buttons beside the clip slider move that end of the word's clip to where the video is, also past the slider's default range, and playback carries on. When the clip would be shorter than 0.2 seconds or longer than 30, the other end moves with it.
+
+### Changed
+
+- **The mining engine is updated to desktop Anki Miner 3.12.0 (desktop `1500fd7f`).** The entries that follow are what it changes in mining and on the cards.
+- **Japanese mines common kana-only words and the kana spelling of words usually written in kanji.** もう, この, こと, ため, わたし, じっと, おなか and about 2,000 more become cards; before, every hiragana-only word other than a verb or adjective was dropped. A listed word must still be in an offline dictionary. To keep them off cards, pick Skip hiragana-only words (Settings -> Word filters -> Script type).
+- **Japanese mines a word and its particle as one card where JMdict lists them as one word (本当に, 誰も, 一人で, 今まで).** Before, the card was 本当 or 誰 and the particle was dropped.
+- **Japanese mines everyday place names (日本, 東京, パリ) and words built on them (日本人, 中国人).** Person names and places only JMnedict lists stay out.
+- **Japanese cards take the everyday reading of 私, 明日, 何 and 日本語 (わたし, あした, なに, にほんご).**
+- **A Japanese verb before 〜そう is mined as the verb (落ちそう -> 落ちる), and a word restarted after an ellipsis is mined (ボ……僕 -> 僕).** The bold on the sentence now covers そう, さ and がる, and the て + くれる, もらう, みる and いく chains.
+- **Word Curation lists only the other sentences a word could be mined from.** With "Only i+1 sentences" on, lines holding other new words are left out, and so are lines over the sentence length limits. A whitelisted word still lists every line.
+- **Romanian cards front the dictionary form, and verbs the citation infinitive (`a vorbi`).** The dictionary, frequency and known-word lookups still read `vorbi`. Lone caption letters and clitic pieces no longer become cards, and interjections and verbs no longer show a gender.
+- **Word lists no longer match a Japanese word through a lemma written with other kanji.** A whitelisted 返る no longer forces 帰る onto cards, and a blacklisted 掛ける no longer drops 賭ける; kana spellings such as わかる still match.
+
+### Fixed
+
+- **Romaji lines under Japanese captions stay out of the card's sentence.** In a cue of two or more lines, a line with no kana or kanji is left out; a cue with no Japanese line is kept whole.
+- **Clips from rolling auto-generated captions no longer run into the next line.** In a subtitle where most cues overlap the next one, each cue now ends where the next starts.
+- **A known 〜する verb covers its 〜される, 〜すべき and 〜せない forms.** 愛される is no longer mined as 愛す once 愛する is known.
+- **Videos whose audio tracks are named but not tagged use the mining language's track (Video tab).** A track named "Japanese", 日本語 or JPN with no language tag is used for card audio and played in Word Curation, and the audio track picker's Auto choice matches. A track tagged with another language is still never used.
+- **Dictionary images keep the size their dictionary sets, and definitions use the note type's own line spacing.** Kiku's glossary-split pages keep the definition styling, and Senren no longer shows a blank line under the dictionary name. Cards mined before keep their old styling.
+- **Fill in automatically leaves the furigana and pitch fields unmapped outside Japanese (Settings -> Cards & Anki -> Field mapping).** Before, Anki Miner Note's fields were mapped in every language, behind rows only Japanese shows.
+
 ## [2.1.2] - 2026-11-02
 
 ### Fixed
