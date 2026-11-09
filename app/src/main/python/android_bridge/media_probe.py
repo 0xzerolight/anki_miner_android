@@ -1,9 +1,10 @@
 """media.audiotracks: enumerate audio streams for the per-run track picker.
 
-The auto pick is the stream the run would take: the default-disposition track
-among those tagged in the mining language, else the first such track
-(``find_japanese_audio_stream``'s rule, keyed by the profile's
-``audio_track_codes``). The optional ``language`` (absent = ja) names it.
+The auto pick is the stream the run would take, by the extractor's own rule
+(``pick_audio_stream``): a track tagged in the mining language (the profile's
+``audio_track_codes``), else an untagged track whose title names the language;
+the default-disposition one among several, else the first. The optional
+``language`` (absent = ja) names it.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import logging
 from collections.abc import Mapping
 from pathlib import Path
 
-from .languages import JAPANESE, get_profile, payload_language, without_language
+from .languages import get_profile, payload_language, without_language
 from .protocol import BridgeProtocolError, encode_message
 
 logger = logging.getLogger(__name__)
@@ -43,18 +44,9 @@ def get_audio_tracks(payload: Mapping[str, object]) -> str:
     # Deferred: ANKI_MINER_HOME freezes at anki_miner import time.
     from anki_miner.utils.audio_track_detector import (
         _run_ffprobe_json,
-        is_japanese_language_tag,
         list_audio_streams,
-        matches_language_tag,
+        pick_audio_stream,
     )
-
-    if language == JAPANESE:
-        in_language = is_japanese_language_tag
-    else:
-        codes = get_profile(language).audio_track_codes
-
-        def in_language(tag: str | None) -> bool:
-            return matches_language_tag(tag, codes)
 
     video_path = Path(raw_path)
     ffprobe = str(Path(raw_native) / "libffprobe.so")
@@ -65,8 +57,9 @@ def get_audio_tracks(payload: Mapping[str, object]) -> str:
     if len(streams) > MAX_TRACKS:
         raise _fail("audio_tracks_probe_failed", f"More than {MAX_TRACKS} audio tracks")
 
-    matching = [s for s in streams if in_language(s.language_tag)]
-    auto = next((s for s in matching if s.is_default), matching[0] if matching else None)
+    from anki_miner.languages.registry import audio_title_language
+
+    auto = pick_audio_stream(streams, get_profile(language).audio_track_codes, audio_title_language(language))
 
     return encode_message(
         "media.audiotracks.result",

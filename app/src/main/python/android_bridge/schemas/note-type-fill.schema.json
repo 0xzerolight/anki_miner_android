@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/note-type-fill.json",
   "title": "Anki Miner Android note-type fill payload",
-  "$comment": "Payload-only request/result schema for anki.notetype.fill, desktop's \"Fill in automatically\" (services/note_presets.fill_note_type_fields). fieldNames are bounded by anki_limits_v1.json names.targetFields and names.field; the runtime also enforces their UTF-8 byte ceilings. With a preset, fields is the preset's whole map and an empty string is its answer, not a gap; without one, fields is the keyword pass. extraFields holds only the language's own card fields that matched.",
+  "$comment": "Payload-only request/result schema for anki.notetype.fill, desktop's \"Fill in automatically\" (services/note_presets.fill_note_type_fields). fieldNames are bounded by anki_limits_v1.json names.targetFields and names.field; the runtime also enforces their UTF-8 byte ceilings. With a preset, fields is the preset's whole map and an empty string is its answer, not a gap; without one, fields is the keyword pass. Either way, the furigana keys (expression_furigana, sentence_furigana) and pitch keys (pitch_position, pitch_category, pitch_graph, pitch_text) are empty strings in a language without that capability (desktop CAPABILITY_FIELD_KEYS). extraFields holds only the language's own card fields that matched.",
   "oneOf": [
     {"$ref": "#/$defs/request"},
     {"$ref": "#/$defs/result"}

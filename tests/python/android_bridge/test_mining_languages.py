@@ -346,6 +346,86 @@ def test_a_whitelisted_hiragana_word_reaches_curation_past_the_script_filter(
     assert curated == ["すごい"]
 
 
+class _AttestedEverywhere(_DefinedEverywhere):
+    """An indexed chain that attests every term, so kana recovery's probe answers yes."""
+
+    def ensure_loaded(self) -> bool:
+        return True
+
+    def offline_terms_exist(self, terms: list[str]) -> set[str]:
+        del terms
+        return set()
+
+    def offline_term_readings(self, terms: list[str]) -> dict[str, list[str]]:
+        del terms
+        return {}
+
+    def offline_term_commonness(self, terms: list[str]) -> None:
+        del terms
+        return None
+
+    def offline_term_rows(self, terms: list[str]) -> dict[str, list[tuple[str, str]]]:
+        del terms
+        return {}
+
+
+def _curated_japanese_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cue: str, tokens: list[object]
+) -> dict[str, str]:
+    """Each word curation offers on a one-cue ja run through the bridge's composition, front to sentence."""
+    from dataclasses import replace
+
+    import anki_miner.services.definition_service as definition_service
+    import anki_miner.services.subtitle_parser as subtitle_parser
+    from anki_miner.presenters import NullPresenter
+
+    monkeypatch.setattr(subtitle_parser, "get_shared_tagger", lambda: lambda _text: list(tokens))
+    monkeypatch.setattr(definition_service, "DefinitionService", _AttestedEverywhere)
+    subtitle = tmp_path / "episode.srt"
+    subtitle.write_text(f"1\n00:00:01,000 --> 00:00:02,000\n{cue}\n", encoding="utf-8")
+    config = replace(_japanese_config(tmp_path), include_known_words=True)
+    assert any(entry.kind == "indexed" and entry.enabled for entry in config.dictionary_chain)
+    adapters = SimpleNamespace(presenter=NullPresenter(), cancel_event=threading.Event())
+    processor = mining._build_processor(config, adapters, SimpleNamespace(verify_card_target=lambda: None))
+    curated: dict[str, str] = {}
+
+    def curate(words: list[object]) -> None:
+        curated.update((word.mined_form, word.sentence) for word in words)
+        return None  # cancel: phases 3-5 never run
+
+    try:
+        processor.process_episode(tmp_path / "episode.mkv", subtitle, curation_callback=curate)
+    finally:
+        processor.close()
+    return curated
+
+
+def test_a_japanese_run_keeps_a_romaji_line_out_of_the_sentence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Desktop 4a7fa95d6: the ja parser's script gate drops a two-line cue's romaji line."""
+    _runtime_lane()
+    tokens = [_tagger_token("猫", "名詞", "普通名詞"), _tagger_token("だ", "助動詞", "*")]
+
+    curated = _curated_japanese_run(monkeypatch, tmp_path, "猫だ\nneko da", tokens)
+
+    assert curated == {"猫": "猫だ"}
+
+
+def test_a_japanese_run_mines_a_kana_word_on_the_bundled_list(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Desktop 016e62760: もう is a word; the kana list (an importlib.resources asset) says so."""
+    _runtime_lane()
+    tokens = [_tagger_token("もう", "副詞", "*"), _tagger_token("猫", "名詞", "普通名詞")]
+
+    curated = _curated_japanese_run(monkeypatch, tmp_path, "もう猫", tokens)
+
+    assert set(curated) == {"もう", "猫"}
+
+
 def test_japanese_composition_keeps_the_known_words_file_and_language(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -572,13 +652,20 @@ def test_a_hebrew_novel_is_decoded_and_split_with_the_hebrew_seams(tmp_path: Pat
     assert [unit.text for unit in document.units] == ["הילד קרא ספר.", "הוא אהב אותו."]
 
 
-def test_a_japanese_reading_run_keeps_the_pre_transition_loader_call(tmp_path: Path) -> None:
+def test_a_japanese_reading_run_passes_only_its_script_gate(tmp_path: Path) -> None:
+    """Desktop ``load_reading_source`` hands the loader the ja parser's script gate (4a7fa95d6).
+
+    A volume keeps the loader's own manga-ocr block gate instead.
+    """
+    _runtime_lane()
     import android_bridge.reading_mining as reading_mining
+    from anki_miner.languages.registry import get_profile
 
     config = SimpleNamespace(known_words_db_path=tmp_path / "known_words.db")
-    # A ja volume keeps the loader's own manga-ocr block gate too.
-    for source_kind in ("txt", "mokuro"):
-        assert reading_mining._reading_loader_kwargs(config, source_kind) == {}
+    gate = get_profile("ja").script.contains_target_script
+    for source_kind in ("txt", "text", "epub"):
+        assert reading_mining._reading_loader_kwargs(config, source_kind) == {"has_target_script": gate}
+    assert reading_mining._reading_loader_kwargs(config, "mokuro") == {}
 
 
 def _language_config(tmp_path: Path, language: str) -> object:

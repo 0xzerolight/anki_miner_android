@@ -22,6 +22,7 @@ from anki_miner.utils import (
     wrap_target_furigana,
     wrap_target_plain,
 )
+from anki_miner.utils.ja_normalize import is_cjk_ideograph
 from anki_miner.utils.text_utils import _format_furigana
 
 if TYPE_CHECKING:
@@ -246,16 +247,35 @@ def _is_on_line(word: TokenizedWord, line: LineLemmas) -> bool:
     return word.sentence == line.line_text and abs(word.start_time - line.start_time) <= 1e-3
 
 
-def whitelisted_keys(front: str, lemma: str, word_list_service: WordListService) -> tuple[str, ...]:
-    """The whitelist entries a word matches: its card front, then its lemma.
+def _line_unknowns(line: LineLemmas, lemmas: set[str], fronts: set[str]) -> int:
+    """Distinct unknown words on ``line``: card fronts on a parsed line, lemmas on a hand-built one."""
+    return len(line.fronts & fronts) if line.front_spans else len(line.lemmas & lemmas)
 
-    This is the OR alias policy :meth:`WordFilterService.partition_whitelisted`
-    documents, kept in one place so the force-include split and the run-end
-    coverage report can never disagree about what "on the whitelist" means.
-    Strings rather than a ``TokenizedWord``: the processor's result funnel has
-    only Anki's confirmed ``(mined_form, lemma)`` lists to hand it. The strings
-    returned are the entries themselves (the file's own spelling), which is
-    what the report prints back.
+
+def lemma_names_front(front: str, lemma: str) -> bool:
+    """Whether a word list entry for *lemma* names the card *front* too.
+
+    True when every kanji the front writes is also in the lemma: a kana
+    spelling (わかる for 分かる), a kana-mixed one (のみ込む for 飲み込む) or an
+    okurigana variant (呼ばる for 呼ぶ). False when the front writes a kanji the
+    lemma lacks: UniDic files distinct words under one lemma (帰る under 返る,
+    撮る under 取る, 賭ける under 掛ける), and the front's kanji says which word
+    the card is. With 返る on a whitelist and a tiny frequency band, 帰る was
+    force-included. Always True for a script without kanji.
+    """
+    return all(char in lemma for char in front if is_cjk_ideograph(char))
+
+
+def whitelisted_keys(front: str, lemma: str, word_list_service: WordListService) -> tuple[str, ...]:
+    """The whitelist entries a word matches: its card front, then its lemma when that names it.
+
+    The lemma counts only under :func:`lemma_names_front`. Kept in one place so
+    the force-include split and the run-end coverage report can never disagree
+    about what "on the whitelist" means. Strings rather than a
+    ``TokenizedWord``: the processor's result funnel has only Anki's confirmed
+    ``(mined_form, lemma)`` lists to hand it. The strings returned are the
+    entries themselves (the file's own spelling), which is what the report
+    prints back.
 
     Args:
         front: The card-front spelling (``TokenizedWord.mined_form``).
@@ -266,7 +286,8 @@ def whitelisted_keys(front: str, lemma: str, word_list_service: WordListService)
         The matched entries, in ``(front, lemma)`` order; empty when neither is
         on the list.
     """
-    return tuple(key for key in (front, lemma) if word_list_service.is_whitelisted(key))
+    keys = (front, lemma) if lemma_names_front(front, lemma) else (front,)
+    return tuple(key for key in keys if word_list_service.is_whitelisted(key))
 
 
 def whitelist_hits(pairs: Iterable[tuple[str, str]], word_list_service: WordListService) -> frozenset[str]:
@@ -475,11 +496,12 @@ class WordFilterService:
         """Filter words using the user blacklist.
 
         Blacklist entries match against ``word.mined_form`` (the card-front
-        spelling) OR ``word.lemma`` — a word is dropped when EITHER form is
+        spelling) OR ``word.lemma`` when the lemma names that front
+        (:func:`lemma_names_front`). A word is dropped when either is
         blacklisted. UniDic collapses kanji variants
         (賭ける→掛ける) into one lemma, so keying on lemma alone let a blacklist
-        entry for the card front (賭ける) be ignored; mirrors the def/freq lookup
-        convention (commit 99e2c04). Users should enter dictionary forms in
+        entry for the card front (賭ける) be ignored; the same collapse is why a
+        blacklisted 掛ける must not drop 賭ける. Users should enter dictionary forms in
         their list files (e.g. 食べる, not 食べた). The whitelist is NOT consulted
         here: whitelisted words are force-included by
         :meth:`partition_whitelisted` before this filter runs, so they never
@@ -495,7 +517,10 @@ class WordFilterService:
         return [
             word
             for word in words
-            if not (word_list_service.is_blacklisted(word.mined_form) or word_list_service.is_blacklisted(word.lemma))
+            if not (
+                word_list_service.is_blacklisted(word.mined_form)
+                or (lemma_names_front(word.mined_form, word.lemma) and word_list_service.is_blacklisted(word.lemma))
+            )
         ]
 
     def partition_whitelisted(
@@ -510,14 +535,13 @@ class WordFilterService:
         before the within-run duplicate collapse. The integrity gates the
         whitelist does not override (known words, definition existence) have
         already run on ``words``. A word matches on ``word.mined_form`` (the
-        card-front spelling) OR ``word.lemma``, the convention shared with
-        :meth:`filter_by_word_lists`: UniDic collapses kanji variants
-        (賭ける→掛ける) into one lemma, so whitelisting the card front must
-        force-include it even though its lemma differs. This OR-match is the
-        explicit alias policy: a canonical-lemma whitelist entry also admits
-        every distinct card-front surface sharing that lemma (its
-        ``lemma-siblings``), including below an occurrence floor. ``words`` is
-        deduped on ``mined_form`` upstream (``SubtitleParserService``), so one
+        card-front spelling) OR ``word.lemma`` when the lemma names that front,
+        the convention shared with :meth:`filter_by_word_lists`: UniDic
+        collapses kanji variants (賭ける→掛ける) into one lemma, so whitelisting
+        the card front must force-include it even though its lemma differs, and
+        whitelisting 掛ける must not force 賭ける (:func:`lemma_names_front`). A
+        lemma entry still forces its kana spellings (分かる → わかる). ``words``
+        is deduped on ``mined_form`` upstream (``SubtitleParserService``), so one
         entry can force several same-lemma fronts. The match itself lives in
         :func:`whitelisted_keys`, shared with the run-end coverage report.
 
@@ -722,8 +746,9 @@ class WordFilterService:
         A word already on its best line, or with no line inside the caps, comes
         back as the same object; a moved word comes back from
         :meth:`_swap_word_to_line`, the i+1 filter's swap. The curator still
-        offers every line (:meth:`attach_sentence_candidates` runs at
-        curation, from the same index).
+        offers every line within the same caps and unknown limit
+        (:meth:`attach_sentence_candidates` runs at curation, from the same
+        index).
 
         Args:
             words: The words phase 2 kept so far, in order.
@@ -750,8 +775,9 @@ class WordFilterService:
 
         def rank(entry: tuple[int, LineLemmas]) -> tuple[int, bool, int, int]:
             position, line = entry
-            unknown = len(line.fronts & fronts) if line.front_spans else len(line.lemmas & lemmas)
-            count, outside, length = best_sentence_rank(unknown, line.line_text, spaced=spaced)
+            count, outside, length = best_sentence_rank(
+                _line_unknowns(line, lemmas, fronts), line.line_text, spaced=spaced
+            )
             return (count, outside, length, position)
 
         result: list[TokenizedWord] = []
@@ -1215,6 +1241,12 @@ class WordFilterService:
         words: list[TokenizedWord],
         line_index: list[LineLemmas],
         max_candidates: int | None = None,
+        *,
+        max_duration: float = 0.0,
+        max_chars: int = 0,
+        unknown_lemmas: set[str] | None = None,
+        unknown_fronts: set[str] | None = None,
+        max_unknown: int = 0,
     ) -> None:
         """Populate ``word.sentence_candidates`` for words that repeat across lines.
 
@@ -1222,11 +1254,14 @@ class WordFilterService:
         front (a hand-built line without fronts: whose content lemmas include
         ``word.lemma`` and whose matched surface preserves the card front), in
         subtitle order. A line holding only a UniDic lemma-sibling (取る for
-        撮る) is never offered. When a word appears on two or more compatible
+        撮る) is never offered. Only lines the run could mine the word from are
+        kept: inside the Sentences caps (:func:`within_sentence_caps`) and, with
+        ``max_unknown``, holding at most that many unknown words, counted as
+        :meth:`pick_best_sentences` counts them. When a word has two or more such
         lines, builds one fully-swapped :class:`TokenizedWord` variant per line
         (earliest-first) via :meth:`_swap_word_to_line` and assigns the list —
         including the variant for the word's current sentence, so the curator can
-        default-select it. Words on a single compatible line are left untouched
+        default-select it. Words left with a single line are left untouched
         (empty candidates ⇒ no picker).
 
         ``max_candidates`` is unbounded by default: the curator's picker scrolls,
@@ -1236,12 +1271,27 @@ class WordFilterService:
         by one furigana pass over the line), summed over words that repeat.
 
         Mutates ``words`` in place. Safe to call with an empty ``line_index``.
+
+        Args:
+            max_duration: The Sentences duration cap (``0.0`` = none).
+            max_chars: The Sentences character cap (``0`` = none).
+            unknown_lemmas: Phase 2's pre-filter unknown snapshot, as lemmas.
+            unknown_fronts: The same snapshot as card fronts.
+            max_unknown: The most unknown words an offered line may hold
+                (``0`` = no limit). An i+1 run passes ``1``.
         """
         if not line_index:
             return
         lines_by_front, lines_by_lemma = self._index_lines(line_index)
+        lemmas = (unknown_lemmas or set()) | {word.lemma for word in words}
+        fronts = (unknown_fronts or set()) | {word.mined_form for word in words}
         for word in words:
-            lines = [line for _, line in self._compatible_lines(word, lines_by_front, lines_by_lemma)]
+            lines = [
+                line
+                for _, line in self._compatible_lines(word, lines_by_front, lines_by_lemma)
+                if within_sentence_caps(line.duration, line.line_text, max_duration, max_chars)
+                and (max_unknown <= 0 or _line_unknowns(line, lemmas, fronts) <= max_unknown)
+            ]
             if len(lines) < 2:
                 continue
             if max_candidates is not None:

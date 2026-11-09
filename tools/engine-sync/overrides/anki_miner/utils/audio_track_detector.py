@@ -1,5 +1,6 @@
 """Detect Japanese audio streams in video files via ffprobe."""
 
+import functools
 import json
 import logging
 import re
@@ -108,14 +109,85 @@ def matches_language_tag(language_tag: str | None, codes: frozenset[str]) -> boo
     return bool(sep) and primary in codes
 
 
-def is_japanese_language_tag(language_tag: str | None) -> bool:
-    """Return whether *language_tag* identifies Japanese.
+@dataclass(frozen=True)
+class TitleLanguage:
+    """The language names an audio stream's title is read against.
 
-    Android keeps this name for ``android_bridge/media_probe.py``; it shares
-    :func:`matches_language_tag` so the audio-track picker agrees with the
-    engine's own auto-detect.
+    ``mining`` holds the casefolded names of the mining language; ``known``
+    every mining language's, ``mining`` included, so the first language a title
+    names decides. Built by
+    :func:`anki_miner.languages.registry.audio_title_language`: ``utils``
+    cannot reach the profiles itself.
     """
-    return matches_language_tag(language_tag, JAPANESE_LANGUAGE_CODES)
+
+    mining: frozenset[str]
+    known: frozenset[str]
+
+
+# Scripts written without spaces between words: Han, kana, Hangul (Korean
+# glues compounds: "한국어음성"), Thai, Lao, Myanmar and Khmer. A name is glued
+# to the next word in them ("日本語音声", "中文配音"), so they mark no word edge.
+_UNSPACED_SCRIPTS = (
+    "\u0e00-\u0eff\u1000-\u109f\u1100-\u11ff\u1780-\u17ff\u2e80-\u2fdf\u3005-\u3007\u3021-\u3029"
+    "\u3040-\u30ff\u3130-\u318f\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\ua960-\ua97f\uac00-\ud7ff"
+    "\uf900-\ufaff\uff66-\uff9f\U00020000-\U0003ffff"
+)
+_IN_UNSPACED_SCRIPT = re.compile(f"[{_UNSPACED_SCRIPTS}]")
+# A letter of a script written with spaces: a word character that is not a
+# digit, ``_`` or in one of :data:`_UNSPACED_SCRIPTS`.
+_SPACED_LETTER = rf"[^\W\d_{_UNSPACED_SCRIPTS}]"
+
+
+@functools.cache
+def _language_name_pattern(names: frozenset[str]) -> re.Pattern[str]:
+    """One alternation of *names*, longest first, each matched as a whole word.
+
+    A word edge is needed only between two letters of scripts written with
+    spaces: "Japanese" is not read in "Javanese", but "日本語" is in "日本語音声"
+    and "Japanese" in "Japanese5.1".
+    """
+    alternatives = []
+    for name in sorted(names, key=len, reverse=True):
+        before = "" if _IN_UNSPACED_SCRIPT.match(name[0]) else f"(?<!{_SPACED_LETTER})"
+        after = "" if _IN_UNSPACED_SCRIPT.match(name[-1]) else f"(?!{_SPACED_LETTER})"
+        alternatives.append(f"{before}{re.escape(name)}{after}")
+    return re.compile(f"({'|'.join(alternatives)})")
+
+
+def title_names_language(title: str | None, language: TitleLanguage) -> bool:
+    """Whether *title* names the mining language of *language*.
+
+    The first language name in the title decides, matched as a whole word:
+    "Japanese [Stereo]" and "日本語" name Japanese, "Javanese" names nothing and
+    "English (Japanese signs)" names English.
+    """
+    if not title:
+        return False
+    match = _language_name_pattern(language.known | language.mining).search(title.casefold())
+    return match is not None and match.group(1) in language.mining
+
+
+def pick_audio_stream(
+    streams: list[AudioStream], codes: frozenset[str], titles: TitleLanguage | None = None
+) -> AudioStream | None:
+    """The mining language's stream among *streams*, or None.
+
+    A stream whose language tag matches *codes* wins. Only when none does, a
+    stream with no language tag (none, or ``und``) whose title names the
+    language (:func:`title_names_language`, skipped when *titles* is None) is
+    taken: a stream tagged with another language is that language's, whatever
+    its title says. Among several, the default stream, else the first.
+    """
+    matches = [stream for stream in streams if matches_language_tag(stream.language_tag, codes)]
+    if not matches and titles is not None:
+        matches = [
+            stream
+            for stream in streams
+            if stream.language_tag in (None, "und") and title_names_language(stream.title_tag, titles)
+        ]
+    if not matches:
+        return None
+    return next((stream for stream in matches if stream.is_default), matches[0])
 
 
 def _positive_int(value: object) -> int | None:
@@ -446,12 +518,13 @@ def find_japanese_audio_stream(
     ffprobe_cmd: str = "ffprobe",
     *,
     codes: frozenset[str] | None = None,
+    titles: TitleLanguage | None = None,
     proc_registry: ProcessRegistry | None = None,
 ) -> AudioStream | None:
     """Probe a video file with ffprobe and return its mining-language audio stream.
 
-    Returns None if ffprobe fails, returns malformed JSON, or no audio stream
-    carries a matching language tag.
+    Returns None if ffprobe fails, returns malformed JSON, or
+    :func:`pick_audio_stream` finds no stream by tag or title.
 
     ``ffprobe_cmd`` is forwarded to :func:`list_audio_streams`; defaults to the
     bare ``"ffprobe"`` literal so direct callers are unaffected.
@@ -459,6 +532,8 @@ def find_japanese_audio_stream(
     ``codes`` is the mining language's ``LanguageProfile.audio_track_codes``;
     it is keyword-only so the pre-existing positional ``ffprobe_cmd`` callers
     stay untouched, and ``None`` means :data:`JAPANESE_LANGUAGE_CODES`.
+    ``titles`` is ``registry.audio_title_language`` for the same language; None
+    reads tags only.
     """
     wanted = JAPANESE_LANGUAGE_CODES if codes is None else codes
     streams = list_audio_streams(
@@ -467,15 +542,22 @@ def find_japanese_audio_stream(
         proc_registry=proc_registry,
     )
 
-    japanese_streams = [stream for stream in streams if matches_language_tag(stream.language_tag, wanted)]
-    if japanese_streams:
-        stream = next((candidate for candidate in japanese_streams if candidate.is_default), japanese_streams[0])
-        logger.info(
-            "Found matching audio: global stream %d, audio track %d (language: %s)",
-            stream.global_index,
-            stream.audio_index,
-            stream.language_tag,
-        )
+    stream = pick_audio_stream(streams, wanted, titles)
+    if stream is not None:
+        if matches_language_tag(stream.language_tag, wanted):
+            logger.info(
+                "Found matching audio: global stream %d, audio track %d (language: %s)",
+                stream.global_index,
+                stream.audio_index,
+                stream.language_tag,
+            )
+        else:
+            logger.info(
+                "Found matching audio by title: global stream %d, audio track %d (title: %s)",
+                stream.global_index,
+                stream.audio_index,
+                stream.title_tag,
+            )
         return stream
 
     available_langs = [s.language_tag or "unknown" for s in streams]

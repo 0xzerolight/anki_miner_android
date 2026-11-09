@@ -180,16 +180,17 @@ def profile_parser(config: object) -> Any:
     """A parser built like the run's, for display-only parsing and its text seams.
 
     Desktop ``service_factory.create_profile_parser``: Japanese keeps the literal
-    class, every other language its profile factory, so cue text is cleaned
-    with the same normaliser and bilingual-line gate mining applies.
+    class with its script gate, every other language its profile factory, so cue
+    text is cleaned with the same normaliser and bilingual-line gate mining applies.
     """
 
     language = config_language(config)
+    profile = get_profile(language)
     if language == JAPANESE:
         from anki_miner.services.subtitle_parser import SubtitleParserService
 
-        return SubtitleParserService(config)
-    return get_profile(language).create_parser(config)
+        return SubtitleParserService(config, has_target_script=profile.script.contains_target_script)
+    return profile.create_parser(config)
 
 
 def release_other_taggers(language: str) -> None:

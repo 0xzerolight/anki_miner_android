@@ -30,6 +30,7 @@ from anki_miner.services.deinflection import (
     find_highlight_end_with_trace,
     resolve_dictionary_form,
 )
+from anki_miner.services.kana_words import is_kanji_spelled, is_listed
 from anki_miner.services.lexical_joiner import LexicalJoiner
 from anki_miner.services.lrc_format import register_lrc_format
 from anki_miner.services.masu_stem_nominalizer import MasuStemNominalizer
@@ -58,6 +59,7 @@ from anki_miner.services.morphology import (
     resolve_attested_reading,
     resolve_reading_override,
 )
+from anki_miner.services.number_counters import merge_number_counters
 from anki_miner.services.reading.ruby_hints import apply_author_ruby
 from anki_miner.services.subtitle_cleaner import midpoint_in_ranges, mining_events
 from anki_miner.services.tagger import get_shared_tagger
@@ -123,6 +125,8 @@ PARSE_RELEVANT_CONFIG_FIELDS = (
     # Songs, signs and drawings leave the loaded events, so the cached line
     # states differ with it (F-08).
     "skip_opening_ending",
+    # A number and its counter merge into one cached token (3人).
+    "mine_number_counters",
 )
 
 # Dictionary-attested compound matching (Yomitan longest-match principle):
@@ -162,7 +166,8 @@ TokenMerger = Any
 # POS backstop for kana recovery: only inflectional content words are recovered
 # from the pure-hiragana script gate. Deliberately EXCLUDES 名詞 — formal nouns
 # こと/もの/ため clear content_gate_ok but are grammar noise as bare kana — and
-# 副詞/代名詞 (kana adverbs/pronouns are overwhelmingly fragments).
+# 副詞/代名詞 (kana adverbs/pronouns are overwhelmingly fragments). The kana
+# word list (services/kana_words.py) names the ones that are words (もう, これ).
 _KANA_RECOVER_POS1: frozenset[str] = frozenset({"動詞", "形容詞", "形状詞"})
 
 # Auxiliary pos2 subtypes rejected even inside _KANA_RECOVER_POS1. Both classes
@@ -178,6 +183,15 @@ _KANA_RECOVER_POS1: frozenset[str] = frozenset({"動詞", "形容詞", "形状�
 #   either. Kanji-spelled 非自立可能 tokens (見る, 来る) are untouched — they pass
 #   should_include and never reach this path.
 _KANA_RECOVER_REJECT_POS2: frozenset[str] = frozenset({"助動詞語幹", "非自立可能"})
+
+# How _kana_recovery brought a hiragana word back: by the content gate, or by
+# name from the kana word list (services/kana_words.py). A recovered word takes
+# the U4 window reject, and so does a listed kana spelling of a kanji-written
+# word (ご|ちそう, お|しまい); a word JMdict writes in kana does not, as its
+# longer expressions are listed spans, merged or joined before it is judged alone.
+_KANA_RECOVERED = "recovered"
+_KANA_LISTED = "listed"
+_KANA_LISTED_SPELLING = "listed spelling"
 
 #: The not-mined reason each preference gate reports. REJECT_STRUCTURE is absent
 #: on purpose: particles, auxiliaries, symbols and debris are never a word the user seeks.
@@ -701,6 +715,8 @@ class SubtitleParserService:
             rescuable_tags=frozenset(get_profile(language).pos_defaults.rescuable_tags),
         )
         self._force_include = force_include
+        # Settings → Word Filters → Mine numbers with counters (3人 → よにん).
+        self._number_counters: bool = config.mine_number_counters
         # The same test Anki's vocabulary scan keeps fronts by: a rescued front
         # outside the mining language's script could never read as known again.
         self._rescue_script = get_profile(language).script.contains_target_script
@@ -743,13 +759,14 @@ class SubtitleParserService:
                 # Memoized single-headword probe; the cache it reads is created
                 # later in __init__, before any line is merged.
                 reading_lookup=self._attested_readings if reading_lookup is not None else None,
+                entry_tags=self._entry_tags if form_lookup is not None else None,
             )
         # Masu-stem nominalization (see services/masu_stem_nominalizer.py).
         # Shares the same memoized probe; None when no dict is wired, so the
         # no-dict output stays byte-identical to pre-fix behavior.
         self._masu_stem_nominalizer: MasuStemNominalizer | None = None
         if self._attest is not None:
-            self._masu_stem_nominalizer = MasuStemNominalizer(self._attest)
+            self._masu_stem_nominalizer = MasuStemNominalizer(self._attest, self._form_lookup)
         # Grammar-cut words (思わず, 実は, くだらない; see services/lexical_joiner.py).
         # Attested through the term-OR-reading probe because the kana adjectives
         # are JMdict readings; None without one keeps the no-dict output unchanged.
@@ -814,7 +831,7 @@ class SubtitleParserService:
         # is deterministic per (surface, pos1), so _should_include_word runs it
         # once per distinct token instead of once per occurrence (count_lemmas is
         # a hot path: tens of thousands of tokens). Caches misses too.
-        self._kana_recover_cache: dict[tuple[str, str], bool] = {}
+        self._kana_recover_cache: dict[tuple[str, str, str | None, bool], str | None] = {}
         # U4 lexicalized-window attestation memo (see _rejected_by_lexicalized_window).
         # Keyed on the JOINED WINDOW STRING, never on (surface, pos1): the window
         # verdict is context-dependent, so the same recovery candidate can be
@@ -993,6 +1010,13 @@ class SubtitleParserService:
         """Return cached exact-headword readings, probing once on cache miss."""
         self._prefetch_attested_readings([headword])
         return self._attested_readings_cache.get(headword, [])
+
+    def _entry_tags(self, terms: list[str]) -> dict[str, set[str]]:
+        """Each term's dictionary entry tags (adv, exp, n, …), for the compound matcher."""
+        if self._form_lookup is None:
+            return {}
+        rows = self._form_lookup(terms)
+        return {term: {tag for _content, tags in found for tag in tags.split()} for term, found in rows.items()}
 
     def _furigana(self, s: str) -> str:
         """Return generate_furigana(s, tagger), memoized within the current parse pass."""
@@ -1387,6 +1411,10 @@ class SubtitleParserService:
             merged_tokens = self._name_matcher.merge_line(text, merged_tokens)
         if self._compound_matcher is not None:
             merged_tokens = self._compound_matcher.merge_line(text, merged_tokens)
+        # After the matcher, so a longer attested word keeps its number (一生一度
+        # stays whole rather than losing 一度).
+        if self._number_counters:
+            merged_tokens = merge_number_counters(text, merged_tokens)
         # AFTER the matcher on purpose: a token already covered by an attested
         # compound (ご存じ) is a 名詞 synthetic by now, so this pass skips it and
         # the two can never fight over the same token.
@@ -1597,7 +1625,7 @@ class SubtitleParserService:
         duration: float,
         sentence_furigana: str,
         sentence_reading: str,
-        seen_mined_forms: set[str],
+        seen_mined_forms: set[str] | None,
     ) -> TokenizedWord | None:
         """Build the ``TokenizedWord`` for one included token, mined_form-deduped.
 
@@ -1629,9 +1657,11 @@ class SubtitleParserService:
         # are distinct card fronts driving distinct definition/frequency/audio/
         # known-word lookups, so lemma-keyed dedup silently dropped the second
         # variant. mined_form is the identity every other stage already uses.
-        if mined in seen_mined_forms:
-            return None
-        seen_mined_forms.add(mined)
+        # None keeps every occurrence (parse_text_units' every_occurrence).
+        if seen_mined_forms is not None:
+            if mined in seen_mined_forms:
+                return None
+            seen_mined_forms.add(mined)
 
         if self._reading_support is not None:
             # An injected ReadingSupport owns the reading fields outright. The
@@ -1868,7 +1898,7 @@ class SubtitleParserService:
     def _emit_line_words_and_index(
         self,
         line_state: tuple[str, list[Any], list[Any], float, float, float],
-        seen_mined_forms: set[str],
+        seen_mined_forms: set[str] | None,
         *,
         collect_index: bool,
         rejects: dict[str, NotMinedReason] | None = None,
@@ -2151,6 +2181,47 @@ class SubtitleParserService:
         self._warn_if_nothing_mined(subtitle_file, all_words, subtitle_offset)
         return all_words, line_index
 
+    def reading_sentence(self, text: str, *, subtitle_cleanup: bool = False) -> str:
+        """A reading unit's text as :meth:`parse_text_units` stores it: its card sentence ("" when emptied).
+
+        Reading/OCR text needs the same pre-tokenization JP normalization the
+        subtitle path gets via clean_subtitle_text: mokuro OCR emits Kangxi
+        radicals (⼝) and halfwidth katakana (ﾊﾟｿｺﾝ) that mis-tokenize into
+        garbage otherwise. Order mirrors clean_subtitle_text
+        (normalize_for_tokenization then standardize_kanji_variants); an
+        injected normaliser replaces exactly that pair, as it does there. The
+        markup strip / regex filter it also runs apply to the subtitle-cue kind
+        only (``subtitle_cleanup``). No tagger is needed.
+        """
+        if self._normalize is None:
+            text = standardize_kanji_variants(normalize_for_tokenization(text))
+        else:
+            text = self._normalize(text)
+        if subtitle_cleanup:
+            # Reading→Subtitles per-cue cleanup remains here for synthetic
+            # ReadingUnit callers and is idempotent when the loader already
+            # stripped the cue.
+            text = self._apply_text_filter(strip_inline_annotations(text))
+        return text
+
+    def reading_entries(
+        self, units: Sequence[ReadingUnit], *, subtitle_cleanup: bool = False
+    ) -> list[tuple[float, float, str]]:
+        """The reading counterpart of :meth:`parse_raw_entries`: ``(index, index, sentence)`` per unit.
+
+        Each sentence is the one :meth:`parse_text_units` gives that unit's
+        words, at the dummy time it gives them (the unit index), so
+        ``find_cue_index`` locates a reading word's unit and ``expand_word_lines``
+        merges its neighbours. A unit the cleanup empties is left out, as the
+        parse skips it.
+        """
+        entries = []
+        for unit in units:
+            text = self.reading_sentence(unit.text, subtitle_cleanup=subtitle_cleanup)
+            if text:
+                entries.append((float(unit.index), float(unit.index), text))
+        return entries
+
     def parse_text_units(
         self,
         units: Sequence[ReadingUnit],
@@ -2158,6 +2229,7 @@ class SubtitleParserService:
         *,
         subtitle_cleanup: bool = False,
         count_by_lemma: bool = False,
+        every_occurrence: bool = False,
     ) -> tuple[list[TokenizedWord], list[LineLemmas] | None, collections.Counter[str]]:
         """Parse reading-tab text units into mining words, index, and lemma counts.
 
@@ -2202,11 +2274,16 @@ class SubtitleParserService:
             count_by_lemma: Key ``counts`` by lemma (``count_lemmas``
                 semantics) instead of card front. Readability sets it, so a
                 book scores on a subtitle file's basis.
+            every_occurrence: Emit a word for every mined occurrence, each
+                with its own span, instead of one per card front. For callers
+                that score segmentation (the monosashi benchmark adapter),
+                where a word's second occurrence in a sentence is a unit too.
 
         Returns:
             ``(words, line_index, counts)``. ``words`` is mined_form-deduped
             (first-occurrence-wins across the whole call, like the subtitle
-            entrypoints); ``line_index`` is the ``LineLemmas`` list when
+            entrypoints) unless ``every_occurrence``; ``line_index`` is the
+            ``LineLemmas`` list when
             ``want_line_index`` else ``None``; ``counts`` maps card front
             (``mined_form``), or lemma with ``count_by_lemma``, → total
             included occurrences (``count_fronts`` / ``count_lemmas``
@@ -2220,7 +2297,7 @@ class SubtitleParserService:
 
         all_words: list[TokenizedWord] = []
         line_index: list[LineLemmas] = []
-        seen_mined_forms: set[str] = set()
+        seen_mined_forms: set[str] | None = None if every_occurrence else set()
         counts: collections.Counter[str] = collections.Counter()
         rejects: dict[str, NotMinedReason] = {}
         # SK-31: a book's own furigana (ReadingUnit.ruby, EPUB only) replaces the
@@ -2231,31 +2308,13 @@ class SubtitleParserService:
         author_ruby = get_profile(self._tagger_language).takes_author_ruby
 
         for unit in units:
-            # Reading/OCR text needs the same pre-tokenization JP normalization
-            # the subtitle path gets via clean_subtitle_text: mokuro OCR emits
-            # Kangxi radicals (⼝) and halfwidth katakana (ﾊﾟｿｺﾝ) that mis-tokenize
-            # into garbage otherwise. The normalized text is stored as the card
-            # sentence and tokenized as _tokenizer_text(text): the same string for
-            # Japanese, the no-break spaces folded for every other language (one
-            # character for one, so offsets carry over), as on the subtitle path.
-            # Order mirrors clean_subtitle_text (normalize_for_tokenization then
-            # standardize_kanji_variants); the markup strip / regex filter it also
-            # runs are applied just below, subtitle-cue kind only
-            # (subtitle_cleanup). An injected normaliser replaces exactly that
-            # pair, as it does in clean_subtitle_text.
-            text = (
-                standardize_kanji_variants(normalize_for_tokenization(unit.text))
-                if self._normalize is None
-                else self._normalize(unit.text)
-            )
-            if subtitle_cleanup:
-                # Reading→Subtitles per-cue cleanup remains here for synthetic
-                # ReadingUnit callers and is idempotent when the loader already
-                # stripped the cue.
-                text = strip_inline_annotations(text)
-                text = self._apply_text_filter(text)
-                if not text:
-                    continue
+            # The card sentence; tokenized as _tokenizer_text(text): the same
+            # string for Japanese, the no-break spaces folded for every other
+            # language (one character for one, so offsets carry over), as on the
+            # subtitle path.
+            text = self.reading_sentence(unit.text, subtitle_cleanup=subtitle_cleanup)
+            if not text:
+                continue
             # Dummy timing: the index is both start and end (duration 0.0). No
             # re-windowing exists — the normalized unit text is the card sentence.
             line_state = self._build_line_state(text, float(unit.index), float(unit.index))
@@ -2287,7 +2346,8 @@ class SubtitleParserService:
             if line_lemmas_entry is not None:
                 line_index.append(line_lemmas_entry)
 
-        self.last_parse_rejects = _unmined_rejects(rejects, seen_mined_forms)
+        fronts = seen_mined_forms if seen_mined_forms is not None else {word.mined_form for word in all_words}
+        self.last_parse_rejects = _unmined_rejects(rejects, fronts)
         self._log_parse_probe_timing()
         return all_words, (line_index if want_line_index else None), counts
 
@@ -2624,10 +2684,10 @@ class SubtitleParserService:
 
         Tokens the pure morphology rule accepts (kanji / katakana loanwords) pass
         straight through. Anything it rejects gets ONE more chance:
-        ``_recover_kana_content_word`` re-admits a pure-hiragana 動詞/形容詞/形状詞
-        whose mined-form card front is an attested dictionary headword — recovering
-        real kana vocabulary (きれい, すごい, わかる) that the script gate drops by
-        default. count_lemmas and both mining passes call this method, so the
+        ``_recover_kana_content_word`` re-admits a pure-hiragana 動詞/形容詞/形状詞,
+        or a word on the kana word list, whose mined-form card front is an attested
+        dictionary headword — recovering real kana vocabulary (きれい, すごい, わかる,
+        もう, この) that the script gate drops by default. count_lemmas and both mining passes call this method, so the
         recovery is identical across count and mine (the T-38 parity guard).
         """
         if self._inclusion_rule.should_include(word_token):
@@ -2666,7 +2726,9 @@ class SubtitleParserService:
           (hiragana content word — pure hiragana once prolonged-sound marks are
           set aside for the script check, e.g. すげー — attested as its own
           front). On a recovery acceptance, apply the U4 lexicalized-window
-          reject (``_rejected_by_lexicalized_window``). Recovery surfaces are
+          reject (``_rejected_by_lexicalized_window``); a word taken by name
+          from the kana word list skips it, as これは would reject これ.
+          Recovery surfaces are
           never all-katakana, so the katakana guard can never fire on this
           branch.
         - both reject → last-chance ``_whitelist_rescues`` (R1): a token of a
@@ -2684,13 +2746,18 @@ class SubtitleParserService:
         front. The count loops pass none, and it never changes the verdict
         (T-38). Fragment guards and window rejects record nothing.
         """
+        # A number + counter (3人, ３つ) the setting merged: 数詞 is an excluded
+        # subtype and ３つ has no kanji, so it is taken before the gate.
+        if getattr(getattr(word_token, "feature", None), "number_counter", False) is True:
+            return not self._ellipsis_reject(word_token, text, tok_start, tok_end)
         rejection = self._inclusion_rule.rejection(word_token)
         if rejection is None:
             if self._is_katakana_run_fragment(word_token, text, tok_start, tok_end):
                 return False
             return not self._ellipsis_reject(word_token, text, tok_start, tok_end)
-        if self._recover_kana_content_word(word_token):
-            if self._rejected_by_lexicalized_window(word_token, tokens):
+        how = self._kana_recovery(word_token)
+        if how is not None:
+            if how != _KANA_LISTED and self._rejected_by_lexicalized_window(word_token, tokens):
                 return False
             return not self._ellipsis_reject(word_token, text, tok_start, tok_end)
         if not self._whitelist_rescues(word_token, text, tok_start, tok_end, tokens, raw_tokens):
@@ -2735,19 +2802,38 @@ class SubtitleParserService:
     ) -> bool:
         """Whether the run's whitelist rescues a token every inclusion path rejected (R1).
 
-        Cheap checks first: no whitelist, a tag the profile never rescues, or a
-        kana surface in the recovery's aux reject (いる/ある in ている)
-        (``_rescue_eligible``). Then the card front, resolved exactly as
-        emission resolves it, must be on the list. The lexicalized-window probe
-        (I/O) runs last, for whitelisted tokens only.
+        Cheap checks first: no whitelist and no commonness probe, a tag the
+        profile never rescues, or a kana surface in the recovery's aux reject
+        (いる/ある in ている) (``_rescue_eligible``). Then the card front,
+        resolved exactly as emission resolves it, must be on the list or be a
+        common place name (``_common_place_name``). The lexicalized-window probe
+        (I/O) runs last, for rescued tokens only.
         """
-        if self._force_include is None or not self._rescue_eligible(word_token):
+        if (self._force_include is None and self._term_common_lookup is None) or not self._rescue_eligible(word_token):
             return False
         kana = _is_kana_candidate(word_token.surface)
         mined = self._card_front(word_token, text, tok_start, tok_end, raw_tokens)
-        if not self._rescue_script(mined) or not self._force_include(mined):
+        if not self._rescue_script(mined):
+            return False
+        if not (self._force_include is not None and self._force_include(mined)) and not self._common_place_name(
+            word_token, mined
+        ):
             return False
         return not (kana and self._rejected_by_lexicalized_window(word_token, tokens))
+
+    def _common_place_name(self, word_token, front: str) -> bool:
+        """Whether a 固有名詞 place token is also an everyday dictionary word (日本, 北海道, パリ).
+
+        The place name is a word the learner needs, as a person's name is not:
+        only pos3 地名, and only a front a commonness-aware dictionary marks
+        common, which JMdict does for its own place entries and never for a
+        JMnedict-only name (秋葉原).
+        """
+        feature = getattr(word_token, "feature", None)
+        if getattr(feature, "pos2", None) != "固有名詞" or getattr(feature, "pos3", None) != "地名":
+            return False
+        common = self._memoized_term_common([front])
+        return bool(common and common.get(front))
 
     def _ellipsis_reject(self, word_token, text: str, tok_start: int, tok_end: int) -> bool:
         """The U8 guard, or ``False`` outright for a parser that closed the seam.
@@ -2904,8 +2990,10 @@ class SubtitleParserService:
 
         Post-acceptance REJECT layer shared by BOTH ``_mine_token`` branches and,
         unlike the U4/U5 rejects, DICT-FREE (positional + POS/cForm only) so it
-        fires on the video path too. Rejects only a token DIRECTLY abutting an
-        ellipsis char (``…``/``‥``) that also matches one truncation signal:
+        fires on the video path too. Rejects only a token DIRECTLY followed by an
+        ellipsis char (``…``/``‥``) that also matches one truncation signal. The
+        cut-off piece is always left of the ellipsis; the word after it is the
+        restart, complete (ボ……僕 drops ボ and keeps 僕, ……待って keeps 待つ):
 
         (a) a 動詞/形容詞 stranded in a cut conjugation — its ``cForm`` PREFIX is
             one of 連用形/未然形/語幹/仮定形 (欲し…→欲する). unidic emits hyphenated
@@ -2917,15 +3005,14 @@ class SubtitleParserService:
             STUTTER line of ≥2 ellipsis groups (合…/タ… イガ…). ``……`` is one
             group, so a single trailing 夢…… survives.
 
-        Adjacency is SET membership; the line-edge sentinel "" (a token at a line
-        boundary) is not a member, so a boundary token is never falsely adjacent.
+        Adjacency is SET membership; the line-edge sentinel "" (a token at the
+        line end) is not a member, so a boundary token is never falsely adjacent.
         Deliberate recall loss (plan ledger): trailing 連用中止法 (飲み…→飲む) and
         single-char content nouns in ≥2-group lines (声, 年) — all common words
         mined elsewhere.
         """
-        left = text[tok_start - 1] if tok_start > 0 else ""
         right = text[tok_end] if tok_end < len(text) else ""
-        if left not in _ELLIPSIS_CHARS and right not in _ELLIPSIS_CHARS:
+        if right not in _ELLIPSIS_CHARS:
             return False
         feature = getattr(word_token, "feature", None)
         # (a) severed inflectional tail of a verb/adjective.
@@ -2945,48 +3032,58 @@ class SubtitleParserService:
         )
 
     def _recover_kana_content_word(self, word_token) -> bool:
-        """Whether an otherwise-rejected hiragana content word is recoverable.
+        """Whether an otherwise-rejected hiragana content word is recoverable."""
+        return self._kana_recovery(word_token) is not None
+
+    def _kana_recovery(self, word_token) -> str | None:
+        """How an otherwise-rejected hiragana word comes back: ``_KANA_RECOVERED``, ``_KANA_LISTED``, ``_KANA_LISTED_SPELLING`` or None.
 
         Gate (ALL must hold; cheap checks first so the SQLite probe is the last
         resort and only distinct tokens ever reach it):
 
         1. A reading-capable offline probe is wired — else safe-degrade to no
            recovery (``None`` ⇒ today's behavior).
-        2. ``pos1 ∈ {動詞, 形容詞, 形状詞}`` and ``pos2 ∉ {助動詞語幹, 非自立可能}``
-           — the junk backstop that excludes 名詞 formal nouns (こと/もの/ため),
-           grammaticalized 形状詞 auxiliaries (よう/みたい in ようだ/みたいな) and
-           auxiliary-capable verbs (いる/ある/くれる in ている/てくれる)
-           content_gate_ok alone would let through.
-        3. Removing ``ー`` leaves non-empty pure hiragana — the script gate also
+        2. Removing ``ー`` leaves non-empty pure hiragana — the script gate also
            drops colloquial hiragana words containing the prolonged-sound mark.
            Removal is only for this check; cache/mining/attestation keep the
            original surface.
-        4. ``content_gate_ok`` passes and the mined-form card front is attested
-           (memoized per ``(surface, pos1)`` — steps 4+ run once per distinct
-           token, never per occurrence).
+        3. Either ``pos1 ∈ {動詞, 形容詞, 形状詞}`` and ``pos2 ∉ {助動詞語幹,
+           非自立可能}`` (recovered) — the junk backstop that excludes 名詞 formal
+           nouns (こと/もの/ため), grammaticalized 形状詞 auxiliaries (よう/みたい in
+           ようだ/みたいな) and auxiliary-capable verbs (いる/ある/くれる in
+           ている/てくれる) content_gate_ok alone would let through — or the card
+           front is on the kana word list (listed: もう, この, いつも).
+        4. A recovered word passes ``content_gate_ok``, a listed one
+           ``structural_ok``, and the mined-form card front is attested
+           (memoized per token shape — steps 4+ run once per distinct token,
+           never per occurrence).
         """
         if self._kana_attest_lookup is None:
-            return False
-        feature = getattr(word_token, "feature", None)
-        pos1 = getattr(feature, "pos1", None)
-        if pos1 not in _KANA_RECOVER_POS1:
-            return False
-        if getattr(feature, "pos2", None) in _KANA_RECOVER_REJECT_POS2:
-            # ようだ/みたいな stems + いる/ある-class auxiliary-capable verbs —
-            # grammar, not vocabulary. See constant for the full rationale.
-            return False
+            return None
         surface = word_token.surface
         if not _is_kana_candidate(surface):
-            return False
-        key = (surface, pos1)
+            return None
+        feature = getattr(word_token, "feature", None)
+        pos1 = getattr(feature, "pos1", None)
+        if not isinstance(pos1, str):
+            return None
+        # ようだ/みたいな stems + いる/ある-class auxiliary-capable verbs are
+        # grammar, not vocabulary; the list names the few words among them.
+        pos2 = getattr(feature, "pos2", None)
+        recoverable = pos1 in _KANA_RECOVER_POS1 and pos2 not in _KANA_RECOVER_REJECT_POS2
+        merged = getattr(word_token, "compound", False) is True
+        # pos2 is part of the key: the auxiliary-capable つける (気をつける) and the
+        # main verb つける share surface and pos1 but not the verdict, nor do the
+        # noun ちどり and the name ちどり (固有名詞, an excluded subtype).
+        key = (surface, pos1, pos2, merged)
         if key not in self._kana_recover_cache:
             if len(self._kana_recover_cache) >= _FRONT_CACHE_CAP:
                 self._kana_recover_cache.clear()
-            self._kana_recover_cache[key] = self._probe_kana_recovery(word_token, pos1, surface)
+            self._kana_recover_cache[key] = self._probe_kana_recovery(word_token, pos1, surface, recoverable, merged)
         return self._kana_recover_cache[key]
 
-    def _probe_kana_recovery(self, word_token, pos1: str, surface: str) -> bool:
-        """content_gate_ok + term-OR-reading attestation of the mined-form front.
+    def _probe_kana_recovery(self, word_token, pos1: str, surface: str, recoverable: bool, merged: bool) -> str | None:
+        """The content gate (recovered) or list membership (listed), then attestation of the front.
 
         The form probed is the exact card front ``_emit_word`` would mint
         (``_resolve_front`` then ``select_mined_form``): the surface for 形状詞
@@ -2995,17 +3092,30 @@ class SubtitleParserService:
         never reads ``entries.score`` (uniformly 0 on the bundled dict).
         """
         lookup = self._kana_attest_lookup
-        if lookup is None:  # unreachable via _recover_kana_content_word; narrows for mypy
-            return False
-        if not self._inclusion_rule.content_gate_ok(word_token):
-            return False
+        if lookup is None:  # unreachable via _kana_recovery; narrows for mypy
+            return None
+        if recoverable:
+            if not self._inclusion_rule.content_gate_ok(word_token):
+                return None
+        # A listed word overrides allowed_pos and the interjection skip, never
+        # an excluded subtype: a kana given name (さくら 固有名詞) stays out.
+        elif not self._inclusion_rule.structural_ok(word_token) or (
+            getattr(word_token.feature, "pos2", None) in self._inclusion_rule.excluded_subtypes
+        ):
+            return None
         orth_base = self._mining_base(word_token)
         resolved_front = self._resolve_front(word_token, orth_base, surface, 0, len(surface))
         lemma = self._extract_lemma(word_token)
         form = select_mined_form(pos1, resolved_front, lemma, surface)
         if not form:
-            return False
+            return None
+        if not recoverable and not is_listed(form, pos1, merged=merged):
+            return None
         probe_start = time.perf_counter()
-        result = bool(lookup([form]).get(form))
+        attested = bool(lookup([form]).get(form))
         self._probe_time_s += time.perf_counter() - probe_start
-        return result
+        if not attested:
+            return None
+        if recoverable:
+            return _KANA_RECOVERED
+        return _KANA_LISTED_SPELLING if not merged and is_kanji_spelled(form, pos1) else _KANA_LISTED

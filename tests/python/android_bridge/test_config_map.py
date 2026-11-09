@@ -82,7 +82,7 @@ def test_an_empty_snapshot_is_refused_because_the_desktop_note_type_is_blank(tmp
     assert str(error.value).startswith("anki_note_type:")
 
 
-def test_a_note_type_alone_keeps_all_140_desktop_defaults_except_targeted_android_overrides(
+def test_a_note_type_alone_keeps_all_142_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
     from anki_miner.config import AnkiMinerConfig
@@ -103,11 +103,14 @@ def test_a_note_type_alone_keeps_all_140_desktop_defaults_except_targeted_androi
     )
 
     desktop_fields = fields(AnkiMinerConfig)
-    assert len(desktop_fields) == 140
+    assert len(desktop_fields) == 142
     assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
         field.name: getattr(expected, field.name) for field in desktop_fields
     }
     assert mapped.android_tts_enabled is False
+    # Desktop 3.12.0's two switches, unmapped so far: both stay at the desktop default.
+    assert mapped.engine_config.ignore_suspended_cards is False
+    assert mapped.engine_config.mine_number_counters is False
 
 
 def test_ffmpeg_binary_verification_logs_non_executable_and_missing_paths(

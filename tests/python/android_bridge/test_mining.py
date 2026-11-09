@@ -1873,6 +1873,8 @@ def test_runtime_composition_injects_only_android_video_services(
     initialized_bridge_home: Path,
 ) -> None:
     pytest.importorskip("requests", reason="runtime dependency lane")
+    from anki_miner.languages.registry import get_profile
+
     modules = {
         name: importlib.import_module(name)
         for name in (
@@ -1946,7 +1948,11 @@ def test_runtime_composition_injects_only_android_video_services(
             term_rules_lookup: object,
             form_lookup: object,
             force_include: object,
+            has_target_script: object,
         ) -> None:
+            # Desktop _create_subtitle_parser: the ja parser gets ja's script gate,
+            # which drops the romaji line of a two-line cue (4a7fa95d6).
+            assert has_target_script == get_profile("ja").script.contains_target_script
             assert term_lookup is expected_term_lookup
             assert reading_lookup is expected_reading_lookup
             assert kana_attest_lookup is expected_kana_attest_lookup

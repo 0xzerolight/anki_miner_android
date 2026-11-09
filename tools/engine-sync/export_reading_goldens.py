@@ -331,9 +331,10 @@ def _loader_kwargs(kind: str) -> dict[str, Any]:
 
     Mirrors ``anki_miner/gui/workers/reading_queue_worker.py`` at the pin without
     importing the GUI package. The corpus mines in the default language (ja): its
-    ladder is the loaders' built-in path (``import_decode_ladder`` gives None) and its
-    parser injects neither ``normalize`` nor ``has_target_script``. Cancellation is
-    left out; it changes no output.
+    ladder is the loaders' built-in path (``import_decode_ladder`` gives None), its
+    parser injects no ``normalize``, and its ``has_target_script`` is ja's script
+    gate (``service_factory._create_subtitle_parser``), which a mokuro volume
+    replaces with the loader's own. Cancellation is left out; it changes no output.
     """
     from anki_miner.config import AnkiMinerConfig
     from anki_miner.languages.registry import config_language, get_profile
@@ -342,7 +343,7 @@ def _loader_kwargs(kind: str) -> dict[str, Any]:
     config = AnkiMinerConfig()
     profile = get_profile(config_language(config))
     ladder = None if profile is get_profile("ja") else profile.import_encodings
-    has_target_script = None
+    has_target_script = profile.script.contains_target_script
     if kind == "mokuro":
         has_target_script = (
             None
