@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-09
+
 ### Added
 
 - **"Ignore suspended cards" (Settings -> Word filters).** A word whose only AnkiDroid cards are suspended counts as unknown: it can be mined again, and the i+1 sentence rule treats it as new. A note with any unsuspended card still counts as known. Off by default. With "Use the local known-words database" on, words cached before stay known until Rebuild cached words.
