@@ -16,6 +16,11 @@ def dispatch_json(payload: dict[str, object]) -> dict[str, object]:
     return json.loads(boundary.dispatch(encode_message("media.audiotracks", payload)))
 
 
+def _runtime_lane() -> None:
+    # The auto pick reads the language registry (its title names), which imports pysubs2.
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+
+
 def _audio_track_detector():
     import anki_miner.utils.audio_track_detector as audio_track_detector
 
@@ -26,6 +31,7 @@ def test_returns_tracks_and_auto_index(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _runtime_lane()
     audio_track_detector = _audio_track_detector()
     streams = [
         audio_track_detector.AudioStream(
@@ -61,6 +67,7 @@ def test_auto_index_prefers_default_disposition(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _runtime_lane()
     audio_track_detector = _audio_track_detector()
     streams = [
         audio_track_detector.AudioStream(
@@ -93,6 +100,7 @@ def test_auto_index_accepts_bcp47_prefix(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _runtime_lane()
     audio_track_detector = _audio_track_detector()
     streams = [
         audio_track_detector.AudioStream(
@@ -116,6 +124,7 @@ def test_auto_index_null_without_japanese(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _runtime_lane()
     audio_track_detector = _audio_track_detector()
     streams = [
         audio_track_detector.AudioStream(
@@ -133,6 +142,49 @@ def test_auto_index_null_without_japanese(
     result = dispatch_json(_payload())
 
     assert result["payload"]["autoAudioIndex"] is None
+
+
+def _titled(audio_index: int, language_tag: str | None, title: str | None) -> object:
+    return _audio_track_detector().AudioStream(
+        global_index=audio_index + 1,
+        audio_index=audio_index,
+        language_tag=language_tag,
+        title_tag=title,
+        codec="aac",
+        channels=2,
+        is_default=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("streams", "auto"),
+    [
+        # An untagged track whose title names Japanese wins over an untagged first one.
+        ([(None, "English"), (None, "Japanese [Stereo]")], 1),
+        ([("und", "English"), ("und", "日本語音声")], 1),
+        # A track tagged Japanese still beats a titled untagged one.
+        ([(None, "Japanese"), ("jpn", None)], 1),
+        # A track tagged with another language is that language's, whatever its title says.
+        ([("eng", "Japanese"), (None, "Commentary")], None),
+        # The first language a title names decides.
+        ([(None, "English (Japanese signs)")], None),
+    ],
+)
+def test_auto_index_reads_an_untagged_tracks_title_as_the_run_does(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    streams: list[tuple[str | None, str | None]],
+    auto: int | None,
+) -> None:
+    """Desktop cf8bd3a83: the picker's auto pick is ``pick_audio_stream``, the extractor's own rule."""
+    _runtime_lane()
+    audio_track_detector = _audio_track_detector()
+    probed = [_titled(index, tag, title) for index, (tag, title) in enumerate(streams)]
+    monkeypatch.setattr(audio_track_detector, "list_audio_streams", lambda *a, **k: probed)
+
+    result = dispatch_json(_payload())
+
+    assert result["payload"]["autoAudioIndex"] == auto
 
 
 def test_probe_failure_is_an_error(
@@ -153,6 +205,7 @@ def test_zero_audio_tracks_is_success(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _runtime_lane()
     audio_track_detector = _audio_track_detector()
     monkeypatch.setattr(audio_track_detector, "list_audio_streams", lambda *a, **k: [])
     monkeypatch.setattr(audio_track_detector, "_run_ffprobe_json", lambda *a, **k: {"streams": []})
@@ -214,6 +267,7 @@ def test_ffprobe_path_is_derived_from_native_library_dir(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _runtime_lane()
     audio_track_detector = _audio_track_detector()
     captured: dict[str, object] = {}
 

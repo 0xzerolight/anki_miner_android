@@ -4,13 +4,19 @@ import json
 import re
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from android_bridge import boundary
 from android_bridge.protocol import encode_message
 
 SRT = "1\n00:00:01,000 --> 00:00:02,500\nこんにちは\n\n2\n00:00:04,000 --> 00:00:05,000\n<i>さようなら</i>\n"
+
+
+def _ja_script_gate(text: str) -> bool:
+    """Stands in for ja's ``contains_target_script``, which the profile registry holds."""
+    del text
+    return True
 
 
 def dispatch_json(message: dict[str, object]) -> dict[str, object]:
@@ -57,6 +63,15 @@ def _install_subtitle_parser(
     parser_module.clean_subtitle_text = lambda text, **_kwargs: " ".join(text.split())
     monkeypatch.setitem(sys.modules, "anki_miner.services", services)
     monkeypatch.setitem(sys.modules, "anki_miner.services.subtitle_parser", parser_module)
+    # The ja display parser takes ja's script gate off its profile (desktop
+    # create_profile_parser); the profile registry imports the real parser.
+    from android_bridge import languages
+
+    monkeypatch.setattr(
+        languages,
+        "get_profile",
+        lambda code: SimpleNamespace(script=SimpleNamespace(contains_target_script=_ja_script_gate)),
+    )
 
 
 @pytest.fixture
@@ -65,7 +80,9 @@ def configured_tokenizer_bridge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     class _Parser:
-        def __init__(self, config: object) -> None:
+        def __init__(self, config: object, *, has_target_script: object) -> None:
+            # Romaji lines of a two-line cue stay out of the cue text, as in the run (4a7fa95d6).
+            assert has_target_script is _ja_script_gate
             self.config = config
 
         def parse_raw_entries(self, path: Path) -> list[tuple[float, float, str]]:
@@ -286,7 +303,8 @@ def test_arrow_in_cue_text_is_not_counted_as_another_cue(
     from android_bridge import subtitles
 
     class _Parser:
-        def __init__(self, config: object) -> None:
+        def __init__(self, config: object, *, has_target_script: object) -> None:
+            del has_target_script
             self.config = config
             self._filter_pattern = None
 
@@ -324,7 +342,8 @@ def test_regex_expansion_limit_rejects_before_parser_materialization(
     parser_called = False
 
     class _Parser:
-        def __init__(self, config: object) -> None:
+        def __init__(self, config: object, *, has_target_script: object) -> None:
+            del has_target_script
             self.config = config
             self._filter_pattern = re.compile("a")
 
@@ -467,8 +486,8 @@ def test_cues_unconfigured_tokenizer(
     del initialized_bridge_home
 
     class _UnconfiguredParser:
-        def __init__(self, config: object) -> None:
-            del config
+        def __init__(self, config: object, *, has_target_script: object) -> None:
+            del config, has_target_script
             raise RuntimeError("Android tokenizer backend has not been configured")
 
     _install_subtitle_parser(monkeypatch, _UnconfiguredParser)

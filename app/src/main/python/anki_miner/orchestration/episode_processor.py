@@ -291,6 +291,16 @@ def _document_tag_values(document: ReadingDocument) -> dict[str, str]:
     return {"series": document.episode.strip(), "episode": "", "volume": ""}
 
 
+def reading_cleanup(document: ReadingDocument) -> bool:
+    """Whether *document*'s units get the video path's annotation strip + regex filter.
+
+    Only the per-cue kinds (subtitle files, an Anki deck's subtitle lines) do;
+    manga/OCR and book text pass through. The ``subtitle_cleanup`` of
+    ``parse_text_units`` and ``reading_entries``.
+    """
+    return document.kind in ("subtitle", "deck")
+
+
 def _online_run_identity(site: str, video_id: str) -> tuple[str, str]:
     """(series, episode) a fetched video is recorded under in stats and receipts.
 
@@ -2043,7 +2053,7 @@ class EpisodeProcessor:
         # Within-run duplicate collapse. mined_form collisions under the
         # language's comparison fold (profile.dedup_fold: de Essen/essen, zh
         # 頭髮/头发) are one card identity, as they are to known words, the word
-        # lists, excluded-deck admission and Anki's in-batch check, so they
+        # lists, scanned-vocabulary admission and Anki's in-batch check, so they
         # collapse here too (P4); raw when the language has no fold. Orthographic aliases need a
         # dictionary identity instead: exact-term sequence + contextual reading,
         # scoped by dictionary. Never use the normal term-OR-reading lookup here;
@@ -2973,19 +2983,41 @@ class EpisodeProcessor:
         The caller distinguishes the two outcomes with ``isinstance(..., ProcessingResult)``.
         """
         if line_index is not None:
+            # The targets are unioned in exactly as filter_i_plus_one does: a
+            # snapshot that somehow misses a mineable word must not make its
+            # line look emptier than it is.
+            unknown_lemmas = ctx.unknown_lemmas | {w.lemma for w in unknown_words}
+            unknown_fronts = ctx.unknown_fronts | {w.mined_form for w in unknown_words}
             # Attach alternative example sentences so the curator can offer a
-            # per-word sentence picker (no-op for words on a single line).
-            self.word_filter.attach_sentence_candidates(unknown_words, line_index)
+            # per-word sentence picker (no-op for words on a single line). The
+            # picker offers only lines phase 2 could have mined the word from:
+            # inside the length caps and, under i+1, i+1 lines. Whitelist
+            # force-includes bypassed those filters, so they keep every line.
+            if self.config.bypass_optional_filters:
+                self.word_filter.attach_sentence_candidates(unknown_words, line_index)
+            else:
+                forced: list[TokenizedWord] = []
+                rest = unknown_words
+                whitelist_service = self._active_whitelist()
+                if whitelist_service is not None:
+                    forced, rest = self.word_filter.partition_whitelisted(unknown_words, whitelist_service)
+                self.word_filter.attach_sentence_candidates(forced, line_index)
+                self.word_filter.attach_sentence_candidates(
+                    rest,
+                    line_index,
+                    max_duration=self.config.max_sentence_duration_seconds,
+                    max_chars=self.config.max_sentence_chars,
+                    unknown_lemmas=unknown_lemmas,
+                    unknown_fronts=unknown_fronts,
+                    max_unknown=1 if self.config.use_i_plus_one_filter else 0,
+                )
             # Per-word i+1 signal for the curator's "Unknowns in line" column.
-            # Runs after the candidates, which it stamps too. The targets are
-            # unioned in exactly as filter_i_plus_one does: a snapshot that
-            # somehow misses a mineable word must not make its line look
-            # emptier than it is.
+            # Runs after the candidates, which it stamps too.
             self.word_filter.attach_line_unknown_counts(
                 unknown_words,
                 line_index,
-                ctx.unknown_lemmas | {w.lemma for w in unknown_words},
-                unknown_fronts=ctx.unknown_fronts | {w.mined_form for w in unknown_words},
+                unknown_lemmas,
+                unknown_fronts=unknown_fronts,
             )
         # Attach per-run occurrence counts for the curator's "Occurrences"
         # column/sort (Issue #88). They are per card front, and a spelling the
@@ -3192,6 +3224,32 @@ class EpisodeProcessor:
             self.word_filter.expand_word_lines(word, entries) if word.line_expansion != (0, 0) else word
             for word in words
         ]
+
+    def _materialize_reading_expansions(
+        self, words: list[TokenizedWord], document: ReadingDocument
+    ) -> list[TokenizedWord]:
+        """:meth:`_materialize_line_expansions` for a reading run: neighbouring units merged.
+
+        The neighbours are ``reading_entries``, the units' card sentences at the
+        unit index the words carry as their time. A merged word keeps its own
+        unit's index as its time (``expand_word_lines`` would move it to the
+        first merged unit): phase 3' maps that index to the picture or manga
+        crop, and phase 5 to the Source location, so both stay the named
+        unit's while the sentence is the merged one. Only the ``--api`` callback
+        stamps an expansion here; the Word Curator builds no expansion buttons
+        on a reading run, so its runs take the all-zero fast path.
+        """
+        if all(word.line_expansion == (0, 0) for word in words):
+            return words
+        entries = self.subtitle_parser.reading_entries(document.units, subtitle_cleanup=reading_cleanup(document))
+        merged: list[TokenizedWord] = []
+        for word in words:
+            if word.line_expansion == (0, 0):
+                merged.append(word)
+                continue
+            expanded = self.word_filter.expand_word_lines(word, entries)
+            merged.append(replace(expanded, start_time=word.start_time, end_time=word.end_time, duration=word.duration))
+        return merged
 
     def _materialize_sentence_edits(self, words: list[TokenizedWord]) -> list[TokenizedWord]:
         """Rebuild curator-edited words through the run's own parser.
@@ -3979,6 +4037,9 @@ class EpisodeProcessor:
         progress_callback: ProgressCallback | None = None,
         curation_callback: Callable[[list], list | None] | None = None,
         cancel_event: threading.Event | None = None,
+        source_label_override: str | None = None,
+        series_name_override: str | None = None,
+        episode_name_override: str | None = None,
     ) -> ProcessingResult:
         """Mine a loaded reading document (manga volume / novel) into Anki cards.
 
@@ -3995,9 +4056,16 @@ class EpisodeProcessor:
             progress_callback: Optional progress callback; wraps only phases
                 3'/4/5 in a single weighted sweep.
             curation_callback: Optional per-word curation callback; same
-                semantics as :meth:`process_episode`.
+                semantics as :meth:`process_episode`, ``makes_words`` included.
+                A curated ``line_expansion`` merges the neighbouring units
+                (:meth:`_materialize_reading_expansions`).
             cancel_event: Optional worker cancel event, bridged into this run's
                 checkpoints for its duration only (see __init__).
+            source_label_override: The card Source's text before ``@ <location>``
+                instead of the document's (the ``--api`` episode's own).
+            series_name_override, episode_name_override: The document's series
+                and episode for the Source label, tags and stats (``None`` keeps
+                the loader's; an explicit empty string is honoured).
 
         Returns:
             ProcessingResult with statistics.
@@ -4008,11 +4076,19 @@ class EpisodeProcessor:
             AnkiConnectionError: AnkiConnect is unreachable.
         """
         # Per-cue kinds: subtitle files, and an Anki deck's subtitle lines.
-        self._sentence_parse_cleanup = document.kind in ("subtitle", "deck")
+        self._sentence_parse_cleanup = reading_cleanup(document)
+        if series_name_override is not None or episode_name_override is not None:
+            document = replace(
+                document,
+                series=_resolve_identity(series_name_override, document.series),
+                episode=_resolve_identity(episode_name_override, document.episode),
+            )
         # Manga and subtitle sources carry a meaningful series (mokuro title /
         # parent folder), so prefix it; books use the bare episode title, and
         # an Anki deck its name (episode), which is its whole identity.
-        if document.kind in ("manga", "subtitle"):
+        if source_label_override:
+            source_label = source_label_override
+        elif document.kind in ("manga", "subtitle"):
             source_label = _source_label(document.series, document.episode)
         else:
             source_label = document.episode
@@ -4085,7 +4161,7 @@ class EpisodeProcessor:
                 # get the video path's annotation strip + regex filter;
                 # manga/OCR and book text pass it through.
                 all_words, line_index, counts = self.subtitle_parser.parse_text_units(
-                    document.units, want_line_index, subtitle_cleanup=document.kind in ("subtitle", "deck")
+                    document.units, want_line_index, subtitle_cleanup=reading_cleanup(document)
                 )
                 log_summary(
                     logger,
@@ -4102,41 +4178,41 @@ class EpisodeProcessor:
             ctx.total_words_found = len(all_words)
             if self.cancelled:
                 return self._cancelled_result_from_ctx(ctx)
+            # The --api callback (cli/api/lines.py WordSelection) can make a named
+            # word from its named unit, so an empty parse or phase 2 does not end
+            # its run: it gets whatever is left, possibly nothing (as in process_episode).
+            makes_words = getattr(curation_callback, "makes_words", False)
             if not all_words:
                 self.presenter.show_warning(
                     self._no_words_message((unit.text for unit in document.units), reading=True)
                 )
-                return ctx.build_result()
-
-            # MS-28: before phase 2, so the warning leads the filter lines.
-            self._warn_if_wrong_language(all_words)
-            with timed_phase("filter", logger):
-                unknown_words = self._phase2_filter(
-                    ctx,
-                    all_words,
-                    line_index,
-                    progress_callback,
-                    occurrence_counts=counts,
-                    min_occurrence=self.config.reading_min_occurrence,
-                )
-            if self.cancelled:
-                return self._cancelled_result_from_ctx(ctx)
-            if not unknown_words:
-                self._report_no_mineable_words(ctx)
-                return ctx.build_result(new_words_found=0)
+                if not makes_words:
+                    return ctx.build_result()
+                unknown_words: list[TokenizedWord] = []
+            else:
+                # MS-28: before phase 2, so the warning leads the filter lines.
+                self._warn_if_wrong_language(all_words)
+                with timed_phase("filter", logger):
+                    unknown_words = self._phase2_filter(
+                        ctx,
+                        all_words,
+                        line_index,
+                        progress_callback,
+                        occurrence_counts=counts,
+                        min_occurrence=self.config.reading_min_occurrence,
+                    )
+                if self.cancelled:
+                    return self._cancelled_result_from_ctx(ctx)
+                if not unknown_words:
+                    self._report_no_mineable_words(ctx)
+                    if not makes_words:
+                        return ctx.build_result(new_words_found=0)
 
             if curation_callback is not None:
                 outcome = self._run_curation(ctx, unknown_words, line_index, counts, curation_callback)
                 if isinstance(outcome, ProcessingResult):
                     return outcome
-                unknown_words = outcome
-                dropped = sum(1 for w in unknown_words if w.line_expansion != (0, 0))
-                if dropped:
-                    # Reading curation has no subtitle timeline to materialize
-                    # against; the dialog never builds expansion buttons here.
-                    # A nonzero count means a wiring change made them reachable
-                    # without adding materialization — fail loud, not silent.
-                    logger.warning("reading curation: dropping line expansion on %d word(s)", dropped)
+                unknown_words = self._materialize_reading_expansions(outcome, document)
                 unknown_words = self._materialize_sentence_edits(unknown_words)
 
             unknown_words = self._apply_strict_card_order(unknown_words, all_words)
@@ -4303,9 +4379,17 @@ class EpisodeProcessor:
         workspace: Path,
         cancel_event: threading.Event,
         fetch_progress_cb: Callable[[str, float | None], None] | None,
+        sub_mode: SubMode,
     ) -> FetchedMedia | None:
         """``youtube_postfetch.align_fetched``, its step named for ``fetch_progress_cb``."""
-        return align_fetched(self.config, fetched, workspace, cancel_event, self._fetch_step_report(fetch_progress_cb))
+        return align_fetched(
+            self.config,
+            fetched,
+            workspace,
+            cancel_event,
+            self._fetch_step_report(fetch_progress_cb),
+            sub_mode=sub_mode,
+        )
 
     def process_youtube_url(
         self,
@@ -4481,7 +4565,7 @@ class EpisodeProcessor:
                 if cancel_event.is_set():
                     return self._make_cancelled_result(start_time)
                 with timed_phase("youtube-align", logger):
-                    aligned = self._align_fetched(fetched, workspace, cancel_event, fetch_progress_cb)
+                    aligned = self._align_fetched(fetched, workspace, cancel_event, fetch_progress_cb, sub_mode)
                 if aligned is None:
                     return self._make_cancelled_result(start_time)
                 fetched = aligned

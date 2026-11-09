@@ -82,8 +82,9 @@ def fill_note_type(payload: Mapping[str, object]) -> str:
     profile = get_profile(language)
     fill = fill_note_type_fields(
         field_names,
-        # Lapis, Kiku and Senren are Japanese note types; Anki Miner Note needs no capability.
-        allow_presets="note_presets" in profile.capabilities,
+        # Lapis, Kiku and Senren need note_presets; furigana and pitch keys come back
+        # "" in a language without that capability, whichever preset proposed them.
+        capabilities=profile.capabilities,
         extra_specs=profile.extra_card_fields,
     )
     return encode_message(

@@ -174,11 +174,42 @@ def resolve_special_reading(head_surface: str, next_surface: str | None) -> str 
 #       form 不味い reads correctly and is untouched.
 #   (込む, ごむ) → こむ: the isolated 込む verb misreads as the loanword ゴム
 #       (rubber); compounds (飲み込む→のみこむ) read correctly and are untouched.
+#   (私, わたくし) → わたし: UniDic emits ワタクシ for 私 in every context, so
+#       every 私 card read わたくし; the formal-speech sense loss is accepted, and
+#       わたし matches the ワタシ fold in models/word.py.
+#   (私たち/私達, わたくしたち) → わたしたち: the merged front carries the same
+#       ワタクシ head, which the 私 entry (keyed on the bare spelling) misses.
+#   (明日, あす) → あした, (その後, そのご) → そのあと: UniDic emits the formal
+#       variant (アス always; ゴ before a comma); a card takes JMdict's first
+#       reading, and the formal-register loss is accepted as for 私.
+#   (何, なん) → なに, (何か, なんか) → なにか: UniDic emits ナン for 何 in every
+#       context, 何を and 何が included; the card shows the headword reading, and
+#       the なん of 何だ/何で is accepted as lost.
+#   (言う, ゆう) → いう, (そう言う, そうゆう) → そういう: UniDic reads 言う ユウ
+#       after そう; a kanji 言う never reads ゆう on a card.
+#   (蛙, かわず) → かえる: UniDic emits the poetic カワズ in every context.
+#   (日本語/日本人, にっぽん…) → にほん…: UniDic reads 日本 ニッポン, and the
+#       dictionary attests both readings, so the merge keeps the rarer one.
 _READING_OVERRIDES: dict[tuple[str, str], str] = {
     ("一日", "ついたち"): "いちにち",
     ("仏", "ふつ"): "ほとけ",
     ("マズい", "まじい"): "まずい",
     ("込む", "ごむ"): "こむ",
+    ("私", "わたくし"): "わたし",
+    ("私たち", "わたくしたち"): "わたしたち",
+    ("私達", "わたくしたち"): "わたしたち",
+    ("明日", "あす"): "あした",
+    ("その後", "そのご"): "そのあと",
+    ("何", "なん"): "なに",
+    ("何か", "なんか"): "なにか",
+    ("何も", "なんも"): "なにも",
+    ("何もかも", "なんもかも"): "なにもかも",
+    ("言う", "ゆう"): "いう",
+    ("そう言う", "そうゆう"): "そういう",
+    ("蛙", "かわず"): "かえる",
+    ("日本", "にっぽん"): "にほん",
+    ("日本語", "にっぽんご"): "にほんご",
+    ("日本人", "にっぽんじん"): "にほんじん",
 }
 
 
@@ -326,11 +357,11 @@ def extract_orth_base(word_token) -> str:
     return str(orth_base)
 
 
-# Potential-verb paradigm (godan e-row + ら抜き) and adjective ク-form pairs:
-# (derived orthBase suffix, base lemma suffix). Mirrors the potential rules in
-# japanese_transforms.py (the "potential" transform); kept as data here because
-# mining folds a HEADWORD (orthBase→lemma), not running the deinflection
-# engine on text.
+# Potential-verb paradigm (godan e-row + ら抜き), adjective ク-form pairs and the
+# one-kanji サ変 alternants (愛す/愛せる←愛する): (derived orthBase suffix, base
+# lemma suffix). Mirrors the potential rules in japanese_transforms.py (the
+# "potential" transform); kept as data here because mining folds a HEADWORD
+# (orthBase→lemma), not running the deinflection engine on text.
 _FOLD_SUFFIX_PAIRS = (
     ("える", "う"),
     ("ける", "く"),
@@ -342,6 +373,8 @@ _FOLD_SUFFIX_PAIRS = (
     ("める", "む"),
     ("れる", "る"),
     ("し", "い"),
+    ("す", "する"),
+    ("せる", "する"),
 )
 
 
@@ -349,10 +382,11 @@ def mining_base(word_token) -> str:
     """orthBase for the card front, folded to lemma for derived sub-lemma entries.
 
     unidic gives potential verbs (保てる←保つ), ra-nuki forms (見れる←見る),
-    archaic i-adjective bases (良し←良い) and classical 連体形 ク-stems
-    (美しき: orthBase 美し←美しい) their own orthBase while lemma points at the
-    parent headword. Mining orthBase makes a 保てる card distinct from an
-    existing 保つ card; folding to lemma dedupes them. Applies only to 動詞 /
+    archaic i-adjective bases (良し←良い), classical 連体形 ク-stems
+    (美しき: orthBase 美し←美しい) and the godan/potential forms of one-kanji サ変
+    verbs (愛される/愛すべき: 愛す, 愛せない: 愛せる ← 愛する) their own orthBase
+    while lemma points at the parent headword. Mining orthBase makes a 保てる card
+    distinct from an existing 保つ card; folding to lemma dedupes them. Applies only to 動詞 /
     形容詞 — the only POS whose mined_form reads orth_base (select_mined_form).
 
     Trigger: the lemma reading (lForm) and orthBase reading (kanaBase) diverge,
@@ -598,6 +632,9 @@ def attest_merged_readings(tokens: list, reading_lookup: ReadingLookup | None) -
             chosen = min(folded, key=lambda r: _edit_distance(r, concat))
         if chosen is None:
             continue
+        # The curated table outranks an attested concatenation of a misread head
+        # (私たち: ワタクシ+タチ is a listed reading, but not the one a card wants).
+        chosen = resolve_reading_override(tok.surface, chosen) or chosen
         if chosen == concat:
             tok.feature.kana_attested = True
             continue
@@ -804,6 +841,10 @@ def _merge_noun_suffixes(tokens: list, attest: AttestLookup | None = None) -> li
                 head_pos2 = head.feature.pos2 or "普通名詞"
             except AttributeError:
                 _guard("_merge_noun_suffixes#3")
+                head_pos2 = "普通名詞"
+            # An attested merge is a dictionary word, not the name its head is
+            # (日本+人 → 日本人), so the proper-noun gate must not drop it.
+            if head_pos2 == "固有名詞" and attested is not None and surf in attested:
                 head_pos2 = "普通名詞"
             try:
                 head_lemma = extract_lemma(head)

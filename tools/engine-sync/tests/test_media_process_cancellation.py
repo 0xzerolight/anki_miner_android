@@ -149,7 +149,8 @@ class _Registry:
             process.kill()
 
 
-def _load_media_extractor():
+def _load_media_extractor(detector: types.ModuleType | None = None):
+    """The media_extractor overlay over stubs; *detector* replaces the audio-track stub."""
     stubs = _common_stubs()
     qt_core = _module(
         "PyQt6.QtCore",
@@ -172,10 +173,12 @@ def _load_media_extractor():
                 list_audio_streams=lambda *_args, **_kwargs: [],
                 safe_filename=lambda value: value,
             ),
-            "anki_miner.utils.audio_track_detector": _module(
+            "anki_miner.utils.audio_track_detector": detector
+            or _module(
                 "anki_miner.utils.audio_track_detector",
                 JAPANESE_LANGUAGE_CODES=frozenset({"jpn"}),
-                matches_language_tag=lambda _tag, _codes: False,
+                TitleLanguage=object,
+                pick_audio_stream=lambda *_args, **_kwargs: None,
             ),
             "anki_miner.utils.ffmpeg_resolver": _module(
                 "anki_miner.utils.ffmpeg_resolver",
@@ -275,6 +278,7 @@ class MediaProcessCancellationTests(unittest.TestCase):
         service._audio_stream_cache = {}
         service._audio_stream_list_cache = {}
         service._audio_codes = lambda: frozenset({"jpn"})
+        service._audio_titles = lambda: None
         registry = media._FfmpegProcRegistry()
         calls: list[object] = []
         release = threading.Event()
@@ -833,6 +837,87 @@ class ChapterProbeOverlayTests(unittest.TestCase):
         self.assertEqual([], chapters)
         self.assertTrue(process.killed.is_set())
         self.assertEqual(2, process.communicate_calls)
+
+
+class AudioTrackTitleOverlayTests(unittest.TestCase):
+    """Desktop's title pick for an untagged track (cf8bd3a83), on the overlay's cancellable probe path.
+
+    A track tagged with the mining language still wins. Only when none is, an
+    untagged (or ``und``) track whose title names the language is taken; a
+    track tagged with another language is never taken by its title.
+    """
+
+    def setUp(self) -> None:
+        self.detector = _load(
+            PROJECT_ROOT
+            / "tools/engine-sync/overrides/anki_miner/utils/audio_track_detector.py",
+            "audio_track_detector_title_test",
+            _common_stubs(),
+        )
+        self.media = _load_media_extractor(self.detector)
+        self.codes = frozenset({"jpn", "ja"})
+        self.titles = self.detector.TitleLanguage(
+            mining=frozenset({"japanese", "日本語", "jpn"}),
+            known=frozenset({"japanese", "日本語", "jpn", "english", "eng"}),
+        )
+
+    def _stream(self, global_index: int, language_tag: str | None, title: str | None):
+        return self.detector.AudioStream(
+            global_index=global_index,
+            audio_index=global_index - 1,
+            language_tag=language_tag,
+            title_tag=title,
+            codec="aac",
+            channels=2,
+            is_default=False,
+        )
+
+    def _service(self):
+        service = object.__new__(self.media.MediaExtractorService)
+        service.config = object()
+        service._cache_lock = threading.Lock()
+        service._audio_stream_cache = {}
+        service._audio_stream_list_cache = {}
+        service._audio_codes = lambda: self.codes
+        service._audio_titles = lambda: self.titles
+        return service
+
+    def test_auto_detect_passes_the_titles_and_keeps_the_registry(self) -> None:
+        service = self._service()
+        registry = self.media._FfmpegProcRegistry()
+        find = mock.Mock(return_value=SimpleNamespace(global_index=2))
+        with mock.patch.object(self.media, "find_japanese_audio_stream", find):
+            self.assertEqual(2, service._get_japanese_audio_stream(Path("video.mkv"), registry))
+        self.assertIs(self.titles, find.call_args.kwargs["titles"])
+        self.assertIs(registry, find.call_args.kwargs["proc_registry"])
+        self.assertEqual(self.codes, find.call_args.kwargs["codes"])
+
+    def test_unmatched_override_falls_back_to_the_titled_untagged_track(self) -> None:
+        service = self._service()
+        streams = [self._stream(1, None, "English"), self._stream(2, "und", "Japanese [Stereo]")]
+        service._list_audio_streams_cached = lambda *_args, **_kwargs: streams
+        self.assertEqual(2, service._resolve_audio_track_global_index(Path("video.mkv"), 9))
+
+    def test_a_track_tagged_with_another_language_is_not_taken_by_its_title(self) -> None:
+        service = self._service()
+        streams = [self._stream(1, "eng", "Japanese"), self._stream(2, None, "Commentary")]
+        service._list_audio_streams_cached = lambda *_args, **_kwargs: streams
+        self.assertIsNone(service._resolve_audio_track_global_index(Path("video.mkv"), 9))
+
+    def test_detector_picks_by_title_through_the_registry_probe(self) -> None:
+        streams = [self._stream(1, None, "English"), self._stream(2, None, "日本語音声")]
+        registry = _Registry()
+        listed = mock.Mock(return_value=streams)
+        with mock.patch.object(self.detector, "list_audio_streams", listed):
+            stream = self.detector.find_japanese_audio_stream(
+                Path("video.mkv"), "ffprobe", codes=self.codes, titles=self.titles, proc_registry=registry
+            )
+            untitled = self.detector.find_japanese_audio_stream(
+                Path("video.mkv"), "ffprobe", codes=self.codes, proc_registry=registry
+            )
+        self.assertEqual(2, stream.global_index)
+        self.assertIsNone(untitled)
+        self.assertIs(registry, listed.call_args.kwargs["proc_registry"])
 
 
 class ClipCommandOverlayTests(unittest.TestCase):

@@ -47,6 +47,11 @@ class _RecordingLoader(importlib.abc.Loader):
             )
         self._loaded_names.add(module.__name__)
 
+    def get_resource_reader(self, fullname: str) -> object:
+        # importlib.resources reads package data through the loader (the kana
+        # word list loads its ja.tsv at import); the wrapped file loader owns it.
+        return self._loader.get_resource_reader(fullname)
+
 
 class _RecordingFinder(importlib.abc.MetaPathFinder):
     def __init__(self, engine_package: Path, loaded_names: set[str]) -> None:

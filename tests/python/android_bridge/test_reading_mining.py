@@ -1228,6 +1228,7 @@ def _stub_run(
 
     monkeypatch.setattr(reading_mining, "_map_config", map_config)
     monkeypatch.setattr(reading_mining, "_load_document", load_document)
+    monkeypatch.setattr(reading_mining, "_reading_loader_kwargs", lambda *_args: {})
     monkeypatch.setattr(reading_mining, "_process_reading", process)
     return config, document
 
@@ -1339,6 +1340,7 @@ def test_cancellation_after_document_load_stops_before_processor(
         return object()
 
     monkeypatch.setattr(reading_mining, "_load_document", load_then_cancel)
+    monkeypatch.setattr(reading_mining, "_reading_loader_kwargs", lambda *_args: {})
     monkeypatch.setattr(
         reading_mining,
         "_process_reading",
@@ -1370,6 +1372,7 @@ def test_reading_curation_parks_and_preserves_none_vs_empty_semantics(
         lambda *_: SimpleNamespace(),
     )
     monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: object())
+    monkeypatch.setattr(reading_mining, "_reading_loader_kwargs", lambda *_args: {})
     emitted = threading.Event()
     returned_from_curation = threading.Event()
     curation_requests: list[str] = []
@@ -1464,6 +1467,7 @@ def test_reading_curation_rejects_line_expansion_and_survives_clean_resend(
     monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(reading_mining, "_map_config", lambda *_: SimpleNamespace())
     monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: object())
+    monkeypatch.setattr(reading_mining, "_reading_loader_kwargs", lambda *_args: {})
     emitted = threading.Event()
     returned_from_curation = threading.Event()
     curation_requests: list[str] = []
@@ -1561,6 +1565,7 @@ def test_reading_curation_rejects_clip_override_and_survives_clean_resend(
     monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(reading_mining, "_map_config", lambda *_: SimpleNamespace())
     monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: object())
+    monkeypatch.setattr(reading_mining, "_reading_loader_kwargs", lambda *_args: {})
     emitted = threading.Event()
     returned_from_curation = threading.Event()
     curation_requests: list[str] = []
@@ -1662,6 +1667,7 @@ def _run_reading_and_capture_curation_request(
     monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(reading_mining, "_map_config", lambda *_: SimpleNamespace())
     monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: document)
+    monkeypatch.setattr(reading_mining, "_reading_loader_kwargs", lambda *_args: {})
 
     emitted = threading.Event()
     curation_requests: list[str] = []

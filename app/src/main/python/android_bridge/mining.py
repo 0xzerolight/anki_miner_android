@@ -781,14 +781,21 @@ def _build_processor(
                 word_list_service = None
 
         # Desktop's _create_subtitle_parser: the profile factory injects the card
-        # front, reading, normaliser and script gate a non-ja language needs; the
-        # literal class is the ja factory's bare forward.
-        parser_factory = SubtitleParserService if profile is None else profile.create_parser
+        # front, reading, normaliser and script gate a non-ja language needs; ja
+        # keeps the literal class with its factory's one seam, ja's script gate,
+        # which drops the romaji line of a two-line cue.
+        if profile is None:
+            parser_factory = SubtitleParserService
+            parser_seams = {"has_target_script": get_profile(JAPANESE).script.contains_target_script}
+        else:
+            parser_factory = profile.create_parser
+            parser_seams = {}
         # R1: the run's whitelist rescues tokens the parse gates would drop, under
         # the same gate as the phase-2 partition (off under bypass).
         whitelist = active_whitelist(config, word_list_service)
         subtitle_parser = parser_factory(
             config,
+            **parser_seams,
             term_lookup=(definition_service.offline_terms_exist if has_indexed_dictionary else None),
             # Merges multi-token name spans before the proper-noun and name-list
             # filters run; unidic splits 夏油 into single kanji, so without it
