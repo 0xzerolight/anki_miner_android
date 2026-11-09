@@ -3185,8 +3185,7 @@ class AndroidAnkiAdapter:
         }
 
     def _ignore_suspended_cards(self) -> bool:
-        # getattr only until the engine re-pin brings AnkiMinerConfig.ignore_suspended_cards.
-        return bool(getattr(self.config, "ignore_suspended_cards", False))
+        return bool(self.config.ignore_suspended_cards)
 
     def _excluded_deck_admission(self) -> bool:
         """Desktop ``AnkiService._scan_is_narrowed``: notes are admitted against the known words.

@@ -179,6 +179,8 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "normalize_audio_loudness": True,
         "crop_manga_to_text": True,
         "known_from_reviewed_cards": False,
+        "ignore_suspended_cards": False,
+        "mine_number_counters": False,
         "reading_min_occurrence": 2,
         "max_parallel_workers": 4,
         "language": "ja",

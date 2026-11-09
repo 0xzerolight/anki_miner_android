@@ -10,7 +10,6 @@ import time
 import types
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -2474,11 +2473,7 @@ def test_reviewed_marks_must_answer_the_request_exactly(
 
 
 def _suspended_config(home: Path, *, ignore: bool = True, **changes: object) -> Any:
-    config = _config(home, **changes)
-    return types.SimpleNamespace(
-        **{field.name: getattr(config, field.name) for field in dataclass_fields(config)},
-        ignore_suspended_cards=ignore,
-    )
+    return _config(home, ignore_suspended_cards=ignore, **changes)
 
 
 def test_ignoring_suspended_cards_drops_all_suspended_notes_from_the_known_words(
@@ -2519,11 +2514,9 @@ def test_ignoring_suspended_cards_rides_every_page_and_the_reviewed_walk(
     assert all(scope["ignoreSuspended"] is True and scope["markReviewed"] is True for scope in scopes)
 
 
-@pytest.mark.parametrize("ignore", [None, False], ids=["engine-without-field", "off"])
 def test_suspended_setting_off_sends_the_known_scan_bytes_unchanged(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
-    ignore: bool | None,
 ) -> None:
     import android_bridge.callbacks as callbacks_module
 
@@ -2531,12 +2524,7 @@ def test_suspended_setting_off_sends_the_known_scan_bytes_unchanged(
     kotlin = FakeKotlinAnki()
     kotlin.known_fields = ["猫"]
     kotlin.known_note_suspended = [True]
-    config = (
-        _config(initialized_bridge_home)
-        if ignore is None
-        else _suspended_config(initialized_bridge_home, ignore=ignore)
-    )
-    adapter = _adapter(config, kotlin)
+    adapter = _adapter(_suspended_config(initialized_bridge_home, ignore=False), kotlin)
 
     assert adapter.get_existing_vocabulary() == {"猫"}
 
