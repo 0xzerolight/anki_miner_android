@@ -87,17 +87,62 @@ class CurationClipTest {
     }
 
     @Test
-    fun `an override outside the default travel widens the travel instead of being dropped`() {
-        // Legal when audio_padding is 5.0s, or set at the playhead: the user lowers padding to
-        // 0.1s, so the default travel (9.6, 18.1) no longer reaches the stored override. The
-        // travel spans both instead, so the override still shows inside its own travel.
+    fun `an override outside the default travel is seated in a travel of its own`() {
+        // Legal when audio_padding is 5.0s: the user lowers padding to 0.1s, so the default
+        // travel (9.6, 18.1) no longer reaches the stored override. Desktop set_word seats the
+        // travel around the override instead, so it still shows inside its own travel.
         val stale = CurationClipWindow(5.0, 6.0)
         val narrow = clipWindowUiState(12.7, 15.0, 0.1, override = stale)!!
         assertEquals(5.0, narrow.window.startSeconds, 1e-9)
         assertEquals(6.0, narrow.window.endSeconds, 1e-9)
         assertEquals(2.0, narrow.travelStartSeconds, 1e-9)
-        assertEquals(18.1, narrow.travelEndSeconds, 1e-9)
+        assertEquals(9.0, narrow.travelEndSeconds, 1e-9)
         assertTrue(narrow.overridden)
+    }
+
+    @Test
+    fun `an override inside the default travel keeps the default travel`() {
+        // A drag that ends with the start handle on the travel's own edge must not widen the
+        // travel on release, or the handles jump under the finger.
+        val state = clipWindowUiState(12.7, 15.0, 0.3, override = CurationClipWindow(9.4, 15.3))!!
+        assertEquals(9.4, state.travelStartSeconds, 1e-9)
+        assertEquals(18.3, state.travelEndSeconds, 1e-9)
+    }
+
+    @Test
+    fun `a far scrub seats the travel around the new window only`() {
+        val state = clipWindowUiState(600.0, 603.0, 0.3, override = null)!!
+        val (moved, travel) = clipEdgeAtPlayhead(state.window, state.travel, 10.0, end = false)
+        assertEquals(ClipWindowSeconds(10.0, 40.0), moved)
+        assertEquals(ClipTravel(7.0, 43.0), travel)
+
+        val stored = clipWindowUiState(600.0, 603.0, 0.3, CurationClipWindow(moved.startSeconds, moved.endSeconds))!!
+        assertEquals(ClipTravel(7.0, 43.0), stored.travel)
+        assertEquals(travel, retainedClipTravel(travel, stored))
+    }
+
+    @Test
+    fun `a playhead set inside the travel leaves the travel where it is`() {
+        val state = clipWindowUiState(12.7, 15.0, 0.3, override = null)!!
+        val (moved, travel) = clipEdgeAtPlayhead(state.window, state.travel, 16.0, end = true)
+        assertEquals(ClipWindowSeconds(12.4, 16.0), moved)
+        assertEquals(state.travel, travel)
+    }
+
+    @Test
+    fun `a drag inside the travel leaves it unchanged`() {
+        // After the far scrub the travel is (7, 43). Dragging the window to (9, 38) stores an
+        // override whose own seat would be (6, 41); the travel on screen must not follow it.
+        val seated = ClipTravel(7.0, 43.0)
+        val dragged = clipWindowUiState(600.0, 603.0, 0.3, CurationClipWindow(9.0, 38.0))!!
+        assertEquals(seated, retainedClipTravel(seated, dragged))
+    }
+
+    @Test
+    fun `a window outside the travel on screen takes the state's travel`() {
+        // A reset after a far scrub: the default window is nowhere near (7, 43).
+        val reset = clipWindowUiState(600.0, 603.0, 0.3, override = null)!!
+        assertEquals(reset.travel, retainedClipTravel(ClipTravel(7.0, 43.0), reset))
     }
 
     @Test

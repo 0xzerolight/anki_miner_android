@@ -77,11 +77,17 @@ internal fun CurationClipControls(
     // a new sentence, an expansion, a reset) and only then - mid-drag the slider owns its own
     // value, which is what keeps it from fighting the recomposition.
     var live by remember(state.window) { mutableStateOf(state.window) }
+    // The travel on screen, seated per default window (a new candidate, sentence or expansion) and
+    // kept while it holds the state's window: a finished drag never moves it, a playhead set
+    // re-seats it only when the new window leaves it (desktop set_word/set_edge/_seat).
+    var seated by remember(state.defaultWindow) { mutableStateOf(state.travel) }
+    val travel = retainedClipTravel(seated, state)
     val rangeDescription = stringResource(R.string.curation_clip_range_description)
     val setEdgeAtPlayhead: (Boolean) -> Unit = { end ->
         readPlayhead()?.let { playhead ->
-            val moved = clipWindowAtPlayhead(live, playhead, end)
+            val (moved, movedTravel) = clipEdgeAtPlayhead(live, travel, playhead, end)
             live = moved
+            seated = movedTravel
             if (moved != state.window) {
                 onWindowChange(CurationClipWindow(moved.startSeconds, moved.endSeconds))
             }
@@ -124,8 +130,8 @@ internal fun CurationClipControls(
                                         range.start.toDouble(),
                                         range.endInclusive.toDouble(),
                                     ),
-                                travelStart = state.travelStartSeconds,
-                                travelEnd = state.travelEndSeconds,
+                                travelStart = travel.startSeconds,
+                                travelEnd = travel.endSeconds,
                             )
                     },
                     onValueChangeFinished = {
@@ -138,10 +144,11 @@ internal fun CurationClipControls(
                         // CurationClipWindow's 30s ceiling (an over-long subtitle line), so
                         // committing it here would throw. Only an actual coerced edit commits.
                         if (live != state.window) {
+                            seated = travel
                             onWindowChange(CurationClipWindow(live.startSeconds, live.endSeconds))
                         }
                     },
-                    valueRange = state.travelStartSeconds.toFloat()..state.travelEndSeconds.toFloat(),
+                    valueRange = travel.startSeconds.toFloat()..travel.endSeconds.toFloat(),
                     enabled = enabled,
                     modifier =
                         Modifier.weight(1f).testTag(sliderTestTag)

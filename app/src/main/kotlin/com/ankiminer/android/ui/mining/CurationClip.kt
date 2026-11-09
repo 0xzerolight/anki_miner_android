@@ -45,16 +45,26 @@ data class ClipWindowSeconds(
     val lengthSeconds: Double get() = endSeconds - startSeconds
 }
 
+/** The span a clip's handles move within, in absolute seconds on the source timeline. */
+@Immutable
+data class ClipTravel(
+    val startSeconds: Double,
+    val endSeconds: Double,
+) {
+    operator fun contains(window: ClipWindowSeconds): Boolean =
+        toTicks(startSeconds) <= toTicks(window.startSeconds) && toTicks(window.endSeconds) <= toTicks(endSeconds)
+}
+
 /**
  * The clip window for one candidate, plus the travel its handles move within.
  *
- * Travel spans the *default* window and any stored override, plus the margin either side, rather
- * than re-seating around whatever is showing as the desktop strip does: travel that moved while
- * the user is dragging would move the target under their finger, and the override only changes
- * when a drag ends. [window] is always within `[travelStartSeconds, travelEndSeconds]` -
- * [clipWindowUiState] derives the travel from it, so an override set at the playhead far outside
- * the line, or one audio padding has since moved the default away from (padding is a Settings
- * value, not a per-run one), still shows inside its own travel.
+ * The travel is seated as desktop `AudioClipEditor.set_word` seats it, [CLIP_MARGIN_SECONDS]
+ * either side, but around the *default* window whenever the stored override fits inside that:
+ * a drag only ever ends inside the travel it was made in, so the travel cannot move under the
+ * finger on release. An override outside it (set at a far playhead, or one `audio_padding` has
+ * since moved the default away from) gets a travel seated around itself. [window] is always within
+ * `[travelStartSeconds, travelEndSeconds]`; [defaultWindow] keys the control's own seat, which
+ * [retainedClipTravel] keeps across drags.
  */
 @Immutable
 data class ClipWindowUiState(
@@ -62,7 +72,11 @@ data class ClipWindowUiState(
     val travelStartSeconds: Double,
     val travelEndSeconds: Double,
     val overridden: Boolean,
-)
+    val defaultWindow: ClipWindowSeconds = window,
+) {
+    val travel: ClipTravel
+        get() = ClipTravel(travelStartSeconds, travelEndSeconds)
+}
 
 /**
  * The window ffmpeg would cut with no override: the line widened by `audio_padding` each side.
@@ -80,13 +94,19 @@ fun defaultClipWindow(
         endSeconds = toSeconds(toTicks(endTime + audioPaddingSeconds)),
     )
 
+/** Desktop `AudioClipEditor._seat`: [CLIP_MARGIN_SECONDS] either side of [window], never negative. */
+fun seatClipTravel(window: ClipWindowSeconds): ClipTravel =
+    ClipTravel(
+        startSeconds = toSeconds(max(0L, toTicks(window.startSeconds) - MARGIN_TICKS)),
+        endSeconds = toSeconds(toTicks(window.endSeconds) + MARGIN_TICKS),
+    )
+
 /**
  * Null when the line's own timings are not finite (corrupt subtitle timing).
  *
- * The travel is the union of the default window and the stored [override], widened by
- * [CLIP_MARGIN_SECONDS] either side and never negative. [CurationClipWindow] already guarantees
- * the override's length, so every override shows: one set at the playhead outside the default
- * travel, or one `audio_padding` has since moved the default away from.
+ * The travel is the default window's seat while the stored [override] fits inside it, else the
+ * override's own seat. [CurationClipWindow] already guarantees the override's length, so every
+ * override shows.
  */
 fun clipWindowUiState(
     startTime: Double,
@@ -97,14 +117,40 @@ fun clipWindowUiState(
     if (!startTime.isFinite() || !endTime.isFinite() || !audioPaddingSeconds.isFinite()) return null
     val default = defaultClipWindow(startTime, endTime, audioPaddingSeconds)
     val overrideWindow = override?.let { ClipWindowSeconds(it.startSeconds, it.endSeconds) }
-    val spanStart = min(default.startSeconds, overrideWindow?.startSeconds ?: default.startSeconds)
-    val spanEnd = max(default.endSeconds, overrideWindow?.endSeconds ?: default.endSeconds)
+    val defaultTravel = seatClipTravel(default)
+    val travel =
+        if (overrideWindow == null || overrideWindow in defaultTravel) defaultTravel else seatClipTravel(overrideWindow)
     return ClipWindowUiState(
         window = overrideWindow ?: default,
-        travelStartSeconds = toSeconds(max(0L, toTicks(spanStart) - MARGIN_TICKS)),
-        travelEndSeconds = toSeconds(toTicks(spanEnd) + MARGIN_TICKS),
+        travelStartSeconds = travel.startSeconds,
+        travelEndSeconds = travel.endSeconds,
         overridden = overrideWindow != null && overrideWindow != default,
+        defaultWindow = default,
     )
+}
+
+/**
+ * The travel the control keeps showing for [state]: [current] while it still holds the state's
+ * window, so a drag never moves it, else the state's own (a reset, or a window set elsewhere).
+ */
+fun retainedClipTravel(
+    current: ClipTravel,
+    state: ClipWindowUiState,
+): ClipTravel = if (state.window in current) current else state.travel
+
+/**
+ * [clipWindowAtPlayhead] plus the travel to show it in: [travel] unchanged while it holds the new
+ * window, else re-seated around that window only (desktop `set_edge`), so a far scrub leaves a
+ * travel as fine to drag in as any line's.
+ */
+fun clipEdgeAtPlayhead(
+    window: ClipWindowSeconds,
+    travel: ClipTravel,
+    playheadSeconds: Double,
+    end: Boolean,
+): Pair<ClipWindowSeconds, ClipTravel> {
+    val moved = clipWindowAtPlayhead(window, playheadSeconds, end)
+    return moved to if (moved in travel) travel else seatClipTravel(moved)
 }
 
 /**
@@ -114,8 +160,8 @@ fun clipWindowUiState(
  * The edge lands exactly on the playhead, on the tick grid and never before the start of the file;
  * the other end moves to keep the length within [MIN_CLIP_SECONDS]..[MAX_CLIP_SECONDS], as a drag
  * pushes it. The bounds are wide enough that only those limits move anything: the slider's travel
- * is no limit here, or an edge near its end would be pulled back off the playhead. The caller
- * stores the result as the override, and [clipWindowUiState] re-seats the travel around it.
+ * is no limit here, or an edge near its end would be pulled back off the playhead.
+ * [clipEdgeAtPlayhead] decides the travel it shows in.
  */
 fun clipWindowAtPlayhead(
     window: ClipWindowSeconds,
