@@ -6,7 +6,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Added
 
-- **"Ignore suspended cards" (Settings -> Word filters).** A word whose only AnkiDroid cards are suspended counts as unknown: it can be mined again, and the i+1 sentence rule treats it as new. A note with any unsuspended card still counts as known. Off by default.
+- **"Ignore suspended cards" (Settings -> Word filters).** A word whose only AnkiDroid cards are suspended counts as unknown: it can be mined again, and the i+1 sentence rule treats it as new. A note with any unsuspended card still counts as known. Off by default. With "Use the local known-words database" on, words cached before stay known until Rebuild cached words.
 - **"Mine numbers with their counters" (Settings -> Word filters, Japanese).** A number and its counter make one card fronted as the line writes it (4人, 一個, ３本), read with the counter's sound changes (よにん, いっこ, さんぼん) and defined by the counter's own dictionary entry. About 30 common counters are covered; a decimal or a fraction is left as before. Off by default.
 - **Set a clip's start or end at the playhead (Word Curation).** Two buttons beside the clip slider move that end of the word's clip to where the video is, also past the slider's default range, and playback carries on. When the clip would be shorter than 0.2 seconds or longer than 30, the other end moves with it.
 
