@@ -314,8 +314,15 @@ data class CurationRequest(
     val requestId: String,
     val candidates: List<CurationCandidate>,
     val page: CurationPage? = null,
+    /**
+     * The audio track the run extracts from, as the engine's `audio_index` (an ordinal among the
+     * file's audio tracks): the user's pick, else the engine's own. The preview plays it. Null on
+     * reading and manga runs, and for a file without audio.
+     */
+    val audioIndex: Long? = null,
 ) {
     init {
+        require(audioIndex == null || audioIndex >= 0)
         require(runId.isNotBlank())
         require(requestId.isNotBlank())
         require(candidates.size <= CURATION_PAGE_MAX_CANDIDATES)

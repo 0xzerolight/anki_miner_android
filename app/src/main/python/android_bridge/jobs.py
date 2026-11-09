@@ -166,6 +166,7 @@ class _CurationGate:
     sentence_context: Callable[[object], SentencePageContext | None] | None = None
     sentence_preview: SentencePreviewer | None = None
     known_words_target: KnownWordsTarget | None = None
+    audio_index: int | None = None
 
     @property
     def paged(self) -> bool:
@@ -348,6 +349,7 @@ def _page_payload(
     *,
     run_id: str,
     request_id: str,
+    audio_index: int | None,
     page_index: int,
     page_count: int,
     candidate_start: int,
@@ -357,6 +359,7 @@ def _page_payload(
     return {
         "runId": run_id,
         "requestId": request_id,
+        "audioIndex": audio_index,
         "pageIndex": page_index,
         "pageCount": page_count,
         "candidateStart": candidate_start,
@@ -369,6 +372,7 @@ def _encoded_page_upper_bound(
     *,
     run_id: str,
     request_id: str,
+    audio_index: int | None,
     total_candidates: int,
     candidates: list[dict[str, Any]],
 ) -> int:
@@ -379,6 +383,7 @@ def _encoded_page_upper_bound(
         _page_payload(
             run_id=run_id,
             request_id=request_id,
+            audio_index=audio_index,
             page_index=total_candidates,
             page_count=total_candidates,
             candidate_start=total_candidates,
@@ -393,6 +398,7 @@ def _partition_pages(
     *,
     run_id: str,
     request_id: str,
+    audio_index: int | None,
     total_candidates: int,
     entries: Iterable[tuple[str, int]],
 ) -> tuple[_CurationPagePlan, ...]:
@@ -406,6 +412,7 @@ def _partition_pages(
     empty_page = _encoded_page_upper_bound(
         run_id=run_id,
         request_id=request_id,
+        audio_index=audio_index,
         total_candidates=total_candidates,
         candidates=[],
     )
@@ -449,6 +456,7 @@ def _plan_curation(
     sentence_context: Callable[[object], SentencePageContext | None] | None,
     sentence_preview: SentencePreviewer | None,
     known_words_target: KnownWordsTarget | None,
+    audio_index: int | None,
 ) -> _CurationGate | None:
     """Build the unpublished gate for ``candidates``, or ``None`` once the run is cancelled.
 
@@ -477,7 +485,7 @@ def _plan_curation(
     if single_request:
         small_request = encode_message(
             "curation.request",
-            {"runId": run_id, "requestId": request_id, "candidates": payloads},
+            {"runId": run_id, "requestId": request_id, "audioIndex": audio_index, "candidates": payloads},
         )
         if _utf8_size(small_request) <= CURATION_PAGE_MAX_UTF8_BYTES:
             request_json = small_request
@@ -485,6 +493,7 @@ def _plan_curation(
         pages = _partition_pages(
             run_id=run_id,
             request_id=request_id,
+            audio_index=audio_index,
             total_candidates=len(refs),
             entries=sizes,
         )
@@ -498,6 +507,7 @@ def _plan_curation(
         sentence_context=sentence_context,
         sentence_preview=sentence_preview,
         known_words_target=known_words_target,
+        audio_index=audio_index,
     )
 
 
@@ -618,8 +628,14 @@ class JobRegistry:
         sentence_context: Callable[[object], SentencePageContext | None] | None = None,
         sentence_preview: SentencePreviewer | None = None,
         known_words_target: KnownWordsTarget | None = None,
+        audio_index: int | None = None,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.
+
+        ``audio_index`` is the audio track the run extracts from, as a
+        source-order ordinal among the file's audio tracks, sent with every
+        page so the preview plays that track; ``None`` when the run has none
+        (reading, manga, a file without audio).
 
         The returned objects are the exact original candidate or sentence
         variant instances held by the engine, except that a selection whose
@@ -639,6 +655,8 @@ class JobRegistry:
                 "invalid_callback",
                 "cancellation_requested must be callable",
             )
+        if audio_index is not None and (type(audio_index) is not int or audio_index < 0):
+            raise _reject("invalid_audio_index", "audio_index must be a non-negative int or None")
 
         with self._lock:
             state = self._require_active(run_id)
@@ -658,6 +676,7 @@ class JobRegistry:
             sentence_context=sentence_context,
             sentence_preview=sentence_preview,
             known_words_target=known_words_target,
+            audio_index=audio_index,
         )
 
         with self._lock:
@@ -737,6 +756,7 @@ class JobRegistry:
             _page_payload(
                 run_id=run_id,
                 request_id=gate.request_id,
+                audio_index=gate.audio_index,
                 page_index=gate.page_index,
                 page_count=len(gate.pages),
                 candidate_start=plan.candidate_start,

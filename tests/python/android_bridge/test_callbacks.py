@@ -191,7 +191,9 @@ def _capturing_await_curation(captured: dict[str, object]) -> object:
         sentence_context: object = None,
         sentence_preview: object = None,
         known_words_target: object = None,
+        audio_index: object = None,
     ) -> list[object] | None:
+        captured["audio_index"] = audio_index
         captured["allow_line_expansion"] = allow_line_expansion
         captured["allow_clip_override"] = allow_clip_override
         captured["sentence_context"] = sentence_context
@@ -238,6 +240,39 @@ def test_curate_forwards_the_runs_known_words_target(monkeypatch: pytest.MonkeyP
     adapters.curate([])
 
     assert captured["known_words_target"] is target
+
+
+def test_curate_sends_no_audio_index_without_a_media_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    adapters = CallbackAdapters(RecordingCallbacks(), registry, handle)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(registry, "await_curation", _capturing_await_curation(captured))
+
+    adapters.curate([])
+
+    assert captured["audio_index"] is None
+
+
+def test_curate_reads_the_runs_audio_index_when_curation_opens(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    adapters = CallbackAdapters(RecordingCallbacks(), registry, handle)
+    reads: list[str] = []
+
+    def audio_index() -> int:
+        reads.append("read")
+        return 2
+
+    adapters.audio_index = audio_index
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(registry, "await_curation", _capturing_await_curation(captured))
+    assert reads == []
+
+    adapters.curate([])
+
+    assert captured["audio_index"] == 2
+    assert reads == ["read"]
 
 
 def test_curate_forwards_sentence_preview_to_await_curation(

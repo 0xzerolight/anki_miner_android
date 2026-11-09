@@ -146,6 +146,8 @@ class MediaMiningViewModel internal constructor(
         val timingPreviewPending: Boolean = false,
         val timingPreviewError: TimingPreviewError? = null,
         val audioTrackOverride: Long? = null,
+        /** The track picker's probe of the current video: the track the engine picks by itself. */
+        val audioTrackAutoIndex: Long? = null,
         val audioTrackProbePending: Boolean = false,
         val audioTrackPickerError: AudioTrackPickerError? = null,
         val undoConfirmationNoteCount: Int? = null,
@@ -353,6 +355,7 @@ class MediaMiningViewModel internal constructor(
                 timingPreviewPending = local.timingPreviewPending,
                 timingPreviewError = local.timingPreviewError,
                 audioTrackOverride = local.audioTrackOverride,
+                audioTrackAutoIndex = local.audioTrackAutoIndex,
                 audioTrackProbePending = local.audioTrackProbePending,
                 audioTrackPickerError = local.audioTrackPickerError,
                 // The tab's own probe or timing preview holds that lease; its button spinner already
@@ -541,7 +544,9 @@ class MediaMiningViewModel internal constructor(
         videoDocumentRequest += 1
         videoDocumentJob?.cancel()
         val document = localState.value.video.document
-        localState.update { it.copy(video = DocumentSlotState(), audioTrackOverride = null) }
+        localState.update {
+            it.copy(video = DocumentSlotState(), audioTrackOverride = null, audioTrackAutoIndex = null)
+        }
         videoSelection.clear()
         document?.let(::releaseDocument)
     }
@@ -1570,6 +1575,7 @@ class MediaMiningViewModel internal constructor(
                 autoAudioIndex = list.autoAudioIndex,
                 selectedAudioIndex = preselect,
             )
+        localState.update { it.copy(audioTrackAutoIndex = list.autoAudioIndex) }
         if (list.tracks.size < 2) {
             localState.update { it.copy(audioTrackOverride = null) }
         }
@@ -1634,7 +1640,11 @@ class MediaMiningViewModel internal constructor(
     ): LocalState =
         when (kind) {
             DocumentKind.VIDEO ->
-                copy(video = DocumentSlotState(document = document), audioTrackOverride = null)
+                copy(
+                    video = DocumentSlotState(document = document),
+                    audioTrackOverride = null,
+                    audioTrackAutoIndex = null,
+                )
             DocumentKind.SUBTITLE -> copy(subtitle = DocumentSlotState(document = document))
             DocumentKind.SECONDARY_SUBTITLE ->
                 copy(secondarySubtitle = DocumentSlotState(document = document))
@@ -1899,6 +1909,7 @@ class MediaMiningViewModel internal constructor(
                 cuesUnavailable = current?.unavailable == true,
                 audioOnly = media.audioOnly,
                 audioTrackOverride = media.audioTrackOverride,
+                audioIndex = request.audioIndex,
             )
         }
 

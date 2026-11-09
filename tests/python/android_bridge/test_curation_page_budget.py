@@ -76,17 +76,19 @@ def test_running_page_total_is_the_exact_encoded_upper_bound() -> None:
     ]
 
     empty_page = jobs._encoded_page_upper_bound(
-        run_id=RUN_ID, request_id=REQUEST_ID, total_candidates=12_345, candidates=[]
+        run_id=RUN_ID, request_id=REQUEST_ID, audio_index=None, total_candidates=12_345, candidates=[]
     )
     running = empty_page + sum(jobs._encoded_size(payload) for payload in payloads) + len(payloads) - 1
 
     assert running == jobs._encoded_page_upper_bound(
-        run_id=RUN_ID, request_id=REQUEST_ID, total_candidates=12_345, candidates=payloads
+        run_id=RUN_ID, request_id=REQUEST_ID, audio_index=None, total_candidates=12_345, candidates=payloads
     )
 
 
 def test_pages_fill_to_the_exact_byte_and_count_limits() -> None:
-    empty_page = jobs._encoded_page_upper_bound(run_id=RUN_ID, request_id=REQUEST_ID, total_candidates=3, candidates=[])
+    empty_page = jobs._encoded_page_upper_bound(
+        run_id=RUN_ID, request_id=REQUEST_ID, audio_index=None, total_candidates=3, candidates=[]
+    )
     # Two candidates that fill a page to the byte: the second one's comma included.
     first = 1_000
     second = CURATION_PAGE_MAX_UTF8_BYTES - empty_page - first - 1
@@ -94,18 +96,21 @@ def test_pages_fill_to_the_exact_byte_and_count_limits() -> None:
     exact = jobs._partition_pages(
         run_id=RUN_ID,
         request_id=REQUEST_ID,
+        audio_index=None,
         total_candidates=3,
         entries=[("a", first), ("b", second), ("c", 10)],
     )
     one_byte_over = jobs._partition_pages(
         run_id=RUN_ID,
         request_id=REQUEST_ID,
+        audio_index=None,
         total_candidates=3,
         entries=[("a", first), ("b", second + 1), ("c", 10)],
     )
     by_count = jobs._partition_pages(
         run_id=RUN_ID,
         request_id=REQUEST_ID,
+        audio_index=None,
         total_candidates=CURATION_PAGE_MAX_CANDIDATES + 1,
         entries=[(str(index), 10) for index in range(CURATION_PAGE_MAX_CANDIDATES + 1)],
     )
@@ -119,12 +124,15 @@ def test_pages_fill_to_the_exact_byte_and_count_limits() -> None:
 
 
 def test_a_candidate_over_a_whole_page_is_still_refused() -> None:
-    empty_page = jobs._encoded_page_upper_bound(run_id=RUN_ID, request_id=REQUEST_ID, total_candidates=2, candidates=[])
+    empty_page = jobs._encoded_page_upper_bound(
+        run_id=RUN_ID, request_id=REQUEST_ID, audio_index=None, total_candidates=2, candidates=[]
+    )
 
     with pytest.raises(BridgeProtocolError) as failure:
         jobs._partition_pages(
             run_id=RUN_ID,
             request_id=REQUEST_ID,
+            audio_index=None,
             total_candidates=2,
             entries=[("a", 10), ("b", CURATION_PAGE_MAX_UTF8_BYTES - empty_page + 1)],
         )
@@ -270,7 +278,7 @@ def _page_response(run_id: str, request_id: str, page_index: int, selection: obj
 
 def test_one_budgeted_candidate_always_fits_a_page_with_the_largest_metadata() -> None:
     empty_page = jobs._encoded_page_upper_bound(
-        run_id=RUN_ID, request_id=REQUEST_ID, total_candidates=10**18, candidates=[]
+        run_id=RUN_ID, request_id=REQUEST_ID, audio_index=10**18, total_candidates=10**18, candidates=[]
     )
 
     assert empty_page + jobs._CANDIDATE_MAX_UTF8_BYTES <= CURATION_PAGE_MAX_UTF8_BYTES

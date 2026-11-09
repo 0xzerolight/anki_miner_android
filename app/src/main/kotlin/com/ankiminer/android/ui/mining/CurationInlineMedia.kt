@@ -87,7 +87,7 @@ internal fun CurationInlinePreview(
                 cues = playerState.cues.takeUnless { playerState.cuesUnavailable }.orEmpty(),
                 overlayOffsetSeconds = 0.0,
                 audioOnly = playerState.audioOnly,
-                audioTrackOverride = playerState.audioTrackOverride,
+                audioTrackOverride = playerState.previewAudioTrack,
                 maxSurfaceHeight = maxSurfaceHeight,
                 notice =
                     if (playerState.cuesUnavailable) {

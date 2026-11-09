@@ -734,7 +734,7 @@ internal fun AnkiMinerApp(
                             onToggleUnshifted = videoViewModel::toggleTimingPreviewUnshifted,
                             onApply = videoViewModel::applyTimingPreview,
                             onCancel = videoViewModel::closeTimingPreview,
-                            audioTrackOverride = videoRunState.audioTrackOverride,
+                            audioTrackOverride = videoRunState.timingPreviewAudioTrack,
                         )
                     }
                 }
@@ -753,7 +753,7 @@ internal fun AnkiMinerApp(
                             onApply = audioViewModel::applyTimingPreview,
                             onCancel = audioViewModel::closeTimingPreview,
                             audioOnly = true,
-                            audioTrackOverride = audioRunState.audioTrackOverride,
+                            audioTrackOverride = audioRunState.timingPreviewAudioTrack,
                         )
                     }
                 }

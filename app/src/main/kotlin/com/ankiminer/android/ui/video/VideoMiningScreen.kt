@@ -317,7 +317,7 @@ fun VideoMiningScreen(
                 CurationPlayerEffects(
                     player = player,
                     videoPath = playerState.videoPath,
-                    audioTrackOverride = playerState.audioTrackOverride,
+                    audioTrackOverride = playerState.previewAudioTrack,
                     focusedCandidateId = targetCuration.focusedCandidateId,
                     selectedSentenceId = selectedSentenceId,
                     // "+ Previous line" and reset move the start and so the key;

@@ -627,6 +627,7 @@ object BridgeJsonCodec {
                 setOf(
                     "runId",
                     "requestId",
+                    "audioIndex",
                     "pageIndex",
                     "pageCount",
                     "candidateStart",
@@ -634,7 +635,7 @@ object BridgeJsonCodec {
                     "candidates",
                 )
             } else {
-                setOf("runId", "requestId", "candidates")
+                setOf("runId", "requestId", "audioIndex", "candidates")
             },
             context,
         )
@@ -663,6 +664,7 @@ object BridgeJsonCodec {
             opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
             candidates,
             page,
+            nullableNonNegative(payload.getValue("audioIndex"), "audioIndex"),
         )
     }
 

@@ -871,6 +871,127 @@ def test_audio_only_true_from_wire_reaches_process_episode(
     assert captured["kwargs"]["audio_only"] is True
 
 
+class _FakeExtractor:
+    """The two cached probes the run's audio pick reads, counted."""
+
+    def __init__(self, global_index: int | None, streams: list[SimpleNamespace]) -> None:
+        self._global_index = global_index
+        self._streams = streams
+        self.probes: list[Path] = []
+
+    def _get_japanese_audio_stream(self, video_file: Path) -> int | None:
+        self.probes.append(video_file)
+        return self._global_index
+
+    def _list_audio_streams_cached(self, video_file: Path) -> list[SimpleNamespace]:
+        self.probes.append(video_file)
+        return self._streams
+
+
+_TWO_STREAMS = [
+    SimpleNamespace(global_index=1, audio_index=0),
+    SimpleNamespace(global_index=3, audio_index=1),
+]
+
+
+def test_the_run_audio_index_is_the_extractor_pick_as_an_audio_ordinal() -> None:
+    extractor = _FakeExtractor(global_index=3, streams=_TWO_STREAMS)
+
+    assert mining._run_audio_index(extractor, Path("/cache/input.media"), None) == 1
+    assert set(extractor.probes) == {Path("/cache/input.media")}
+
+
+def test_the_user_override_is_the_run_audio_index_without_a_probe() -> None:
+    extractor = _FakeExtractor(global_index=3, streams=_TWO_STREAMS)
+
+    assert mining._run_audio_index(extractor, Path("/cache/input.media"), 0) == 0
+    assert extractor.probes == []
+
+
+def test_no_pick_is_the_first_audio_track_extraction_maps() -> None:
+    # Extraction maps 0:a:0 when no track matches; the preview plays that one too.
+    assert mining._run_audio_index(_FakeExtractor(None, _TWO_STREAMS), Path("/v.mkv"), None) == 0
+
+
+def test_a_file_without_audio_has_no_run_audio_index() -> None:
+    assert mining._run_audio_index(_FakeExtractor(None, []), Path("/v.mkv"), None) is None
+
+
+def test_process_episode_hands_curation_the_run_extractor_audio_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    extractor = _FakeExtractor(global_index=3, streams=_TWO_STREAMS)
+    seen: list[int | None] = []
+
+    class FakeProcessor:
+        media_extractor = extractor
+
+        def process_episode(self, *args: object, **kwargs: object) -> object:
+            # The pick is read when curation opens, after the engine cleared its cache.
+            assert extractor.probes == []
+            seen.append(adapters.audio_index())
+            return object()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        anki_adapter_module,
+        "AndroidAnkiAdapter",
+        lambda *_args, **_kwargs: nullcontext(object()),
+    )
+    monkeypatch.setattr(mining, "_build_processor", lambda *_args: FakeProcessor())
+    adapters = SimpleNamespace(
+        anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
+        cancel_event=threading.Event(),
+        progress=object(),
+        curate=object(),
+    )
+
+    mining._process_episode(mining._parse_request(_request()), object(), adapters)
+
+    assert seen == [1]
+
+
+def test_the_real_extractor_tag_pick_reaches_the_run_audio_index(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    import anki_miner.services.media_extractor as media_extractor
+    import anki_miner.utils.audio_track_detector as audio_track_detector
+    from anki_miner.config import AnkiMinerConfig
+
+    streams = [
+        audio_track_detector.AudioStream(
+            global_index=1,
+            audio_index=0,
+            language_tag="eng",
+            title_tag=None,
+            codec="aac",
+            channels=2,
+            is_default=True,
+        ),
+        audio_track_detector.AudioStream(
+            global_index=2,
+            audio_index=1,
+            language_tag="jpn",
+            title_tag=None,
+            codec="aac",
+            channels=2,
+            is_default=False,
+        ),
+    ]
+    # The one ffprobe seam both the pick and the stream list read.
+    monkeypatch.setattr(audio_track_detector, "list_audio_streams", lambda *_args, **_kwargs: streams)
+    monkeypatch.setattr(media_extractor, "list_audio_streams", lambda *_args, **_kwargs: streams)
+
+    extractor = media_extractor.MediaExtractorService(AnkiMinerConfig())
+
+    assert mining._run_audio_index(extractor, Path("/cache/input.media"), None) == 1
+
+
 def _episode_lifecycle_harness(
     monkeypatch: pytest.MonkeyPatch,
     processor: object,

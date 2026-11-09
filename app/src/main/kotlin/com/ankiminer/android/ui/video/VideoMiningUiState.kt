@@ -68,7 +68,16 @@ data class CurationPlayerUiState(
     val cuesUnavailable: Boolean,
     val audioOnly: Boolean = false,
     val audioTrackOverride: Long? = null,
-)
+    /** The track the run extracts from ([com.ankiminer.android.mining.CurationRequest.audioIndex]). */
+    val audioIndex: Long? = null,
+) {
+    /**
+     * The track every preview binder plays: the user's pick, else the run's own. Null leaves the
+     * player's tag rule ([com.ankiminer.android.player.preferredAudioGroup]).
+     */
+    val previewAudioTrack: Long?
+        get() = audioTrackOverride ?: audioIndex
+}
 
 @Immutable
 data class CurationUiState(
@@ -133,9 +142,19 @@ data class VideoMiningUiState(
     /** A finished run's Undo receipt restored after a background process kill; shown while Idle. */
     val restoredReceipt: MiningReceipt? = null,
     val audioTrackOverride: Long? = null,
+    /** The track picker's auto pick for the current video; null until the picker has probed it. */
+    val audioTrackAutoIndex: Long? = null,
     val audioTrackProbePending: Boolean = false,
     val audioTrackPickerError: AudioTrackPickerError? = null,
 ) {
+    /**
+     * The track the pre-run timing preview plays: the user's pick, else the engine's own pick once
+     * the track picker has probed this video (by tag or title, the rule extraction uses). Null
+     * keeps the player's tag-only rule, so opening the preview never costs a probe of its own.
+     */
+    val timingPreviewAudioTrack: Long?
+        get() = audioTrackOverride ?: audioTrackAutoIndex
+
     val canStart: Boolean
         get() =
             runState.acceptsInputEdits &&

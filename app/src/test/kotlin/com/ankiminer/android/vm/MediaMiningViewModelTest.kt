@@ -340,6 +340,49 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun curationPreviewBindsTheRunsAudioIndexWithoutAnOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val media = CurationMediaBinding(videoPath = "/cache/video.mkv", subtitlePath = "/cache/subtitle.srt")
+            val repository =
+                RecordingRepository(MiningRunState.Curating(curationRequest().copy(audioIndex = 2L), media = media))
+            val viewModel = mediaViewModel(repository = repository, safBroker = ImmediateSafBroker())
+
+            runCurrent()
+
+            assertEquals(2L, viewModel.uiState.value.curation?.player?.previewAudioTrack)
+        }
+
+    @Test
+    fun curationPreviewBindsTheOverrideOverTheRunsAudioIndex() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val media =
+                CurationMediaBinding(
+                    videoPath = "/cache/video.mkv",
+                    subtitlePath = "/cache/subtitle.srt",
+                    audioTrackOverride = 1L,
+                )
+            val repository =
+                RecordingRepository(MiningRunState.Curating(curationRequest().copy(audioIndex = 2L), media = media))
+            val viewModel = mediaViewModel(repository = repository, safBroker = ImmediateSafBroker())
+
+            runCurrent()
+
+            assertEquals(1L, viewModel.uiState.value.curation?.player?.previewAudioTrack)
+        }
+
+    @Test
+    fun curationPreviewWithNeitherPickKeepsThePlayersOwnRule() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val media = CurationMediaBinding(videoPath = "/cache/video.mkv", subtitlePath = "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(curationRequest(), media = media))
+            val viewModel = mediaViewModel(repository = repository, safBroker = ImmediateSafBroker())
+
+            runCurrent()
+
+            assertNull(requireNotNull(viewModel.uiState.value.curation?.player).previewAudioTrack)
+        }
+
+    @Test
     fun failedCueLookupLeavesThePlayerUsableWithoutCues() =
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest()
@@ -1927,6 +1970,62 @@ class MediaMiningViewModelTest {
             runCurrent()
 
             assertNull(viewModel.uiState.value.audioTrackOverride)
+        }
+
+    @Test
+    fun timingPreviewKeepsThePlayersTagRuleBeforeThePickerRan() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = FakeAudioTrackProbeOpener())
+            selectDocuments(viewModel)
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.timingPreviewAudioTrack)
+        }
+
+    @Test
+    fun timingPreviewUsesThePickersAutoIndexOnceThePickerRan() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            opener.complete(Result.success(twoTrackList()))
+            runCurrent()
+            viewModel.dismissAudioTrackPicker()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.audioTrackOverride)
+            assertEquals(1L, viewModel.uiState.value.timingPreviewAudioTrack)
+
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+            assertEquals(2L, viewModel.uiState.value.timingPreviewAudioTrack)
+        }
+
+    @Test
+    fun repickingVideoForgetsThePickersAutoIndex() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            opener.complete(Result.success(twoTrackList()))
+            runCurrent()
+            viewModel.dismissAudioTrackPicker()
+            runCurrent()
+            assertEquals(1L, viewModel.uiState.value.timingPreviewAudioTrack)
+
+            viewModel.onVideoPicked("content://test/video2")
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.timingPreviewAudioTrack)
         }
 
     @Test

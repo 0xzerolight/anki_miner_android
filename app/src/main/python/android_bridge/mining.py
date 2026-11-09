@@ -1028,6 +1028,25 @@ class _SentencePreview:
         return SentencePreview(line_expansion=expansion, translation=translation)
 
 
+def _run_audio_index(extractor: Any, video_path: Path, override: int | None) -> int | None:
+    """The audio track this run extracts from, as an ordinal among the file's audio tracks.
+
+    The user's pick when there is one. Otherwise the extractor's own cached
+    probes: its mining-language pick, mapped from ffmpeg's global stream index
+    to the track ordinal the preview selects by, or the first audio track,
+    which extraction maps (``0:a:0``) when nothing matched. None when the file
+    has no audio track (or the probe failed).
+    """
+
+    if override is not None:
+        return override
+    global_index = extractor._get_japanese_audio_stream(video_path)
+    streams = extractor._list_audio_streams_cached(video_path)
+    if global_index is None:
+        return 0 if streams else None
+    return next((stream.audio_index for stream in streams if stream.global_index == global_index), None)
+
+
 def _process_episode(
     request: _VideoRequest,
     config: object,
@@ -1053,6 +1072,11 @@ def _process_episode(
         processor = _build_processor(config, adapters, anki_adapter)
         stack.callback(processor.close)
         adapters.sentence_preview = _SentencePreview(processor, config, request)
+        adapters.audio_index = lambda: _run_audio_index(
+            processor.media_extractor,
+            request.video_path,
+            request.audio_track_override,
+        )
         from .definitions import clear_run_dictionaries, register_run_dictionaries
 
         register_run_dictionaries(adapters.run_id, config)

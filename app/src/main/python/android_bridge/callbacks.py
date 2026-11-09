@@ -482,6 +482,10 @@ class CallbackAdapters:
         self.sentence_preview: SentencePreviewer | None = None
         # Set once the run's config is mapped: the language's own known-words file.
         self.known_words_target: KnownWordsTarget | None = None
+        # Set by a media run once its processor exists: the audio track it
+        # extracts from, read when curation opens (after the engine has reset
+        # its per-run probe cache, so the probe it caches serves phase 3).
+        self.audio_index: Callable[[], int | None] | None = None
 
     @property
     def run_id(self) -> str:
@@ -534,6 +538,7 @@ class CallbackAdapters:
             sentence_context=self.sentence_context,
             sentence_preview=self.sentence_preview,
             known_words_target=self.known_words_target,
+            audio_index=self.audio_index() if self.audio_index is not None else None,
         )
 
     def cancellation_requested(self) -> bool:

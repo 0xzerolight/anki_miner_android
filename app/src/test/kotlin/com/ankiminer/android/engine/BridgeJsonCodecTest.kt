@@ -467,7 +467,7 @@ class BridgeJsonCodecTest {
     fun `curation request is typed and response validates candidate ownership`() {
         val request = curationRequest()
         val rawRequest =
-            """{"schemaVersion":1,"type":"curation.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","candidates":[{"candidateId":"${request.candidates.single().candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${request.candidates.single().defaultSentenceId}","sentences":[{"sentenceId":"${request.candidates.single().defaultSentenceId}","sentence":"猫だ。","sentenceFurigana":"猫[ねこ]だ。","sentenceReading":"ねこだ。","startTime":1.0,"endTime":2.0,"duration":1.0}]}]}}"""
+            """{"schemaVersion":1,"type":"curation.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","audioIndex":null,"candidates":[{"candidateId":"${request.candidates.single().candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${request.candidates.single().defaultSentenceId}","sentences":[{"sentenceId":"${request.candidates.single().defaultSentenceId}","sentence":"猫だ。","sentenceFurigana":"猫[ねこ]だ。","sentenceReading":"ねこだ。","startTime":1.0,"endTime":2.0,"duration":1.0}]}]}}"""
         assertEquals(request, (BridgeJsonCodec.decode(rawRequest) as BridgeMessage.CurationNeeded).request)
 
         val accepted = BridgeJsonCodec.encodeCurationResponse(request, listOf(CurationSelection(request.candidates.single().candidateId, null)))
@@ -950,7 +950,7 @@ class BridgeJsonCodecTest {
         val candidate = request.candidates.single()
         val sentence = candidate.sentences.single()
         val rawRequest =
-            """{"schemaVersion":1,"type":"curation.page.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":1,"pageCount":2,"candidateStart":1,"totalCandidates":2,"candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"猫[ねこ]だ。","sentenceReading":"ねこだ。","startTime":1.0,"endTime":2.0,"duration":1.0}]}]}}"""
+            """{"schemaVersion":1,"type":"curation.page.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","audioIndex":null,"pageIndex":1,"pageCount":2,"candidateStart":1,"totalCandidates":2,"candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"猫[ねこ]だ。","sentenceReading":"ねこだ。","startTime":1.0,"endTime":2.0,"duration":1.0}]}]}}"""
 
         assertEquals(request, (BridgeJsonCodec.decode(rawRequest) as BridgeMessage.CurationNeeded).request)
         val encoded =
@@ -971,12 +971,41 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `curation requests carry the run's audio index`() {
+        val request = curationRequest()
+        val withIndex = curationRequestJson(request, "").replace("\"audioIndex\":null", "\"audioIndex\":2")
+
+        assertEquals(
+            request.copy(audioIndex = 2L),
+            (BridgeJsonCodec.decode(withIndex) as BridgeMessage.CurationNeeded).request,
+        )
+        assertNull(
+            (BridgeJsonCodec.decode(curationRequestJson(request, "")) as BridgeMessage.CurationNeeded).request.audioIndex,
+        )
+    }
+
+    @Test
+    fun `a curation request with a negative or missing audio index is rejected`() {
+        val raw = curationRequestJson(curationRequest(), "")
+
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure {
+                BridgeJsonCodec.decode(raw.replace("\"audioIndex\":null", "\"audioIndex\":-1"))
+            }.category,
+        )
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.decode(raw.replace("\"audioIndex\":null,", ""))
+        }
+    }
+
+    @Test
     fun `paged curation rejects inconsistent bounds and oversized envelopes`() {
         val request = curationRequest()
         val candidate = request.candidates.single()
         val sentence = candidate.sentences.single()
         val inconsistent =
-            """{"schemaVersion":1,"type":"curation.page.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":0,"pageCount":2,"candidateStart":1,"totalCandidates":2,"candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"","sentenceReading":"","startTime":1.0,"endTime":2.0,"duration":1.0}]}]}}"""
+            """{"schemaVersion":1,"type":"curation.page.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","audioIndex":null,"pageIndex":0,"pageCount":2,"candidateStart":1,"totalCandidates":2,"candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"","sentenceReading":"","startTime":1.0,"endTime":2.0,"duration":1.0}]}]}}"""
         assertEquals(
             BridgeProtocolCategory.INVALID_VALUE,
             protocolFailure { BridgeJsonCodec.decode(inconsistent) }.category,
@@ -1629,7 +1658,7 @@ class BridgeJsonCodecTest {
     ): String {
         val candidate = request.candidates.single()
         val sentence = candidate.sentences.single()
-        return """{"schemaVersion":1,"type":"curation.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"猫[ねこ]だ。","sentenceReading":"ねこだ。","startTime":1.0,"endTime":2.0,"duration":1.0$sentenceFields}]}]}}"""
+        return """{"schemaVersion":1,"type":"curation.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","audioIndex":null,"candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"猫[ねこ]だ。","sentenceReading":"ねこだ。","startTime":1.0,"endTime":2.0,"duration":1.0$sentenceFields}]}]}}"""
     }
 
     @Test

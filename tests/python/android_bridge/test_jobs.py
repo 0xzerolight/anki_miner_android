@@ -162,6 +162,8 @@ def _page_response(
 def _start_paged_wait(
     registry: JobRegistry,
     candidates: list[object],
+    *,
+    audio_index: int | None = None,
 ) -> tuple[
     str,
     queue.Queue[tuple[str, dict[str, object]]],
@@ -176,7 +178,7 @@ def _start_paged_wait(
         emitted.put((raw, json.loads(raw)))
 
     def wait() -> None:
-        returned.append(registry.await_curation(handle.run_id, candidates, emit))
+        returned.append(registry.await_curation(handle.run_id, candidates, emit, audio_index=audio_index))
 
     thread = threading.Thread(target=wait, daemon=True)
     thread.start()
@@ -967,6 +969,68 @@ def test_large_curation_is_complete_bounded_and_aggregates_original_objects() ->
     assert len(seen_ids) == len(words)
     assert returned == [selected_words]
     assert all(actual is expected for actual, expected in zip(returned[0], selected_words, strict=True))
+
+
+def test_a_run_without_an_audio_pick_sends_a_null_audio_index() -> None:
+    registry = JobRegistry()
+    run_id, request, _, thread = _start_wait(registry, [_fake("猫")])
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    assert "audioIndex" in payload
+    assert payload["audioIndex"] is None
+
+    registry.cancel(run_id)
+    thread.join(1)
+
+
+def test_the_run_audio_index_rides_every_curation_page() -> None:
+    registry = JobRegistry()
+    words = [FakeWord(f"word-{index}", f"lemma-{index}", f"sentence-{index}", 1, 2, 1) for index in range(105)]
+    run_id, emitted, returned, thread = _start_paged_wait(registry, words, audio_index=12)
+
+    for page_index in range(2):
+        raw, request = emitted.get(timeout=1)
+        assert len(raw.encode("utf-8")) <= CURATION_PAGE_MAX_UTF8_BYTES
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        assert payload["audioIndex"] == 12
+        registry.resolve_curation(_page_response(run_id, payload["requestId"], page_index, []))
+
+    thread.join(1)
+    assert returned == [[]]
+
+
+def test_a_single_request_carries_the_run_audio_index() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    emitted: queue.Queue[dict[str, object]] = queue.Queue()
+
+    def wait() -> None:
+        registry.await_curation(handle.run_id, [_fake("猫")], lambda raw: emitted.put(json.loads(raw)), audio_index=0)
+
+    thread = threading.Thread(target=wait, daemon=True)
+    thread.start()
+    request = emitted.get(timeout=1)
+    assert request["type"] == "curation.request"
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    assert payload["audioIndex"] == 0
+
+    registry.cancel(handle.run_id)
+    thread.join(1)
+
+
+@pytest.mark.parametrize("audio_index", [-1, True, 1.0, "1"])
+def test_an_invalid_audio_index_is_rejected_before_emitting(audio_index: object) -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    emitted: list[str] = []
+
+    with pytest.raises(BridgeProtocolError) as error:
+        registry.await_curation(handle.run_id, [_fake("猫")], emitted.append, audio_index=audio_index)  # type: ignore[arg-type]
+
+    assert error.value.code == "invalid_audio_index"
+    assert emitted == []
 
 
 def test_oversized_curation_fails_before_returning_selected_work() -> None:

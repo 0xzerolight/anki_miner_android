@@ -1712,6 +1712,7 @@ def _curation_request_payload(
     return {
         "runId": "run_" + "a" * 32,
         "requestId": "curation_" + "b" * 32,
+        "audioIndex": None,
         "candidates": [
             {
                 "candidateId": "candidate_" + "c" * 32,
@@ -1789,6 +1790,32 @@ def test_curation_schema_accepts_a_sentence_preview(
     payload = _curation_request_with_sentence_fields({"linesBefore": 1, "linesAfter": 2, "translation": "A cat."})
 
     Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize("audio_index", [None, 0, 3])
+def test_curation_schema_accepts_the_run_audio_index(
+    schemas: dict[str, dict[str, Any]],
+    audio_index: int | None,
+) -> None:
+    payload = _curation_request_payload()
+    payload["audioIndex"] = audio_index
+
+    Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize("audio_index", [-1, 1.5, "1", "missing"])
+def test_curation_schema_rejects_an_invalid_or_missing_audio_index(
+    schemas: dict[str, dict[str, Any]],
+    audio_index: object,
+) -> None:
+    payload = _curation_request_payload()
+    if audio_index == "missing":
+        del payload["audioIndex"]
+    else:
+        payload["audioIndex"] = audio_index
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
 
 
 @pytest.mark.parametrize(
