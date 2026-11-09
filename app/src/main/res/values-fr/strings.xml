@@ -776,6 +776,11 @@
     <string name="settings_known_words">Utiliser la BD locale de mots connus</string>
     <string name="settings_known_from_reviewed_cards">Ne compter un mot comme connu qu\'après la révision de sa carte</string>
     <string name="settings_known_from_reviewed_cards_help">La règle de phrase i+1 ne compte un mot comme connu que si sa carte Anki a été révisée au moins une fois. L\'extraction ignore toujours chaque mot qui a déjà une carte.</string>
+    <string name="settings_ignore_suspended_cards">Ignorer les cartes suspendues</string>
+    <string name="settings_ignore_suspended_cards_help">Les mots dont toutes les cartes Anki sont suspendues comptent comme inconnus : ils peuvent être extraits à nouveau, et la règle de phrase i+1 les traite comme nouveaux. Une note qui a au moins une carte non suspendue compte toujours comme connue.</string>
+    <string name="settings_numbers">Nombres</string>
+    <string name="settings_mine_number_counters">Extraire les nombres avec leurs classificateurs</string>
+    <string name="settings_mine_number_counters_help">Crée une carte pour un nombre et son classificateur, lue avec ses changements de son (3本 さんぼん, 4人 よにん) et définie par le classificateur. Une carte par nombre.</string>
     <string name="settings_bold_target">Mettre la cible en gras dans sa phrase</string>
     <string name="settings_max_duration">Durée maximale des phrases (secondes)</string>
     <string name="settings_max_characters">Nombre maximal de caractères par phrase</string>

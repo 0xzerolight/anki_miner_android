@@ -144,6 +144,8 @@ class SettingsSearchIndexTest {
                 "word_filters.kana_variants",
                 "word_filters.excluded_decks",
                 "word_filters.known_from_reviewed_cards",
+                "word_filters.ignore_suspended_cards",
+                "word_filters.number_counters",
             ),
         )
         assertEntriesOn(SettingsCategory.ANKI, listOf("anki.strict_card_order"))
@@ -237,6 +239,30 @@ class SettingsSearchIndexTest {
     }
 
     @Test
+    fun `the suspended and counter switches are found with their help`() {
+        val byId = SETTINGS_SEARCH_INDEX.associateBy { it.id }
+
+        assertEquals(
+            mapOf(
+                "word_filters.ignore_suspended_cards" to
+                    (R.string.settings_ignore_suspended_cards to R.string.settings_ignore_suspended_cards_help),
+                "word_filters.number_counters" to
+                    (R.string.settings_mine_number_counters to R.string.settings_mine_number_counters_help),
+            ),
+            listOf("word_filters.ignore_suspended_cards", "word_filters.number_counters")
+                .associateWith { byId.getValue(it).title to byId.getValue(it).detail },
+        )
+        assertEquals("filtering-options", byId.getValue("word_filters.ignore_suspended_cards").cardKey)
+        assertEquals("filtering-options", byId.getValue("word_filters.number_counters").cardKey)
+        // Right after the excluded decks, as on desktop.
+        val ids = SETTINGS_SEARCH_INDEX.map { it.id }
+        assertEquals(
+            ids.indexOf("word_filters.excluded_decks") + 1,
+            ids.indexOf("word_filters.ignore_suspended_cards"),
+        )
+    }
+
+    @Test
     fun `folded combos keep desktop's search keywords`() {
         val byId = SETTINGS_SEARCH_INDEX.associateBy { it.id }
 
@@ -264,6 +290,10 @@ class SettingsSearchIndexTest {
         val hangul = ids(LanguageSettingsState(activeCode = "ko", profiles = listOf(korean)))
 
         assertTrue("anki.pitch_format" in japanese && "word_filters.script_type" in japanese)
+        // The Numbers section sits under the kana filters: Japanese only.
+        assertTrue("word_filters.number_counters" in japanese)
+        assertFalse("word_filters.number_counters" in chinese || "word_filters.number_counters" in hangul)
+        assertTrue(listOf(japanese, chinese, hangul).all { "word_filters.ignore_suspended_cards" in it })
         assertFalse("anki.reading_tone_color" in japanese || "word_filters.hangul_only" in japanese)
         assertTrue("anki.reading_tone_color" in chinese)
         assertFalse("anki.pitch_format" in chinese || "word_filters.script_type" in chinese)

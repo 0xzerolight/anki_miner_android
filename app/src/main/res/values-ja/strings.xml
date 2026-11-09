@@ -767,6 +767,11 @@
     <string name="settings_known_words">ローカル既知単語データベースを使用</string>
     <string name="settings_known_from_reviewed_cards">カードを復習した後にだけ単語を既知として数える</string>
     <string name="settings_known_from_reviewed_cards_help">i+1 の文のルールは、Anki カードを 1 回以上復習した単語だけを既知として数えます。マイニングでは、すでにカードがある単語は引き続きすべてスキップされます。</string>
+    <string name="settings_ignore_suspended_cards">保留中のカードを無視</string>
+    <string name="settings_ignore_suspended_cards_help">Anki カードがすべて保留中の単語は未知として扱われます。もう一度マイニングでき、i+1 の文のルールでも新しい単語として扱われます。保留されていないカードが 1 枚でもあるノートは、引き続き既知として数えます。</string>
+    <string name="settings_numbers">数字</string>
+    <string name="settings_mine_number_counters">数字を助数詞と一緒にマイニング</string>
+    <string name="settings_mine_number_counters_help">数字と助数詞の組み合わせのカードを作ります。読みは音の変化を反映し（3本 さんぼん、4人 よにん）、意味は助数詞で示します。数字ごとに 1 枚です。</string>
     <string name="settings_bold_target">例文内の対象語を太字に</string>
     <string name="settings_max_duration">例文の最大再生時間(秒)</string>
     <string name="settings_max_characters">例文の最大文字数</string>

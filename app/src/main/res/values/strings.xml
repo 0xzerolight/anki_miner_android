@@ -780,6 +780,11 @@
     <string name="settings_known_words">Use the local known-words database</string>
     <string name="settings_known_from_reviewed_cards">Count a word as known only after its card has been reviewed</string>
     <string name="settings_known_from_reviewed_cards_help">The i+1 sentence rule counts a word as known only when its Anki card has been reviewed at least once. Mining still skips every word that already has a card.</string>
+    <string name="settings_ignore_suspended_cards">Ignore suspended cards</string>
+    <string name="settings_ignore_suspended_cards_help">Words whose only Anki cards are suspended count as unknown: they can be mined again, and the i+1 sentence rule treats them as new. A note with any unsuspended card still counts as known.</string>
+    <string name="settings_numbers">Numbers</string>
+    <string name="settings_mine_number_counters">Mine numbers with their counters</string>
+    <string name="settings_mine_number_counters_help">Make a card for a number and its counter, read with its sound changes (3本 さんぼん, 4人 よにん), defined by the counter. One card per number.</string>
     <string name="settings_bold_target">Bold the target in its sentence</string>
     <string name="settings_max_duration">Maximum sentence duration (seconds)</string>
     <string name="settings_max_characters">Maximum sentence characters</string>

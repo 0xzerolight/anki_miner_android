@@ -1629,11 +1629,28 @@ internal fun LazyListScope.wordFilterOptions(
                     SupportingText(stringResource(R.string.anki_deck_unusable_hidden))
                 }
             }
+            // Off by default, as on desktop: many users suspend cards they already know.
+            NullableToggle(
+                stringResource(R.string.settings_ignore_suspended_cards),
+                draft.ignoreSuspendedCards,
+                EngineDefaults.IGNORE_SUSPENDED_CARDS,
+            ) { onDraftChange(draft.copy(ignoreSuspendedCards = it)) }
+            SupportingText(stringResource(R.string.settings_ignore_suspended_cards_help))
             if (showsNameWordsets) {
                 NameWordsetsRow(draft, resources, onDraftChange)
             }
             if (showsKanaFilters) {
                 ScriptTypeChoice(draft, onDraftChange, inherited)
+                // Desktop's Numbers section sits under the kana filters: the counter table and its
+                // sound changes are Japanese.
+                HorizontalDivider()
+                Text(stringResource(R.string.settings_numbers), style = MaterialTheme.typography.titleSmall)
+                NullableToggle(
+                    stringResource(R.string.settings_mine_number_counters),
+                    draft.mineNumberCounters,
+                    EngineDefaults.MINE_NUMBER_COUNTERS,
+                ) { onDraftChange(draft.copy(mineNumberCounters = it)) }
+                SupportingText(stringResource(R.string.settings_mine_number_counters_help))
             }
             if (showsHangulFilters) {
                 HangulFilter.entries.forEach { filter ->

@@ -770,6 +770,11 @@
     <string name="settings_known_words">Lokale Datenbank bekannter Wörter verwenden</string>
     <string name="settings_known_from_reviewed_cards">Ein Wort erst als bekannt zählen, wenn seine Karte wiederholt wurde</string>
     <string name="settings_known_from_reviewed_cards_help">Die i+1-Satzregel zählt ein Wort erst als bekannt, wenn seine Anki-Karte mindestens einmal wiederholt wurde. Das Mining überspringt weiterhin jedes Wort, das bereits eine Karte hat.</string>
+    <string name="settings_ignore_suspended_cards">Ausgesetzte Karten ignorieren</string>
+    <string name="settings_ignore_suspended_cards_help">Wörter, deren Anki-Karten alle ausgesetzt sind, gelten als unbekannt: Sie können erneut gemint werden, und die i+1-Satzregel behandelt sie als neu. Eine Notiz mit mindestens einer nicht ausgesetzten Karte gilt weiterhin als bekannt.</string>
+    <string name="settings_numbers">Zahlen</string>
+    <string name="settings_mine_number_counters">Zahlen mit ihren Zählwörtern minen</string>
+    <string name="settings_mine_number_counters_help">Erstellt eine Karte für eine Zahl samt Zählwort, gelesen mit ihren Lautänderungen (3本 さんぼん, 4人 よにん) und erklärt durch das Zählwort. Eine Karte pro Zahl.</string>
     <string name="settings_bold_target">Zielwort im Satz fett hervorheben</string>
     <string name="settings_max_duration">Maximale Satzdauer (Sekunden)</string>
     <string name="settings_max_characters">Maximale Zeichenanzahl pro Satz</string>

@@ -776,6 +776,11 @@
     <string name="settings_known_words">Usa il DB locale delle parole conosciute</string>
     <string name="settings_known_from_reviewed_cards">Considera conosciuta una parola solo dopo il ripasso della sua carta</string>
     <string name="settings_known_from_reviewed_cards_help">La regola delle frasi i+1 considera conosciuta una parola solo quando la sua carta Anki è stata ripassata almeno una volta. Il mining salta comunque ogni parola che ha già una carta.</string>
+    <string name="settings_ignore_suspended_cards">Ignora le carte sospese</string>
+    <string name="settings_ignore_suspended_cards_help">Le parole le cui carte Anki sono tutte sospese contano come sconosciute: si possono estrarre di nuovo e la regola delle frasi i+1 le tratta come nuove. Una nota con almeno una carta non sospesa conta ancora come conosciuta.</string>
+    <string name="settings_numbers">Numeri</string>
+    <string name="settings_mine_number_counters">Estrai i numeri con i loro classificatori</string>
+    <string name="settings_mine_number_counters_help">Crea una carta per un numero e il suo classificatore, letta con i suoi cambi di suono (3本 さんぼん, 4人 よにん) e definita dal classificatore. Una carta per numero.</string>
     <string name="settings_bold_target">Parola di destinazione in grassetto nella frase</string>
     <string name="settings_max_duration">Durata massima della frase (secondi)</string>
     <string name="settings_max_characters">Numero massimo di caratteri della frase</string>
