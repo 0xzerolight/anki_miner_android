@@ -10,6 +10,7 @@ import time
 import types
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -218,6 +219,9 @@ class FakeKotlinAnki:
         # Index-aligned with the known rows: whether the note has a reviewed card outside the
         # excluded decks. Sent only to a scan that asks for reviewed marks.
         self.known_note_reviewed: list[bool] = []
+        # Index-aligned with the known rows: whether every card of the note outside the excluded
+        # decks is suspended. A scan with ignoreSuspended leaves such a note out.
+        self.known_note_suspended: list[bool] = []
         self.raw_requests: list[tuple[str, str]] = []
         self.duplicate_fields: list[str] = []
         self.duplicate_note_ids: dict[int, int] = {}
@@ -605,6 +609,7 @@ class FakeKotlinAnki:
             cursor = scope["cursor"]
             field_ordinals = tuple((entry["modelId"], tuple(entry["ordinals"])) for entry in scope["fieldOrdinals"])
             mark_reviewed = scope.get("markReviewed", False)
+            ignore_suspended = scope.get("ignoreSuspended", False)
             if cursor is None:
                 start = 0
                 next_ordinal = 1
@@ -615,6 +620,7 @@ class FakeKotlinAnki:
                 assert cursor_state["excludedDecks"] == tuple(scope["excludedDecks"])
                 assert cursor_state["fieldOrdinals"] == field_ordinals
                 assert cursor_state["markReviewed"] == mark_reviewed
+                assert cursor_state["ignoreSuspended"] == ignore_suspended
                 assert cursor_state["ordinal"] == cursor["ordinal"]
                 start = cursor_state["start"]
                 scanned_before = cursor_state["scannedNotes"]
@@ -643,7 +649,7 @@ class FakeKotlinAnki:
                     deck == excluded_deck or deck.startswith(f"{excluded_deck}::")
                     for deck in decks
                     for excluded_deck in excluded
-                )
+                ) or (ignore_suspended and index < len(self.known_note_suspended) and self.known_note_suspended[index])
                 if not note_is_excluded and page_notes and page_utf8_bytes + note_bytes > limits["maxTotalUtf8Bytes"]:
                     break
                 scanned_notes += 1
@@ -663,6 +669,7 @@ class FakeKotlinAnki:
                     "excludedDecks": tuple(scope["excludedDecks"]),
                     "fieldOrdinals": field_ordinals,
                     "markReviewed": mark_reviewed,
+                    "ignoreSuspended": ignore_suspended,
                     "ordinal": next_ordinal,
                     "start": next_index,
                     "scannedNotes": total_scanned,
@@ -2459,6 +2466,88 @@ def test_reviewed_marks_must_answer_the_request_exactly(
     with pytest.raises(BridgeProtocolError) as exc_info:
         _adapter(config, OneNoteKotlin()).get_existing_vocabulary()
     assert exc_info.value.code == "invalid_anki_response"
+
+
+# Ignore suspended cards (desktop 3.12.0): the known-vocabulary scan asks Kotlin to leave out a note
+# whose every card is suspended or in an excluded deck (deck:* -deck:"X" -is:suspended), and card
+# creation then admits notes against that narrowed set, as it does for excluded decks.
+
+
+def _suspended_config(home: Path, *, ignore: bool = True, **changes: object) -> Any:
+    config = _config(home, **changes)
+    return types.SimpleNamespace(
+        **{field.name: getattr(config, field.name) for field in dataclass_fields(config)},
+        ignore_suspended_cards=ignore,
+    )
+
+
+def test_ignoring_suspended_cards_drops_all_suspended_notes_from_the_known_words(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫", "犬", "鳥"]
+    kotlin.known_note_suspended = [True, False, False]
+    adapter = _adapter(_suspended_config(initialized_bridge_home), kotlin)
+
+    assert adapter.get_existing_vocabulary() == {"犬", "鳥"}
+    assert _known_scopes(kotlin) == [
+        {
+            "kind": "knownVocabulary",
+            "excludedDecks": [],
+            "fieldOrdinals": [],
+            "cursor": None,
+            "limits": _KNOWN_VOCABULARY_LIMITS,
+            "ignoreSuspended": True,
+        }
+    ]
+
+
+def test_ignoring_suspended_cards_rides_every_page_and_the_reviewed_walk(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = [f"語{index}" for index in range(300)]
+    kotlin.known_note_suspended = [index % 3 == 0 for index in range(300)]
+    kotlin.known_note_reviewed = [True] * 300
+    adapter = _adapter(_suspended_config(initialized_bridge_home, known_from_reviewed_cards=True), kotlin)
+
+    expected = {f"語{index}" for index in range(300) if index % 3}
+    assert adapter.get_existing_vocabulary() == expected
+    assert adapter.get_reviewed_vocabulary() == expected
+    scopes = _known_scopes(kotlin)
+    assert [scope["cursor"] is None for scope in scopes] == [True, False]
+    assert all(scope["ignoreSuspended"] is True and scope["markReviewed"] is True for scope in scopes)
+
+
+@pytest.mark.parametrize("ignore", [None, False], ids=["engine-without-field", "off"])
+def test_suspended_setting_off_sends_the_known_scan_bytes_unchanged(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ignore: bool | None,
+) -> None:
+    import android_bridge.callbacks as callbacks_module
+
+    monkeypatch.setattr(callbacks_module, "uuid4", lambda: types.SimpleNamespace(hex="b" * 32))
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫"]
+    kotlin.known_note_suspended = [True]
+    config = (
+        _config(initialized_bridge_home)
+        if ignore is None
+        else _suspended_config(initialized_bridge_home, ignore=ignore)
+    )
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.get_existing_vocabulary() == {"猫"}
+
+    raws = [raw for method, raw in kotlin.raw_requests if method == "ankiScanFirstFields"]
+    # The bytes, and so the request digest, of the scan before the setting existed.
+    assert raws[1] == (
+        '{"schemaVersion":1,"type":"anki.scanfirstfields.request","payload":{"scope":{"kind":"knownVocabulary",'
+        '"excludedDecks":[],"fieldOrdinals":[],"cursor":null,"limits":{"maxScannedNotes":256,'
+        '"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}},'
+        '"runId":"run_' + "a" * 32 + '","requestId":"anki_' + "b" * 32 + '"}}'
+    )
 
 
 def test_created_mined_forms_record_only_notes_anki_confirmed(
@@ -6940,6 +7029,47 @@ def test_without_excluded_decks_any_collection_duplicate_is_skipped(
     assert adapter.create_cards_batch([_card("猫")]) == []
     assert adapter.last_skipped_duplicates == 1
     assert kotlin.requests_for("ankiCreateNotes") == []
+
+
+def test_ignoring_suspended_cards_admits_a_word_only_suspended_notes_hold(
+    initialized_bridge_home: Path,
+) -> None:
+    """Desktop ``AnkiService._scan_is_narrowed``: ignored suspended cards admit like excluded decks.
+
+    Anki's duplicate rule still sees the suspended note, so the scan's narrowed known words
+    authorise the note instead, and Kotlin creates it with allowDuplicates.
+    """
+    kotlin = FakeKotlinAnki()
+    _excluded_deck_collection(kotlin, [("Main", "猫"), ("Main", "犬")])
+    kotlin.known_note_suspended = [True, False]
+    adapter = _adapter(_suspended_config(initialized_bridge_home), kotlin)
+
+    created = adapter.create_cards_batch([_card("猫"), _card("犬")])
+
+    assert len(created) == 1
+    assert adapter.last_skipped_duplicates == 1
+    request = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
+    assert request["duplicateScope"]["kind"] == "allowDuplicates"
+    assert [note["duplicateCandidate"]["key"] for note in request["notes"]] == ["猫"]
+
+
+@pytest.mark.parametrize(
+    ("ignore", "allow_duplicates"),
+    [(False, False), (True, True)],
+    ids=["off", "duplicates-allowed"],
+)
+def test_suspended_admission_stays_off_without_the_setting_or_with_duplicates_allowed(
+    initialized_bridge_home: Path,
+    ignore: bool,
+    allow_duplicates: bool,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(
+        _suspended_config(initialized_bridge_home, ignore=ignore, allow_duplicate_cards=allow_duplicates),
+        kotlin,
+    )
+
+    assert adapter._excluded_deck_admission() is False
 
 
 def test_excluded_deck_admission_fails_closed_before_any_write(
