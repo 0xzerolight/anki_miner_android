@@ -43,6 +43,9 @@ internal data class AnkiPresetApplication(
  * A mining language's own card fields (Hebrew `transliteration`, `root`, ...) come in as
  * `extraFields`: they are matched on their own placeholder spelling after the keyword pass, the rule
  * desktop's `auto_map_profile_fields` applies. Japanese passes none, so its maps are unchanged.
+ *
+ * [merge] and [remap] leave the [AnkiFieldKeys.CAPABILITY_GATED] keys a language cannot fill `""`,
+ * a retained choice included, as desktop's `fill_note_type_fields` does.
  */
 internal object AnkiFieldMapPolicy {
     const val CARD_TYPE_MARKER_KEY = "card_type_marker"
@@ -54,6 +57,8 @@ internal object AnkiFieldMapPolicy {
         currentFieldMap: Map<String, String>,
         reservedDestinations: Set<String> = emptySet(),
         extraFields: List<LanguageExtraCardField> = emptyList(),
+        /** The mining language's profile capabilities; null is Japanese, which fills every key. */
+        languageCapabilities: Set<String>? = null,
     ): AnkiFieldMapMergeResult {
         if (currentNoteType == selectedNoteType) {
             return AnkiFieldMapMergeResult(currentFieldMap, emptyList())
@@ -71,7 +76,8 @@ internal object AnkiFieldMapPolicy {
             usedDestinations += field
         }
 
-        AnkiFieldKeys.OPTIONAL.forEach { key ->
+        val fillable = AnkiFieldKeys.OPTIONAL - AnkiFieldKeys.unfillable(languageCapabilities)
+        fillable.forEach { key ->
             val current = currentFieldMap[key].orEmpty()
             if (current.isNotEmpty() && current in fieldNames && current !in usedDestinations) {
                 merged[key] = current
@@ -79,7 +85,7 @@ internal object AnkiFieldMapPolicy {
             }
         }
 
-        AnkiFieldKeys.OPTIONAL.forEach { key ->
+        fillable.forEach { key ->
             if (merged.getValue(key).isNotEmpty()) return@forEach
             val suggested =
                 AnkiFieldAutoMap.firstAvailableMatch(key, fieldNames, usedDestinations)
@@ -143,6 +149,8 @@ internal object AnkiFieldMapPolicy {
         currentFieldMap: Map<String, String>,
         reservedDestinations: Set<String> = emptySet(),
         extraFields: List<LanguageExtraCardField> = emptyList(),
+        /** The mining language's profile capabilities; null is Japanese, which fills every key. */
+        languageCapabilities: Set<String>? = null,
     ): AnkiFieldMapMergeResult {
         val firstField =
             fieldNames.firstOrNull()
@@ -158,7 +166,8 @@ internal object AnkiFieldMapPolicy {
         usedDestinations += firstField
         var filled = 1
 
-        AnkiFieldKeys.OPTIONAL.forEach { key ->
+        val fillable = AnkiFieldKeys.OPTIONAL - AnkiFieldKeys.unfillable(languageCapabilities)
+        fillable.forEach { key ->
             val suggested = AnkiFieldAutoMap.firstAvailableMatch(key, fieldNames, usedDestinations)
             if (suggested.isNotEmpty()) {
                 merged[key] = suggested
@@ -174,7 +183,7 @@ internal object AnkiFieldMapPolicy {
         }
 
         val extraKeys = extraFields.map(LanguageExtraCardField::key)
-        (AnkiFieldKeys.OPTIONAL + extraKeys).forEach { key ->
+        (fillable + extraKeys).forEach { key ->
             if (merged[key].orEmpty().isNotEmpty()) return@forEach
             val current = currentFieldMap[key].orEmpty()
             if (current.isNotEmpty() && current in fieldNames && current !in usedDestinations) {

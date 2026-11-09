@@ -624,6 +624,34 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `a hebrew note type pick and fill leave the hidden furigana and pitch rows unmapped`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeSettingsRepository(AppSettings(language = "he"))
+            val setup =
+                FakeAnkiSetupManager(
+                    listOf(model("Lapis-like", "Expression", "Sentence", "ExpressionFurigana", "PitchPosition")),
+                )
+            val viewModel =
+                viewModel(
+                    repository,
+                    setup,
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+
+            viewModel.selectNoteType("Lapis-like")
+            advanceUntilIdle()
+            assertEquals("", repository.current.fieldMap["expression_furigana"])
+            assertEquals("", repository.current.fieldMap["pitch_position"])
+
+            viewModel.fillFieldsAutomatically()
+            advanceUntilIdle()
+            assertEquals("", repository.current.fieldMap["expression_furigana"])
+            assertEquals("", repository.current.fieldMap["pitch_position"])
+            assertEquals("Sentence", repository.current.fieldMap["sentence"])
+        }
+
+    @Test
     fun `setup lists only the slots stamped for the mining language`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources = FakeResourceManager()

@@ -55,4 +55,28 @@ internal object AnkiFieldKeys {
     val REQUIRED: Set<String> = setOf(WORD)
 
     val OPTIONAL: List<String> = ALL.filterNot(REQUIRED::contains)
+
+    /**
+     * Keys only a language with the named profile capability fills (desktop
+     * `note_presets.CAPABILITY_FIELD_KEYS`). Settings hides their rows everywhere else, so a fill
+     * leaves them unmapped there: a hidden mapping would outlive a switch to a note type without
+     * that field and fail the pre-run check on a row nobody can see.
+     */
+    val CAPABILITY_GATED: Map<String, String> =
+        mapOf(
+            "expression_furigana" to "furigana",
+            "sentence_furigana" to "furigana",
+            "pitch_position" to "pitch",
+            "pitch_category" to "pitch",
+            "pitch_graph" to "pitch",
+            "pitch_text" to "pitch",
+        )
+
+    /** The gated keys [capabilities] cannot fill; null is Japanese, which fills every key. */
+    fun unfillable(capabilities: Set<String>?): Set<String> =
+        if (capabilities == null) {
+            emptySet()
+        } else {
+            CAPABILITY_GATED.filterValues { it !in capabilities }.keys
+        }
 }

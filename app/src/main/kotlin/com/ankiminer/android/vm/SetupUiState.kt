@@ -115,10 +115,7 @@ internal data class SetupUiState(
      */
     val fieldKeys: List<String>
         get() =
-            AnkiFieldKeys.ALL.filter { key ->
-                val capability = CAPABILITY_GATED_FIELD_KEYS[key]
-                capability == null || languageCapabilities?.contains(capability) != false
-            } + extraCardFields.map { it.key }.filterNot(AnkiFieldKeys.ALL::contains)
+            (AnkiFieldKeys.ALL - AnkiFieldKeys.unfillable(languageCapabilities)) + extraCardFields.map { it.key }.filterNot(AnkiFieldKeys.ALL::contains)
 
     val extraFieldKeys: List<String>
         get() = extraCardFields.map { it.key }
@@ -265,17 +262,6 @@ internal data class SetupUiState(
             }
 
 }
-
-/** Field keys only a language with the named capability fills (desktop anki_settings_panel). */
-private val CAPABILITY_GATED_FIELD_KEYS: Map<String, String> =
-    mapOf(
-        "expression_furigana" to "furigana",
-        "sentence_furigana" to "furigana",
-        "pitch_position" to "pitch",
-        "pitch_category" to "pitch",
-        "pitch_graph" to "pitch",
-        "pitch_text" to "pitch",
-    )
 
 private fun NoteTypeSetupStatus.ProviderError.readinessAction(): MiningReadinessAction =
     when (reason) {

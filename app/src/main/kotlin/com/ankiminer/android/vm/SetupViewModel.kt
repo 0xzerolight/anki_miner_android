@@ -411,6 +411,7 @@ internal class SetupViewModel(
                             currentFieldMap = current.fieldMap,
                             reservedDestinations = setOfNotNull(retainedMarker),
                             extraFields = state.extraCardFields,
+                            languageCapabilities = state.languageCapabilities,
                         )
                     changes = merged.changes
                     current.copy(
@@ -469,6 +470,7 @@ internal class SetupViewModel(
                                     currentFieldMap = current.fieldMap,
                                     reservedDestinations = setOfNotNull(retainedMarker),
                                     extraFields = state.extraCardFields,
+                                    languageCapabilities = state.languageCapabilities,
                                 )
                             changes = remapped.changes
                             filled = remapped.filledCount

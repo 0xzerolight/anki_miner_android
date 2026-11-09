@@ -418,6 +418,73 @@ class AnkiFieldMapPolicyTest {
     }
 
     @Test
+    fun `a merge for a language without furigana or pitch leaves those keys unmapped`() {
+        val result =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = "Basic",
+                selectedNoteType = "Anki Miner Note",
+                fieldNames = ANKI_MINER_NOTE_FIELDS,
+                currentFieldMap = mapOf("word" to "Front", "pitch_position" to "PitchPosition"),
+                languageCapabilities = ZH_CAPABILITIES,
+            )
+
+        GATED_KEYS.forEach { key -> assertEquals(key, "", result.fieldMap.getValue(key)) }
+        assertEquals("Expression", result.fieldMap["word"])
+        assertEquals("Sentence", result.fieldMap["sentence"])
+        assertEquals("ExpressionReading", result.fieldMap["expression_reading"])
+    }
+
+    @Test
+    fun `a japanese merge with Anki Miner Note still maps furigana and pitch`() {
+        val japanese =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = "Basic",
+                selectedNoteType = "Anki Miner Note",
+                fieldNames = ANKI_MINER_NOTE_FIELDS,
+                currentFieldMap = mapOf("word" to "Front"),
+                languageCapabilities = null,
+            )
+        val unspecified =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = "Basic",
+                selectedNoteType = "Anki Miner Note",
+                fieldNames = ANKI_MINER_NOTE_FIELDS,
+                currentFieldMap = mapOf("word" to "Front"),
+            )
+
+        assertEquals(unspecified, japanese)
+        assertEquals("ExpressionFurigana", japanese.fieldMap["expression_furigana"])
+        assertEquals("SentenceFurigana", japanese.fieldMap["sentence_furigana"])
+        assertEquals("PitchPosition", japanese.fieldMap["pitch_position"])
+    }
+
+    @Test
+    fun `a remap for a language without furigana or pitch clears a hidden mapping`() {
+        val result =
+            AnkiFieldMapPolicy.remap(
+                fieldNames = ANKI_MINER_NOTE_FIELDS,
+                currentFieldMap = mapOf("word" to "Expression", "sentence_furigana" to "SentenceFurigana"),
+                languageCapabilities = ZH_CAPABILITIES,
+            )
+
+        GATED_KEYS.forEach { key -> assertEquals(key, "", result.fieldMap.getValue(key)) }
+        assertEquals("Sentence", result.fieldMap["sentence"])
+    }
+
+    @Test
+    fun `a language with only furigana keeps furigana and drops pitch`() {
+        val result =
+            AnkiFieldMapPolicy.remap(
+                fieldNames = ANKI_MINER_NOTE_FIELDS,
+                currentFieldMap = mapOf("word" to "Expression"),
+                languageCapabilities = setOf("furigana"),
+            )
+
+        assertEquals("ExpressionFurigana", result.fieldMap["expression_furigana"])
+        assertEquals("", result.fieldMap["pitch_position"])
+    }
+
+    @Test
     fun `a fresh pick of a stock two field note type sends the definition to its second field`() {
         val result =
             AnkiFieldMapPolicy.merge(
@@ -592,6 +659,24 @@ class AnkiFieldMapPolicyTest {
     )
 
     private companion object {
+        val GATED_KEYS =
+            listOf(
+                "expression_furigana",
+                "sentence_furigana",
+                "pitch_position",
+                "pitch_category",
+                "pitch_graph",
+                "pitch_text",
+            )
+
+        /** The zh profile's capabilities: none of them is furigana or pitch. */
+        val ZH_CAPABILITIES =
+            setOf("pinyin", "tone_color", "script_variants", "measure_word", "manga_ocr", "video_ocr")
+
+        /** Anki Miner Note v1's Lapis-shaped head: furigana and pitch fields included. */
+        val ANKI_MINER_NOTE_FIELDS: List<String>
+            get() = LAPIS_FIELDS + listOf("SentenceTranslation", "Language")
+
         val LAPIS_FIELDS =
             listOf(
                 "Expression", "ExpressionFurigana", "ExpressionReading", "ExpressionAudio", "SelectionText",
