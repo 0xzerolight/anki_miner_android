@@ -954,9 +954,22 @@ def test_process_episode_hands_curation_the_run_extractor_audio_index(
     assert seen == [1]
 
 
-def test_the_real_extractor_tag_pick_reaches_the_run_audio_index(
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        # By tag: the eng track is the default, the jpn one still wins.
+        (("eng", None, True), ("jpn", None, False)),
+        # By title: no jpn tag anywhere, so the untagged track titled Japanese.
+        (("eng", None, True), (None, "Japanese", False)),
+        (("und", "English", True), (None, "Japanese", False)),
+    ],
+    ids=["tagged", "titled-after-tagged-english", "titled-after-titled-english"],
+)
+def test_the_real_extractor_pick_reaches_the_run_audio_index(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
+    first: tuple[str | None, str | None, bool],
+    second: tuple[str | None, str | None, bool],
 ) -> None:
     pytest.importorskip("pysubs2", reason="runtime dependency lane")
     import anki_miner.services.media_extractor as media_extractor
@@ -965,23 +978,15 @@ def test_the_real_extractor_tag_pick_reaches_the_run_audio_index(
 
     streams = [
         audio_track_detector.AudioStream(
-            global_index=1,
-            audio_index=0,
-            language_tag="eng",
-            title_tag=None,
+            global_index=position + 1,
+            audio_index=position,
+            language_tag=tag,
+            title_tag=title,
             codec="aac",
             channels=2,
-            is_default=True,
-        ),
-        audio_track_detector.AudioStream(
-            global_index=2,
-            audio_index=1,
-            language_tag="jpn",
-            title_tag=None,
-            codec="aac",
-            channels=2,
-            is_default=False,
-        ),
+            is_default=is_default,
+        )
+        for position, (tag, title, is_default) in enumerate((first, second))
     ]
     # The one ffprobe seam both the pick and the stream list read.
     monkeypatch.setattr(audio_track_detector, "list_audio_streams", lambda *_args, **_kwargs: streams)
